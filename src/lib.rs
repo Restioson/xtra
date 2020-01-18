@@ -132,7 +132,7 @@ pub struct Address<A: Actor> {
 }
 
 impl<A: Actor> Address<A> {
-    pub fn do_send<M>(&self, message: M)
+    pub fn do_send<M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
         A: Handler<M>,
@@ -140,7 +140,7 @@ impl<A: Actor> Address<A> {
         let envelope = NonReturningEnvelope::new(message);
         self.sender
             .unbounded_send(Box::new(envelope))
-            .expect("Error sending");
+            .map_err(|_| Disconnected)
     }
 
     pub fn send<M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
