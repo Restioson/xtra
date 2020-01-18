@@ -5,5 +5,14 @@ authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-crossbeam-channel = "^0.4"
-tokio = { version = "^0.2", features = ["full"] }
+futures = { version = "^0.3" }
+tokio = { version = "^0.2", features = ["rt-core"], optional = true }
+
+[features]
+default = ["tokio_spawn"]
+tokio_spawn = ["tokio"]
+
+[[example]]
+name = "basic_tokio"
+path = "examples/basic_tokio.rs"
+required-features = ["tokio_spawn", "tokio/full"]

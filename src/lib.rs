@@ -1,15 +1,31 @@
 //! Adapted from actix `address` module
 
-use crossbeam_channel::{Receiver, Sender, TryRecvError};
-use std::future::Future;
 use std::marker::PhantomData;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::boxed::Box;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::StreamExt;
 
-pub trait Message: Send {}
+pub trait Message: Send + 'static {}
 
 pub trait Handler<M: Message> {
     fn handle(&mut self, message: M);
+}
+
+pub trait Actor: Send + Unpin + 'static {
+    #[cfg(feature = "tokio_spawn")]
+    fn spawn(self) -> Address<Self>
+    where
+        Self: Sized,
+    {
+        ActorManager::spawn(self)
+    }
+
+    fn start(self) -> (Address<Self>, ActorManager<Self>)
+    where
+        Self: Sized,
+    {
+        ActorManager::start(self)
+    }
 }
 
 trait Envelope: Send {
@@ -32,78 +48,57 @@ impl<A: Actor, M: Message> AnEnvelope<A, M> {
     }
 }
 
-impl<A, M> Envelope for AnEnvelope<A, M>
-where
-    A: Actor,
-    A: Handler<M>,
-    M: Message,
-{
+impl<A: Actor + Handler<M>, M: Message> Envelope for AnEnvelope<A, M> {
     type Actor = A;
 
     fn handle(&mut self, act: &mut Self::Actor) {
-        act.handle(self.message.take().expect("Message must be Some"))
-    }
-}
-
-pub trait Actor: Send {
-    fn start(self) -> Address<Self>
-    where
-        Self: Sized,
-        Self: Unpin,
-        Self: 'static,
-    {
-        ActorManager::start(self)
-    }
-}
-
-struct ActorManager<A: Actor + 'static> {
-    receiver: Receiver<Box<dyn Envelope<Actor = A>>>,
-    actor: A,
-}
-
-impl<A: Actor + 'static + Unpin> ActorManager<A> {
-    fn start(actor: A) -> Address<A> {
-        let (sender, receiver) = crossbeam_channel::unbounded();
-
-        let mgr = ActorManager { receiver, actor };
-
-        tokio::spawn(mgr);
-
-        let addr = Address { sender };
-
-        addr
-    }
-}
-
-impl<A: Actor + Unpin> Future for ActorManager<A> {
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, _ctx: &mut Context<'_>) -> Poll<()> {
-        match self.receiver.try_recv() {
-            Ok(mut msg) => {
-                msg.handle(&mut self.get_mut().actor);
-                Poll::Pending
-            }
-            Err(TryRecvError::Empty) => Poll::Pending,
-            Err(TryRecvError::Disconnected) => Poll::Ready(()),
-        }
+        act.handle(self.message.take().expect("Message must be Some"));
     }
 }
 
 pub struct Address<A: Actor> {
-    sender: Sender<Box<dyn Envelope<Actor = A>>>,
+    sender: UnboundedSender<Box<dyn Envelope<Actor = A>>>,
 }
 
 impl<A: Actor> Address<A> {
     pub fn send_message<M>(&self, message: M)
     where
         M: Message,
-        M: 'static,
         A: Handler<M>,
-        A: 'static,
     {
         self.sender
-            .send(Box::new(AnEnvelope::new(message)))
+            .unbounded_send(Box::new(AnEnvelope::new(message)))
             .expect("Error sending");
+    }
+}
+
+pub struct ActorManager<A: Actor + 'static> {
+    receiver: UnboundedReceiver<Box<dyn Envelope<Actor = A>>>,
+    actor: A,
+}
+
+impl<A: Actor + 'static + Unpin> ActorManager<A> {
+    #[cfg(feature = "tokio_spawn")]
+    fn spawn(actor: A) -> Address<A> {
+        let (addr, mgr) = Self::start(actor);
+        tokio::spawn(mgr.manage());
+        addr
+    }
+
+    fn start(actor: A) -> (Address<A>, ActorManager<A>) {
+        let (sender, receiver) = mpsc::unbounded();
+        let mgr = ActorManager { receiver, actor };
+        let addr = Address { sender };
+
+        (addr, mgr)
+    }
+
+    pub async fn manage(mut self) {
+        loop {
+            match self.receiver.next().await {
+                Some(mut msg) => msg.handle(&mut self.actor),
+                None => break
+            }
+        }
     }
 }
