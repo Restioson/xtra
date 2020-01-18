@@ -1,4 +1,4 @@
-use xtra::{Actor, Handler, Message};
+use xtra::{Actor, Context, Handler, Message};
 
 struct Printer {
     times: usize,
@@ -18,7 +18,7 @@ impl Message for Print {
 }
 
 impl Handler<Print> for Printer {
-    fn handle(&mut self, print: Print) {
+    fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) {
         self.times += 1;
         println!("Printing {}. Printed {} times so far.", print.0, self.times);
     }
@@ -28,6 +28,8 @@ impl Handler<Print> for Printer {
 async fn main() {
     let addr = Printer::new().spawn();
     loop {
-        addr.send(Print("hello".to_string())).await;
+        addr.send(Print("hello".to_string()))
+            .await
+            .expect("Printer should not be dropped");
     }
 }
