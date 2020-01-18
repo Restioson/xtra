@@ -1,4 +1,4 @@
-use xtra::{Message, Handler, Actor};
+use xtra::{Actor, Handler, Message};
 
 struct Printer {
     times: usize,
@@ -6,16 +6,16 @@ struct Printer {
 
 impl Printer {
     fn new() -> Self {
-        Printer {
-            times: 0,
-        }
+        Printer { times: 0 }
     }
 }
 
 impl Actor for Printer {}
 
 struct Print(String);
-impl Message for Print {}
+impl Message for Print {
+    type Result = ();
+}
 
 impl Handler<Print> for Printer {
     fn handle(&mut self, print: Print) {
@@ -28,7 +28,6 @@ impl Handler<Print> for Printer {
 async fn main() {
     let addr = Printer::new().spawn();
     loop {
-        addr.send_message(Print("hello".to_string()));
-
+        addr.send(Print("hello".to_string())).await;
     }
 }

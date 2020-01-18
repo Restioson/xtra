@@ -1,14 +1,18 @@
 //! Adapted from actix `address` module
 
-use std::marker::PhantomData;
-use std::boxed::Box;
+use futures::FutureExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use futures::StreamExt;
+use futures::channel::oneshot::{self, Sender, Receiver};
+use futures::{StreamExt, Future};
+use std::boxed::Box;
+use std::marker::PhantomData;
 
-pub trait Message: Send + 'static {}
+pub trait Message: Send + 'static {
+    type Result: Send;
+}
 
 pub trait Handler<M: Message> {
-    fn handle(&mut self, message: M);
+    fn handle(&mut self, message: M) -> M::Result;
 }
 
 pub trait Actor: Send + Unpin + 'static {
@@ -35,16 +39,21 @@ trait Envelope: Send {
 }
 
 struct AnEnvelope<A: Actor, M: Message> {
-    message: Option<M>, // Option so that we can opt.take()
+    message: Option<M>, // Options so that we can opt.take()
+    result_sender: Option<Sender<M::Result>>,
     phantom: PhantomData<A>,
 }
 
 impl<A: Actor, M: Message> AnEnvelope<A, M> {
-    fn new(message: M) -> Self {
-        AnEnvelope {
+    fn new(message: M) -> (Self, Receiver<M::Result>) {
+        let (tx, rx) = oneshot::channel();
+        let envelope = AnEnvelope {
             message: Some(message),
+            result_sender: Some(tx),
             phantom: PhantomData,
-        }
+        };
+
+        (envelope, rx)
     }
 }
 
@@ -52,7 +61,10 @@ impl<A: Actor + Handler<M>, M: Message> Envelope for AnEnvelope<A, M> {
     type Actor = A;
 
     fn handle(&mut self, act: &mut Self::Actor) {
-        act.handle(self.message.take().expect("Message must be Some"));
+        let message_result = act.handle(self.message.take().expect("Message must be Some"));
+
+        // We don't actually care if the receiver is listening
+        let _ = self.result_sender.take().expect("Sender must be Some").send(message_result);
     }
 }
 
@@ -61,14 +73,27 @@ pub struct Address<A: Actor> {
 }
 
 impl<A: Actor> Address<A> {
-    pub fn send_message<M>(&self, message: M)
+    pub fn do_send<M>(&self, message: M)
     where
         M: Message,
         A: Handler<M>,
     {
+        let (envelope, _rx) = AnEnvelope::new(message);
         self.sender
-            .unbounded_send(Box::new(AnEnvelope::new(message)))
+            .unbounded_send(Box::new(envelope))
             .expect("Error sending");
+    }
+
+    pub fn send<M>(&self, message: M) -> impl Future<Output = M::Result>
+        where
+            M: Message,
+            A: Handler<M>,
+    {
+        let (envelope, rx) = AnEnvelope::new(message);
+        self.sender
+            .unbounded_send(Box::new(envelope))
+            .expect("Error sending");
+        rx.map(|res| res.expect("Receiver must not be cancelled"))
     }
 }
 
@@ -94,11 +119,8 @@ impl<A: Actor + 'static + Unpin> ActorManager<A> {
     }
 
     pub async fn manage(mut self) {
-        loop {
-            match self.receiver.next().await {
-                Some(mut msg) => msg.handle(&mut self.actor),
-                None => break
-            }
+        while let Some(mut msg) = self.receiver.next().await {
+            msg.handle(&mut self.actor);
         }
     }
 }
