@@ -1,9 +1,9 @@
 //! Adapted from actix `address` module
 
-use futures::FutureExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use futures::channel::oneshot::{self, Sender, Receiver};
-use futures::{StreamExt, Future};
+use futures::channel::oneshot::{self, Receiver, Sender};
+use futures::FutureExt;
+use futures::{Future, StreamExt};
 use std::boxed::Box;
 use std::marker::PhantomData;
 
@@ -64,7 +64,11 @@ impl<A: Actor + Handler<M>, M: Message> Envelope for AnEnvelope<A, M> {
         let message_result = act.handle(self.message.take().expect("Message must be Some"));
 
         // We don't actually care if the receiver is listening
-        let _ = self.result_sender.take().expect("Sender must be Some").send(message_result);
+        let _ = self
+            .result_sender
+            .take()
+            .expect("Sender must be Some")
+            .send(message_result);
     }
 }
 
@@ -85,9 +89,9 @@ impl<A: Actor> Address<A> {
     }
 
     pub fn send<M>(&self, message: M) -> impl Future<Output = M::Result>
-        where
-            M: Message,
-            A: Handler<M>,
+    where
+        M: Message,
+        A: Handler<M>,
     {
         let (envelope, rx) = AnEnvelope::new(message);
         self.sender
