@@ -2,8 +2,9 @@ use crate::{Actor, Context, Handler, Message, SyncResponder};
 use futures::channel::oneshot::{self, Receiver, Sender};
 use futures::{future, Future, FutureExt};
 use std::marker::PhantomData;
+use std::pin::Pin;
 
-type Fut<'a> = Box<dyn Future<Output = ()> + Unpin + Send + 'a>;
+type Fut<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
 pub(crate) trait Envelope: Send {
     type Actor: Actor + ?Sized;
@@ -55,7 +56,7 @@ where
             .expect("Sender must be Some")
             .send(message_result.cast());
 
-        Box::new(future::ready(()))
+        Box::pin(future::ready(()))
     }
 }
 
@@ -65,10 +66,22 @@ pub(crate) struct AsyncReturningEnvelope<A: Actor + ?Sized + Handler<M>, M: Mess
     phantom: PhantomData<A>,
 }
 
+impl<A: Actor + ?Sized + Handler<M>, M: Message> AsyncReturningEnvelope<A, M> {
+    pub(crate) fn new(message: M) -> (Self, Receiver<M::Result>) {
+        let (tx, rx) = oneshot::channel();
+        let envelope = AsyncReturningEnvelope {
+            message: Some(message),
+            result_sender: Some(tx),
+            phantom: PhantomData,
+        };
+
+        (envelope, rx)
+    }
+}
+
 impl<A: Actor + Handler<M>, M: Message> Envelope for AsyncReturningEnvelope<A, M>
 where
-    A::Responder: Send,
-    A::Responder: Future<Output = M::Result>,
+    A::Responder: Future<Output = M::Result> + Send,
 {
     type Actor = A;
 
@@ -77,7 +90,7 @@ where
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> Fut {
-        Box::new(
+        Box::pin(
             act.handle(self.message.take().expect("Message must be Some"), ctx)
                 .map(move |r| {
                     // We don't actually care if the receiver is listening
@@ -114,6 +127,6 @@ impl<A: Actor + Handler<M> + ?Sized, M: Message> Envelope for NonReturningEnvelo
         ctx: &mut Context<Self::Actor>,
     ) -> Fut {
         act.handle(self.message.take().expect("Message must be Some"), ctx);
-        Box::new(future::ready(()))
+        Box::pin(future::ready(()))
     }
 }

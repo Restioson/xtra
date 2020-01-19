@@ -17,3 +17,8 @@ with-async_std-1 = ["async-std"]
 name = "basic_tokio"
 path = "examples/basic_tokio.rs"
 required-features = ["with-tokio-0_2", "tokio/full"]
+
+[[example]]
+name = "basic_tokio_async"
+path = "examples/basic_tokio_async.rs"
+required-features = ["with-tokio-0_2", "tokio/full"]

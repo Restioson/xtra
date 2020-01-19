@@ -36,7 +36,7 @@ impl<M: Message> SyncResponder<M> for M::Result {
 /// and the logic to handle the message.
 pub trait Handler<M: Message>: Actor {
     // TODO doc
-    type Responder: MessageResponder<M>;
+    type Responder;
 
     /// Handle a given message, returning its result.
     fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::Responder;

@@ -1,4 +1,7 @@
+#![feature(type_alias_impl_trait)]
+
 use xtra::{Actor, Context, Handler, Message};
+use futures::Future;
 
 struct Printer {
     times: usize,
@@ -18,11 +21,12 @@ impl Message for Print {
 }
 
 impl Handler<Print> for Printer {
-    type Responder = ();
+    type Responder = impl Future<Output = ()>;
 
-    fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) {
+    fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) -> Self::Responder {
         self.times += 1;
         println!("Printing {}. Printed {} times so far.", print.0, self.times);
+        futures::future::ready(())
     }
 }
 
@@ -30,7 +34,7 @@ impl Handler<Print> for Printer {
 async fn main() {
     let addr = Printer::new().spawn();
     loop {
-        addr.send(Print("hello".to_string()))
+        addr.send_async(Print("hello".to_string()))
             .await
             .expect("Printer should not be dropped");
     }
