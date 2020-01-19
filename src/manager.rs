@@ -45,7 +45,7 @@ impl<A: Actor> ActorManager<A> {
     pub async fn manage(mut self) {
         self.actor.started(&mut self.ctx);
 
-        while let Some(mut msg) = self.receiver.next().await {
+        while let Some(msg) = self.receiver.next().await {
             if let EnvelopeHandleResult::Fut(f) = msg.handle(&mut self.actor, &mut self.ctx) {
                 f.await;
             };
@@ -56,7 +56,7 @@ impl<A: Actor> ActorManager<A> {
             }
 
             // Handle notifications (messages to self)
-            while let Some(mut notif) = self.ctx.notifications.pop() {
+            while let Some(notif) = self.ctx.notifications.pop() {
                 if let EnvelopeHandleResult::Fut(f) = notif.handle(&mut self.actor, &mut self.ctx) {
                     f.await;
                 }
@@ -66,7 +66,7 @@ impl<A: Actor> ActorManager<A> {
         // TODO
         if self.actor.stopping(&mut self.ctx) == KeepRunning::Yes {
             // Handle notifications (messages to self)
-            while let Some(mut notif) = self.ctx.notifications.pop() {
+            while let Some(notif) = self.ctx.notifications.pop() {
                 if let EnvelopeHandleResult::Fut(f) = notif.handle(&mut self.actor, &mut self.ctx) {
                     f.await;
                 }

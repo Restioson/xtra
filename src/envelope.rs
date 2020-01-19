@@ -14,15 +14,15 @@ pub(crate) trait Envelope: Send {
     type Actor: Actor + ?Sized;
 
     fn handle<'a>(
-        &'a mut self,
+        self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> EnvelopeHandleResult<'a>;
 }
 
 pub(crate) struct SyncReturningEnvelope<A: Actor + ?Sized + Handler<M>, M: Message> {
-    message: Option<M>, // Options so that we can opt.take()
-    result_sender: Option<Sender<M::Result>>,
+    message: M,
+    result_sender: Sender<M::Result>,
     phantom: PhantomData<A>,
 }
 
@@ -30,8 +30,8 @@ impl<A: Actor + ?Sized + Handler<M>, M: Message> SyncReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> (Self, Receiver<M::Result>) {
         let (tx, rx) = oneshot::channel();
         let envelope = SyncReturningEnvelope {
-            message: Some(message),
-            result_sender: Some(tx),
+            message,
+            result_sender: tx,
             phantom: PhantomData,
         };
 
@@ -46,27 +46,23 @@ where
 {
     type Actor = A;
 
-    fn handle(
-        &mut self,
-        act: &mut Self::Actor,
-        ctx: &mut Context<Self::Actor>,
-    ) -> EnvelopeHandleResult {
-        let message_result = act.handle(self.message.take().expect("Message must be Some"), ctx);
+    fn handle<'a>(
+        self: Box<Self>,
+        act: &'a mut Self::Actor,
+        ctx: &'a mut Context<Self::Actor>,
+    ) -> EnvelopeHandleResult<'a> {
+        let message_result = act.handle(self.message, ctx);
 
         // We don't actually care if the receiver is listening
-        let _ = self
-            .result_sender
-            .take()
-            .expect("Sender must be Some")
-            .send(message_result.cast());
+        let _ = self.result_sender.send(message_result.cast());
 
         EnvelopeHandleResult::Sync
     }
 }
 
 pub(crate) struct AsyncReturningEnvelope<A: Actor + ?Sized + Handler<M>, M: Message> {
-    message: Option<M>, // Options so that we can opt.take()
-    result_sender: Option<Sender<M::Result>>,
+    message: M,
+    result_sender: Sender<M::Result>,
     phantom: PhantomData<A>,
 }
 
@@ -78,33 +74,31 @@ where
     type Actor = A;
 
     fn handle<'a>(
-        &'a mut self,
+        self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> EnvelopeHandleResult {
+    ) -> EnvelopeHandleResult<'a> {
+        let message = self.message;
+        let result_sender = self.result_sender;
         EnvelopeHandleResult::Fut(Box::new(
-            act.handle(self.message.take().expect("Message must be Some"), ctx)
+            act.handle(message, ctx)
                 .map(move |r| {
                     // We don't actually care if the receiver is listening
-                    let _ = self
-                        .result_sender
-                        .take()
-                        .expect("Sender must be Some")
-                        .send(r);
+                    let _ = result_sender.send(r);
                 }),
         ))
     }
 }
 
 pub(crate) struct NonReturningEnvelope<A: Actor + ?Sized, M: Message> {
-    message: Option<M>, // Option so that we can opt.take()
+    message: M,
     phantom: PhantomData<A>,
 }
 
 impl<A: Actor + ?Sized, M: Message> NonReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> Self {
         NonReturningEnvelope {
-            message: Some(message),
+            message,
             phantom: PhantomData,
         }
     }
@@ -113,12 +107,12 @@ impl<A: Actor + ?Sized, M: Message> NonReturningEnvelope<A, M> {
 impl<A: Actor + Handler<M> + ?Sized, M: Message> Envelope for NonReturningEnvelope<A, M> {
     type Actor = A;
 
-    fn handle(
-        &mut self,
-        act: &mut Self::Actor,
-        ctx: &mut Context<Self::Actor>,
-    ) -> EnvelopeHandleResult {
-        act.handle(self.message.take().expect("Message must be Some"), ctx);
+    fn handle<'a>(
+        self: Box<Self>,
+        act: &'a mut Self::Actor,
+        ctx: &'a mut Context<Self::Actor>,
+    ) -> EnvelopeHandleResult<'a> {
+        act.handle(self.message, ctx);
         EnvelopeHandleResult::Sync
     }
 }
