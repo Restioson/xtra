@@ -32,9 +32,7 @@ impl<A: Actor> Address<A> {
         A: Handler<M>,
         A::Responder: SyncResponder<M> + Send,
     {
-        let t = SyncReturningEnvelope::new(message);
-        let envelope: SyncReturningEnvelope<A, M> = t.0;
-        let rx = t.1;
+        let (envelope, rx) = SyncReturningEnvelope::new(message);
 
         let res = self
             .sender

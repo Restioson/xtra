@@ -1,4 +1,4 @@
-use crate::envelope::Envelope;
+use crate::envelope::{Envelope, EnvelopeHandleResult};
 use crate::{Actor, Address, Context, KeepRunning};
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use futures::StreamExt;
@@ -42,18 +42,13 @@ impl<A: Actor> ActorManager<A> {
         (addr, mgr)
     }
 
-    /// Handle notifications (messages to self)
-    async fn handle_notifications(&mut self) {
-        while let Some(mut notif) = self.ctx.notifications.pop() {
-            notif.handle(&mut self.actor, &mut self.ctx).await;
-        }
-    }
-
     pub async fn manage(mut self) {
         self.actor.started(&mut self.ctx);
 
         while let Some(mut msg) = self.receiver.next().await {
-            msg.handle(&mut self.actor, &mut self.ctx).await;
+            if let EnvelopeHandleResult::Fut(f) = msg.handle(&mut self.actor, &mut self.ctx) {
+                f.await;
+            };
 
             // Check if the context was stopped
             if !self.ctx.running {
@@ -62,13 +57,20 @@ impl<A: Actor> ActorManager<A> {
 
             // Handle notifications (messages to self)
             while let Some(mut notif) = self.ctx.notifications.pop() {
-                notif.handle(&mut self.actor, &mut self.ctx).await;
+                if let EnvelopeHandleResult::Fut(f) = notif.handle(&mut self.actor, &mut self.ctx) {
+                    f.await;
+                }
             }
         }
 
         // TODO
         if self.actor.stopping(&mut self.ctx) == KeepRunning::Yes {
-            self.handle_notifications().await
+            // Handle notifications (messages to self)
+            while let Some(mut notif) = self.ctx.notifications.pop() {
+                if let EnvelopeHandleResult::Fut(f) = notif.handle(&mut self.actor, &mut self.ctx) {
+                    f.await;
+                }
+            }
         }
     }
 }
