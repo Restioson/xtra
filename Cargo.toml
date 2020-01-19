@@ -6,13 +6,14 @@ edition = "2018"
 
 [dependencies]
 futures = { version = "^0.3" }
-tokio = { version = "^0.2", features = ["rt-core"], optional = true }
+tokio = { version = "^0.2", features = ["rt-core", "time"], optional = true }
+async-std = { version = "^1", features = ["unstable"], optional = true }
 
 [features]
-default = ["tokio_spawn"]
-tokio_spawn = ["tokio"]
+with-tokio-0_2 = ["tokio"]
+with-async_std-1 = ["async-std"]
 
 [[example]]
 name = "basic_tokio"
 path = "examples/basic_tokio.rs"
-required-features = ["tokio_spawn", "tokio/full"]
+required-features = ["with-tokio-0_2", "tokio/full"]
