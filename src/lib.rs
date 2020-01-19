@@ -1,3 +1,8 @@
+#![feature(specialization)]
+
+#[macro_use]
+extern crate rental;
+
 mod envelope;
 
 mod address;
@@ -34,12 +39,12 @@ impl<M: Message> SyncResponder<M> for M::Result {
 
 /// A trait indicating that an [`Actor`](struct.Actor.html) can handle a given [`Message`](trait.Message.html),
 /// and the logic to handle the message.
-pub trait Handler<M: Message>: Actor {
+pub trait Handler<'a, M: Message>: Actor {
     // TODO doc
-    type Responder;
+    type Responder: 'a;
 
     /// Handle a given message, returning its result.
-    fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::Responder;
+    fn handle(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder;
 }
 
 pub trait Actor: Send + 'static {

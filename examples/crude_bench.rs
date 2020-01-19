@@ -1,3 +1,5 @@
+#![feature(type_alias_impl_trait)]
+
 use xtra::{Actor, Context, Handler, Message};
 use std::time::Instant;
 
@@ -50,8 +52,6 @@ async fn main() {
     let total_count = addr.send(GetCount).await.unwrap();
 
     let duration = Instant::now() - start;
-
     let average_ns = duration.as_nanos() / total_count as u128; // <200ns on my machine
-
-    println!("avg time: {}ns", average_ns);
+    println!("davg time: {}ns", average_ns);
 }

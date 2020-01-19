@@ -14,10 +14,10 @@ pub struct Address<A: Actor> {
 }
 
 impl<A: Actor> Address<A> {
-    pub fn do_send<M>(&self, message: M) -> Result<(), Disconnected>
+    pub fn do_send<'a, M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
-        A: Handler<M>,
+        A: Handler<'a, M>,
     {
         let envelope = NonReturningEnvelope::new(message);
         self.sender
@@ -26,10 +26,10 @@ impl<A: Actor> Address<A> {
     }
 
     // TODO async
-    pub fn send<M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
+    pub fn send<'a, M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
     where
         M: Message,
-        A: Handler<M>,
+        A: Handler<'a, M>,
         A::Responder: SyncResponder<M> + Send,
     {
         let t = SyncReturningEnvelope::new(message);
@@ -47,10 +47,10 @@ impl<A: Actor> Address<A> {
         }
     }
 
-    pub fn send_async<M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
+    pub fn send_async<'a, M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
         where
             M: Message,
-            A: Handler<M>,
+            A: Handler<'a, M>,
             A::Responder: Future<Output = M::Result> + Send,
     {
         let t = AsyncReturningEnvelope::new(message);

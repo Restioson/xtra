@@ -20,13 +20,14 @@ impl Message for Print {
     type Result = ();
 }
 
-impl Handler<Print> for Printer {
-    type Responder = impl Future<Output = ()>;
+impl<'a> Handler<'a, Print> for Printer {
+    type Responder = impl Future<Output = ()> + 'a;
 
-    fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) -> Self::Responder {
-        self.times += 1;
-        println!("Printing {}. Printed {} times so far.", print.0, self.times);
-        futures::future::ready(())
+    fn handle(&'a mut self, print: Print, _ctx: &'a mut Context<Self>) -> Self::Responder {
+        async {
+            self.times += 1;
+            println!("Printing {}. Printed {} times so far.", print.0, self.times);
+        }
     }
 }
 
