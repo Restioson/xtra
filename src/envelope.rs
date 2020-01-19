@@ -9,6 +9,15 @@ type Fut<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 pub(crate) trait Envelope: Send {
     type Actor: Actor + ?Sized;
 
+    // We could return some enum like:
+    //
+    // enum Return<'a> {
+    //     Fut(Fut<'a>),
+    //     Noop,
+    // }
+    //
+    // But this is actually about 10% *slower* for `do_send`. I don't know why. Maybe something to
+    // do with branch [mis]prediction or compiler optimisation
     fn handle<'a, 'c>(
         &'a mut self,
         act: &'a mut Self::Actor,

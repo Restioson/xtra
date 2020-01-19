@@ -37,7 +37,7 @@ impl Handler<GetCount> for Counter {
 
 #[tokio::main]
 async fn main() {
-    const COUNT: usize = 100_000_000; // May take a while on some machines
+    const COUNT: usize = 50_000_000; // May take a while on some machines
 
     let addr = Counter { count: 0 }.spawn();
 
@@ -51,7 +51,7 @@ async fn main() {
 
     let duration = Instant::now() - start;
 
-    let average_ns = duration.as_nanos() / total_count as u128; // About 200ns on mine
+    let average_ns = duration.as_nanos() / total_count as u128; // <200ns on my machine
 
     println!("avg time: {}ns", average_ns);
 }

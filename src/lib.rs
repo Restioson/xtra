@@ -15,10 +15,10 @@ pub use manager::ActorManager;
 pub trait Message: Send + 'static {
     /// The return type of the message. It will be returned when the [`Address::send`](struct.Address.html#method.send)
     /// is called.
-    type Result: Send + Unpin;
+    type Result: Send;
 }
 
-pub trait MessageResponder<M: Message>: Unpin {}
+pub trait MessageResponder<M: Message> {}
 
 impl<M: Message> MessageResponder<M> for M::Result {}
 
