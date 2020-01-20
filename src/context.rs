@@ -1,10 +1,8 @@
 use crate::Actor;
 use std::marker::PhantomData;
 
-/// `Context` is used to signal things to the [`ActorManager`](struct.ActorManager.html)'s
-/// management loop. It can be used to stop the actor ([`Context::stop`](struct.Context.html#method.stop)) or
-/// queue a message to be processed by the actor immediately after it has finished processing the
-/// current message ([`Context::notify`](struct.Context.html#method.notify)).
+/// `Context` is used to signal things to the [`ActorManager`](trait.ActorManager.html)'s
+/// management loop. Currently, it can be used to stop the actor ([`Context::stop`](struct.Context.html#method.stop)).
 pub struct Context<A: Actor + ?Sized> {
     pub(crate) running: bool,
     phantom: PhantomData<A>, // TODO(weak_address)
@@ -19,10 +17,9 @@ impl<A: Actor + ?Sized> Context<A> {
     }
 
     /// Stop the actor as soon as it has finished processing current message. This will mean that it
-    /// will be dropped, and [`Actor::stopping`](trait.Actor.html#method.stopping) and then
-    /// [`Actor::stopped`](trait.Actor.html#method.stopped) will be called. Any subsequent attempts
-    /// to send messages to this actor will return the [`Disconnected`](struct.Disconnected.html)
-    /// error.
+    /// will be dropped, and [`Actor::stopped`](trait.Actor.html#method.stopped) will be called.
+    /// Any subsequent attempts to send messages to this actor will return the
+    /// [`Disconnected`](struct.Disconnected.html) error.
     pub fn stop(&mut self) {
         self.running = false;
     }

@@ -13,23 +13,23 @@ pub use manager::ActorManager;
 
 use std::future::Future;
 
-/// A message that can be sent to an [`Actor`](struct.Actor.html) for processing. They are processed
+/// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
 /// one at a time. Only actors implementing the corresponding [`Handler<M>`](trait.Handler.html)
 /// trait can be sent a given message.
 pub trait Message: Send + 'static {
     /// The return type of the message. It will be returned when the [`Address::send`](struct.Address.html#method.send)
-    /// is called.
+    /// or [`Address::send_async`](struct.Address.html#method.send) methods are called.
     type Result: Send;
 }
 
-/// A trait indicating that an [`Actor`](struct.Actor.html) can handle a given [`Message`](trait.Message.html)
+/// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
 /// synchronously, and the logic to handle the message.
 pub trait Handler<M: Message>: Actor {
     /// Handle a given message, returning its result.
     fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result;
 }
 
-/// A trait indicating that an [`Actor`](struct.Actor.html) can handle a given [`Message`](trait.Message.html)
+/// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
 /// asynchronously, and the logic to handle the message.
 pub trait AsyncHandler<M: Message>: Actor {
     type Responder<'a>: Future<Output = M::Result> + Send;
@@ -42,18 +42,8 @@ pub trait Actor: Send + 'static {
     /// Called as soon as the actor has been started.
     fn started(&mut self, _ctx: &mut Context<Self>) {}
 
-    /// Called when the actor is in the process of stopping. The key difference between this method
-    /// and [`Actor::stopped`](trait.Actor.html#method.stopped) is that the actor can prevent itself
-    /// from stopping by returning [`KeepRunning::Yes`](enum.KeepRunning.html#variant.Yes) from this
-    /// function.
-    fn stopping(&mut self, _ctx: &mut Context<Self>) -> KeepRunning {
-        KeepRunning::No
-    }
-
-    /// Called when the actor is in the process of stopping. The key difference between this method
-    /// and [`Actor::stopping`](trait.Actor.html#method.stopping) is that the actor cannot be rescued
-    /// from being stopped at this stage. This should be used for any final cleanup before the actor
-    /// is dropped.
+    /// Called when the actor is in the process of stopping. This should be used for any final
+    /// cleanup before the actor is dropped.
     fn stopped(&mut self, _ctx: &mut Context<Self>) {}
 
     #[cfg(any(feature = "with-tokio-0_2", feature = "with-async_std-1"))]
@@ -70,12 +60,4 @@ pub trait Actor: Send + 'static {
     {
         ActorManager::start(self)
     }
-}
-
-/// Whether to keep the actor running after [`Context::stop`](struct.Context.html#method.stop) has
-/// been called, or all the [`Address`es](struct.Address.html) to an actor have been dropped.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum KeepRunning {
-    Yes,
-    No,
 }
