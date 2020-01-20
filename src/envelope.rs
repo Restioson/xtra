@@ -56,7 +56,7 @@ where
         act: &mut Self::Actor,
         ctx: &mut Context<Self::Actor>,
     ) -> Fut {
-        let message_result = act.handle(self.message.take().expect("Message must be Some"), ctx);
+        let message_result = act.handle(self.message.take().unwrap(), ctx);
 
         // We don't actually care if the receiver is listening
         let _ = self
@@ -88,7 +88,7 @@ impl<A: Actor + ?Sized, M: Message> AsyncReturningEnvelope<A, M> {
     }
 }
 
-impl<M: Message, A> Envelope for AsyncReturningEnvelope<A, M>
+impl<M: Message, A: ?Sized> Envelope for AsyncReturningEnvelope<A, M>
     where A: AsyncHandler<M>,
           for<'a> A::Responder<'a>: Future<Output = M::Result>,
 {
@@ -101,7 +101,7 @@ impl<M: Message, A> Envelope for AsyncReturningEnvelope<A, M>
     ) -> Fut<'a>
     {
         Box::pin(
-            act.handle(self.message.take().expect("Message must be Some"), ctx)
+            act.handle(self.message.take().unwrap(), ctx)
                 .map(move |r| {
                     // We don't actually care if the receiver is listening
                     let _ = self
@@ -114,21 +114,21 @@ impl<M: Message, A> Envelope for AsyncReturningEnvelope<A, M>
     }
 }
 
-pub(crate) struct NonReturningEnvelope<A: Actor + ?Sized, M: Message> {
+pub(crate) struct SyncNonReturningEnvelope<A: Actor + ?Sized, M: Message> {
     message: Option<M>, // Option so that we can opt.take()
     phantom: PhantomData<A>,
 }
 
-impl<A: Actor + ?Sized, M: Message> NonReturningEnvelope<A, M> {
+impl<A: Actor + ?Sized, M: Message> SyncNonReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> Self {
-        NonReturningEnvelope {
+        SyncNonReturningEnvelope {
             message: Some(message),
             phantom: PhantomData,
         }
     }
 }
 
-impl<'a, A: Actor + Handler<M> + ?Sized, M: Message> Envelope for NonReturningEnvelope<A, M> {
+impl<'a, A: Handler<M> + ?Sized, M: Message> Envelope for SyncNonReturningEnvelope<A, M> {
     type Actor = A;
 
     fn handle(
@@ -136,7 +136,37 @@ impl<'a, A: Actor + Handler<M> + ?Sized, M: Message> Envelope for NonReturningEn
         act: &mut Self::Actor,
         ctx: &mut Context<Self::Actor>,
     ) -> Fut {
-        act.handle(self.message.take().expect("Message must be Some"), ctx);
+        act.handle(self.message.take().unwrap(), ctx);
         Box::pin(future::ready(()))
+    }
+}
+
+pub(crate) struct AsyncNonReturningEnvelope<A: Actor + ?Sized, M: Message> {
+    message: Option<M>, // Option so that we can opt.take()
+    phantom: PhantomData<A>,
+}
+
+impl<A: Actor + ?Sized, M: Message> AsyncNonReturningEnvelope<A, M> {
+    pub(crate) fn new(message: M) -> Self {
+        AsyncNonReturningEnvelope {
+            message: Some(message),
+            phantom: PhantomData,
+        }
+    }
+}
+
+
+impl<A: AsyncHandler<M> + ?Sized, M: Message> Envelope for AsyncNonReturningEnvelope<A, M>
+    where A: AsyncHandler<M>,
+          for<'a> A::Responder<'a>: Future<Output = M::Result>,
+{
+    type Actor = A;
+
+    fn handle<'a>(
+        &'a mut self,
+        act: &'a mut Self::Actor,
+        ctx: &'a mut Context<Self::Actor>,
+    ) -> Fut {
+        Box::pin(act.handle(self.message.take().unwrap(), ctx).map(|_| ()))
     }
 }

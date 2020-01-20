@@ -1,4 +1,4 @@
-use crate::envelope::{Envelope, NonReturningEnvelope, SyncReturningEnvelope, AsyncReturningEnvelope};
+use crate::envelope::{Envelope, SyncNonReturningEnvelope, SyncReturningEnvelope, AsyncReturningEnvelope, AsyncNonReturningEnvelope};
 use crate::{Actor, Handler, Message, AsyncHandler};
 use futures::channel::mpsc::UnboundedSender;
 use futures::future::Either;
@@ -19,13 +19,23 @@ impl<A: Actor> Address<A> {
         M: Message,
         A: Handler<M>,
     {
-        let envelope = NonReturningEnvelope::new(message);
+        let envelope = SyncNonReturningEnvelope::new(message);
         self.sender
             .unbounded_send(Box::new(envelope))
             .map_err(|_| Disconnected)
     }
 
-    // TODO async
+    pub fn do_send_async<'a, M>(&self, message: M) -> Result<(), Disconnected>
+        where
+            M: Message,
+            A: AsyncHandler<M>,
+    {
+        let envelope = AsyncNonReturningEnvelope::new(message);
+        self.sender
+            .unbounded_send(Box::new(envelope))
+            .map_err(|_| Disconnected)
+    }
+
     pub fn send<'a, M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
     where
         M: Message,

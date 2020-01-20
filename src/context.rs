@@ -1,4 +1,3 @@
-use crate::envelope::{Envelope, NonReturningEnvelope};
 use crate::{Actor, Handler, Message};
 use std::marker::PhantomData;
 
@@ -8,8 +7,7 @@ use std::marker::PhantomData;
 /// current message ([`Context::notify`](struct.Context.html#method.notify)).
 pub struct Context<A: Actor + ?Sized> {
     pub(crate) running: bool,
-    phantom: PhantomData<A>,
-    // TODO
+    phantom: PhantomData<A>, // TODO will be used
 }
 
 impl<A: Actor + ?Sized> Context<A> {

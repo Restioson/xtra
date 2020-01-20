@@ -1,8 +1,5 @@
 #![feature(generic_associated_types)]
 
-#[macro_use]
-extern crate rental;
-
 mod envelope;
 
 mod address;
