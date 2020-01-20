@@ -17,7 +17,10 @@ impl<A: Actor> Drop for ActorManager<A> {
 
 impl<A: Actor> ActorManager<A> {
     #[cfg(any(feature = "with-tokio-0_2", feature = "with-async_std-1"))]
-    pub(crate) fn spawn(actor: A) -> Address<A> {
+    pub(crate) fn spawn(actor: A) -> Address<A>
+    where
+        A: Send,
+    {
         let (addr, mgr) = Self::start(actor);
 
         #[cfg(feature = "with-tokio-0_2")]

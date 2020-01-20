@@ -7,7 +7,7 @@ use std::pin::Pin;
 type Fut<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
 pub(crate) trait Envelope: Send {
-    type Actor: Actor + ?Sized;
+    type Actor: Actor;
 
     // We could return some enum like:
     //
@@ -25,13 +25,13 @@ pub(crate) trait Envelope: Send {
     ) -> Fut<'a>;
 }
 
-pub(crate) struct SyncReturningEnvelope<A: Actor + ?Sized, M: Message> {
+pub(crate) struct SyncReturningEnvelope<A: Actor + Send, M: Message> {
     message: Option<M>, // Options so that we can opt.take()
     result_sender: Option<Sender<M::Result>>,
     phantom: PhantomData<A>,
 }
 
-impl<A: Actor + ?Sized, M: Message> SyncReturningEnvelope<A, M> {
+impl<A: Actor + Send, M: Message> SyncReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> (Self, Receiver<M::Result>) {
         let (tx, rx) = oneshot::channel();
         let envelope = SyncReturningEnvelope {
@@ -44,8 +44,10 @@ impl<A: Actor + ?Sized, M: Message> SyncReturningEnvelope<A, M> {
     }
 }
 
-impl<'a, A: Handler<M>, M: Message> Envelope for SyncReturningEnvelope<A, M>
+impl<'a, A, M: Message> Envelope for SyncReturningEnvelope<A, M>
 where
+    A: Handler<M> + Send,
+    M: Message,
     M::Result: Send,
 {
     type Actor = A;
@@ -64,13 +66,13 @@ where
     }
 }
 
-pub(crate) struct AsyncReturningEnvelope<A: Actor + ?Sized, M: Message> {
+pub(crate) struct AsyncReturningEnvelope<A: Actor, M: Message> {
     message: Option<M>, // Options so that we can opt.take()
     result_sender: Option<Sender<M::Result>>,
     phantom: PhantomData<A>,
 }
 
-impl<A: Actor + ?Sized, M: Message> AsyncReturningEnvelope<A, M> {
+impl<A: Actor, M: Message> AsyncReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> (Self, Receiver<M::Result>) {
         let (tx, rx) = oneshot::channel();
         let envelope = AsyncReturningEnvelope {
@@ -83,10 +85,11 @@ impl<A: Actor + ?Sized, M: Message> AsyncReturningEnvelope<A, M> {
     }
 }
 
-impl<M: Message, A: ?Sized> Envelope for AsyncReturningEnvelope<A, M>
+impl<M, A> Envelope for AsyncReturningEnvelope<A, M>
 where
-    A: AsyncHandler<M>,
+    A: AsyncHandler<M> + Send,
     for<'a> A::Responder<'a>: Future<Output = M::Result>,
+    M: Message,
 {
     type Actor = A;
 
@@ -106,12 +109,12 @@ where
     }
 }
 
-pub(crate) struct SyncNonReturningEnvelope<A: Actor + ?Sized, M: Message> {
+pub(crate) struct SyncNonReturningEnvelope<A: Actor, M: Message> {
     message: Option<M>, // Option so that we can opt.take()
     phantom: PhantomData<A>,
 }
 
-impl<A: Actor + ?Sized, M: Message> SyncNonReturningEnvelope<A, M> {
+impl<A: Actor, M: Message> SyncNonReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> Self {
         SyncNonReturningEnvelope {
             message: Some(message),
@@ -120,7 +123,7 @@ impl<A: Actor + ?Sized, M: Message> SyncNonReturningEnvelope<A, M> {
     }
 }
 
-impl<'a, A: Handler<M> + ?Sized, M: Message> Envelope for SyncNonReturningEnvelope<A, M> {
+impl<'a, A: Handler<M> + Send, M: Message> Envelope for SyncNonReturningEnvelope<A, M> {
     type Actor = A;
 
     fn handle(&mut self, act: &mut Self::Actor, ctx: &mut Context<Self::Actor>) -> Fut {
@@ -129,12 +132,12 @@ impl<'a, A: Handler<M> + ?Sized, M: Message> Envelope for SyncNonReturningEnvelo
     }
 }
 
-pub(crate) struct AsyncNonReturningEnvelope<A: Actor + ?Sized, M: Message> {
+pub(crate) struct AsyncNonReturningEnvelope<A: Actor, M: Message> {
     message: Option<M>, // Option so that we can opt.take()
     phantom: PhantomData<A>,
 }
 
-impl<A: Actor + ?Sized, M: Message> AsyncNonReturningEnvelope<A, M> {
+impl<A: Actor, M: Message> AsyncNonReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> Self {
         AsyncNonReturningEnvelope {
             message: Some(message),
@@ -143,10 +146,11 @@ impl<A: Actor + ?Sized, M: Message> AsyncNonReturningEnvelope<A, M> {
     }
 }
 
-impl<A: AsyncHandler<M> + ?Sized, M: Message> Envelope for AsyncNonReturningEnvelope<A, M>
+impl<A, M> Envelope for AsyncNonReturningEnvelope<A, M>
 where
-    A: AsyncHandler<M>,
+    A: AsyncHandler<M> + Send,
     for<'a> A::Responder<'a>: Future<Output = M::Result>,
+    M: Message,
 {
     type Actor = A;
 

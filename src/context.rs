@@ -3,12 +3,12 @@ use std::marker::PhantomData;
 
 /// `Context` is used to signal things to the [`ActorManager`](trait.ActorManager.html)'s
 /// management loop. Currently, it can be used to stop the actor ([`Context::stop`](struct.Context.html#method.stop)).
-pub struct Context<A: Actor + ?Sized> {
+pub struct Context<A: Actor> {
     pub(crate) running: bool,
     phantom: PhantomData<A>, // TODO(weak_address)
 }
 
-impl<A: Actor + ?Sized> Context<A> {
+impl<A: Actor> Context<A> {
     pub(crate) fn new() -> Self {
         Context {
             running: true,

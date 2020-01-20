@@ -20,7 +20,7 @@ impl<A: Actor> Address<A> {
     pub fn do_send<M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
-        A: Handler<M>,
+        A: Handler<M> + Send,
     {
         let envelope = SyncNonReturningEnvelope::new(message);
         self.sender
@@ -31,7 +31,7 @@ impl<A: Actor> Address<A> {
     pub fn do_send_async<M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
-        A: AsyncHandler<M>,
+        A: AsyncHandler<M> + Send,
     {
         let envelope = AsyncNonReturningEnvelope::new(message);
         self.sender
@@ -42,7 +42,7 @@ impl<A: Actor> Address<A> {
     pub fn send<M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
     where
         M: Message,
-        A: Handler<M>,
+        A: Handler<M> + Send,
         M::Result: Send,
     {
         let t = SyncReturningEnvelope::new(message);
@@ -63,7 +63,7 @@ impl<A: Actor> Address<A> {
     pub fn send_async<M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
     where
         M: Message,
-        A: AsyncHandler<M>,
+        A: AsyncHandler<M> + Send,
         for<'a> A::Responder<'a>: Future<Output = M::Result> + Send,
     {
         let t = AsyncReturningEnvelope::new(message);

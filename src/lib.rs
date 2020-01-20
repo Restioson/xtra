@@ -38,7 +38,7 @@ pub trait AsyncHandler<M: Message>: Actor {
     fn handle<'a>(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder<'a>;
 }
 
-pub trait Actor: Send + 'static {
+pub trait Actor: 'static + Sized {
     /// Called as soon as the actor has been started.
     fn started(&mut self, _ctx: &mut Context<Self>) {}
 
@@ -49,7 +49,7 @@ pub trait Actor: Send + 'static {
     #[cfg(any(feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     fn spawn(self) -> Address<Self>
     where
-        Self: Sized,
+        Self: Sized + Send,
     {
         ActorManager::spawn(self)
     }
