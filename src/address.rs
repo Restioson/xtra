@@ -1,5 +1,5 @@
 use crate::envelope::{Envelope, NonReturningEnvelope, SyncReturningEnvelope, AsyncReturningEnvelope};
-use crate::{Actor, Handler, Message, SyncResponder};
+use crate::{Actor, Handler, Message, AsyncHandler};
 use futures::channel::mpsc::UnboundedSender;
 use futures::future::Either;
 use futures::{Future, TryFutureExt};
@@ -17,7 +17,7 @@ impl<A: Actor> Address<A> {
     pub fn do_send<'a, M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
-        A: Handler<'a, M>,
+        A: Handler<M>,
     {
         let envelope = NonReturningEnvelope::new(message);
         self.sender
@@ -29,8 +29,8 @@ impl<A: Actor> Address<A> {
     pub fn send<'a, M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
     where
         M: Message,
-        A: Handler<'a, M>,
-        A::Responder: SyncResponder<M> + Send,
+        A: Handler<M>,
+        M::Result: Send,
     {
         let t = SyncReturningEnvelope::new(message);
         let envelope: SyncReturningEnvelope<A, M> = t.0;
@@ -47,11 +47,11 @@ impl<A: Actor> Address<A> {
         }
     }
 
-    pub fn send_async<'a, M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
+    pub fn send_async<M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
         where
             M: Message,
-            A: Handler<'a, M>,
-            A::Responder: Future<Output = M::Result> + Send,
+            A: AsyncHandler<M>,
+            for<'a> A::Responder<'a>: Future<Output = M::Result> + Send,
     {
         let t = AsyncReturningEnvelope::new(message);
         let envelope: AsyncReturningEnvelope<A, M> = t.0;

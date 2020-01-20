@@ -1,4 +1,4 @@
-#![feature(specialization)]
+#![feature(generic_associated_types)]
 
 #[macro_use]
 extern crate rental;
@@ -14,6 +14,8 @@ pub use context::Context;
 mod manager;
 pub use manager::ActorManager;
 
+use std::future::Future;
+
 /// A message that can be sent to an [`Actor`](struct.Actor.html) for processing. They are processed
 /// one at a time. Only actors implementing the corresponding [`Handler<M>`](trait.Handler.html)
 /// trait can be sent a given message.
@@ -23,28 +25,20 @@ pub trait Message: Send + 'static {
     type Result: Send;
 }
 
-pub trait MessageResponder<M: Message> {}
-
-impl<M: Message> MessageResponder<M> for M::Result {}
-
-pub trait SyncResponder<M: Message>: MessageResponder<M> {
-    fn cast(self) -> M::Result;
-}
-
-impl<M: Message> SyncResponder<M> for M::Result {
-    fn cast(self) -> M::Result {
-        self
-    }
-}
-
-/// A trait indicating that an [`Actor`](struct.Actor.html) can handle a given [`Message`](trait.Message.html),
-/// and the logic to handle the message.
-pub trait Handler<'a, M: Message>: Actor {
-    // TODO doc
-    type Responder: 'a;
-
+/// A trait indicating that an [`Actor`](struct.Actor.html) can handle a given [`Message`](trait.Message.html)
+/// synchronously, and the logic to handle the message.
+pub trait Handler<M: Message>: Actor {
     /// Handle a given message, returning its result.
-    fn handle(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder;
+    fn handle(&mut self, message: M, ctx:  &mut Context<Self>) -> M::Result;
+}
+
+/// A trait indicating that an [`Actor`](struct.Actor.html) can handle a given [`Message`](trait.Message.html)
+/// asynchronously, and the logic to handle the message.
+pub trait AsyncHandler<M: Message>: Actor {
+    type Responder<'a>: Future<Output = M::Result> + Send;
+
+    /// Handle a given message, returning a future eventually resolving to its result.
+    fn handle<'a>(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder<'a>;
 }
 
 pub trait Actor: Send + 'static {

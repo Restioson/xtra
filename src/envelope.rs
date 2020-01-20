@@ -1,4 +1,4 @@
-use crate::{Actor, Context, Handler, Message, SyncResponder};
+use crate::{Actor, Context, Handler, Message, AsyncHandler};
 use futures::channel::oneshot::{self, Receiver, Sender};
 use futures::{future, Future, FutureExt};
 use std::marker::PhantomData;
@@ -19,11 +19,11 @@ pub(crate) trait Envelope: Send {
     //
     // But this is actually about 10% *slower* for `do_send`. I don't know why. Maybe something to
     // do with branch [mis]prediction or compiler optimisation
-    fn handle(
-        &mut self,
-        act: &mut Self::Actor,
-        ctx: &mut Context<Self::Actor>,
-    ) -> Fut;
+    fn handle<'a>(
+        &'a mut self,
+        act: &'a mut Self::Actor,
+        ctx: &'a mut Context<Self::Actor>,
+    ) -> Fut<'a>;
 }
 
 pub(crate) struct SyncReturningEnvelope<A: Actor + ?Sized, M: Message> {
@@ -45,10 +45,9 @@ impl<A: Actor + ?Sized, M: Message> SyncReturningEnvelope<A, M> {
     }
 }
 
-impl<'a, A: Actor + Handler<'a, M>, M: Message> Envelope for SyncReturningEnvelope<A, M>
+impl<'a, A: Handler<M>, M: Message> Envelope for SyncReturningEnvelope<A, M>
 where
-    A: Send,
-    A::Responder: SyncResponder<M> + Send,
+    M::Result: Send,
 {
     type Actor = A;
 
@@ -64,7 +63,7 @@ where
             .result_sender
             .take()
             .expect("Sender must be Some")
-            .send(message_result.cast());
+            .send(message_result);
 
         Box::pin(future::ready(()))
     }
@@ -89,13 +88,13 @@ impl<A: Actor + ?Sized, M: Message> AsyncReturningEnvelope<A, M> {
     }
 }
 
-impl<'a, A: Actor + Handler<'a, M>, M: Message> Envelope for AsyncReturningEnvelope<A, M>
-where
-    A::Responder: Future<Output = M::Result> + Send,
+impl<M: Message, A> Envelope for AsyncReturningEnvelope<A, M>
+    where A: AsyncHandler<M>,
+          for<'a> A::Responder<'a>: Future<Output = M::Result>,
 {
     type Actor = A;
 
-    fn handle(
+    fn handle<'a>(
         &'a mut self,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
@@ -129,7 +128,7 @@ impl<A: Actor + ?Sized, M: Message> NonReturningEnvelope<A, M> {
     }
 }
 
-impl<'a, A: Actor + Handler<'a, M> + ?Sized, M: Message> Envelope for NonReturningEnvelope<A, M> {
+impl<'a, A: Actor + Handler<M> + ?Sized, M: Message> Envelope for NonReturningEnvelope<A, M> {
     type Actor = A;
 
     fn handle(

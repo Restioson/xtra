@@ -1,6 +1,6 @@
-#![feature(type_alias_impl_trait)]
+#![feature(type_alias_impl_trait, generic_associated_types)]
 
-use xtra::{Actor, Context, Handler, Message};
+use xtra::{Actor, Context, Handler, Message, AsyncHandler};
 use futures::Future;
 
 struct Printer {
@@ -20,11 +20,11 @@ impl Message for Print {
     type Result = ();
 }
 
-impl<'a> Handler<'a, Print> for Printer {
-    type Responder = impl Future<Output = ()> + 'a;
+impl AsyncHandler<Print> for Printer {
+    type Responder<'a> = impl Future<Output = ()> + 'a;
 
-    fn handle(&'a mut self, print: Print, _ctx: &'a mut Context<Self>) -> Self::Responder {
-        async {
+    fn handle<'a>(&'a mut self, print: Print, _ctx: &'a mut Context<Self>) -> Self::Responder<'a> {
+        async move {
             self.times += 1;
             println!("Printing {}. Printed {} times so far.", print.0, self.times);
         }
