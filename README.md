@@ -8,7 +8,8 @@ A tiny (<1k LOC) actor framework. It is modelled around Actix (copyright and lic
 asynchronous responders just return `impl Future`)
 - Does not depend on its own runtime and can be run with any futures executor ([Tokio](https://tokio.rs/) and 
 [async-std](https://async.rs/) have the `Actor::spawn` convenience method implemented out of the box).
-- Quite fast (<200ns time from sending a message to it being processed for sending without waiting for a result)
+- Quite fast (<200ns time from sending a message to it being processed for sending without waiting for a result on my
+development machine with an AMD Ryzen 3 3200G)
 
 ## Okay, sounds great! How do I use it?
 
