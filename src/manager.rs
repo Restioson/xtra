@@ -5,7 +5,6 @@ use futures::StreamExt;
 
 pub struct ActorManager<A: Actor> {
     receiver: UnboundedReceiver<Box<dyn Envelope<Actor = A>>>,
-    //    sender: UnboundedSender<Box<dyn Envelope<Actor = A>>>, // TODO
     actor: A,
     ctx: Context<A>,
 }
@@ -67,7 +66,7 @@ impl<A: Actor> ActorManager<A> {
             //            }
         }
 
-        //        // TODO
+        //        // TODO(weak_address)
         //        if self.actor.stopping(&mut self.ctx) == KeepRunning::Yes {
         //            self.handle_notifications().await
         //        }

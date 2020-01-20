@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 /// current message ([`Context::notify`](struct.Context.html#method.notify)).
 pub struct Context<A: Actor + ?Sized> {
     pub(crate) running: bool,
-    phantom: PhantomData<A>, // TODO will be used
+    phantom: PhantomData<A>, // TODO(weak_address)
 }
 
 impl<A: Actor + ?Sized> Context<A> {

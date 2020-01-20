@@ -6,7 +6,6 @@ use std::pin::Pin;
 
 type Fut<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
-// TODO Nick12 ISSUE: this CAN'T have 'a because i need to construct dyn Envelope<'a>
 pub(crate) trait Envelope: Send {
     type Actor: Actor + ?Sized;
 
