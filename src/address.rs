@@ -7,7 +7,7 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::future::Either;
 use futures::{Future, TryFutureExt};
 
-/// An `Address` is a reference to an actor through which [`Message`](struct.Message.html)s can be
+/// An `Address` is a reference to an actor through which [`Message`s](trait.Message.html) can be
 /// sent. It can be cloned, and when all `Address`es are dropped, the actor will be stopped. It is
 /// created by calling the [`Actor::start`](trait.Actor.html#method.start) or
 /// [`Actor::spawn`](trait.Actor.html#method.start) methods.
@@ -17,6 +17,11 @@ pub struct Address<A: Actor> {
 }
 
 impl<A: Actor> Address<A> {
+    /// Sends a [`Message`](trait.Message.html) that will be handled synchronously to the actor,
+    /// and does not wait for a response. If this returns `Err(Disconnected)`, then the actor is stopped
+    /// and not accepting messages. If this returns `Ok(())`, the will be delivered, but may
+    /// not be handled in the event that the actor stops itself (by calling [`Context::stop`](struct.Context.html#method.stop))
+    /// before it was handled.
     pub fn do_send<M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
@@ -28,6 +33,11 @@ impl<A: Actor> Address<A> {
             .map_err(|_| Disconnected)
     }
 
+    /// Sends a [`Message`](trait.Message.html) that will be handled asynchronously to the actor,
+    /// and does not wait for a response. If this returns `Err(Disconnected)`, then the actor is stopped
+    /// and not accepting messages. If this returns `Ok(())`, the will be delivered, but may
+    /// not be handled in the event that the actor stops itself (by calling [`Context::stop`](struct.Context.html#method.stop))
+    /// before it was handled.
     pub fn do_send_async<M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
@@ -39,6 +49,9 @@ impl<A: Actor> Address<A> {
             .map_err(|_| Disconnected)
     }
 
+    /// Sends a [`Message`](trait.Message.html) that will be handled asynchronously to the actor,
+    /// and waits for a response. If this returns `Err(Disconnected)`, then the actor is stopped
+    /// and not accepting messages.
     pub fn send<M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
     where
         M: Message,
@@ -60,6 +73,9 @@ impl<A: Actor> Address<A> {
         }
     }
 
+    /// Sends a [`Message`](trait.Message.html) that will be handled asynchronously to the actor,
+    /// and waits for a response. If this returns `Err(Disconnected)`, then the actor is stopped
+    /// and not accepting messages.
     pub fn send_async<M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
     where
         M: Message,

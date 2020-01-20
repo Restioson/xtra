@@ -2,6 +2,7 @@
 A tiny (<1k LOC) actor framework. It is modelled around Actix (copyright and license [here](https://github.com/Restioson/xtra/blob/master/LICENSE-ACTIX)). It's probably best to not use this production.
 
 ## Features
+- Small and lightweight: it only depends on `futures` by default.
 - Asynchronous and synchronous responders
 - Simple asynchronous message handling interface which allows `async`/`await` syntax (no more `ActorFuture` - 
 asynchronous responders just return `impl Future`)
@@ -9,9 +10,17 @@ asynchronous responders just return `impl Future`)
 [async-std](https://async.rs/) have the `Actor::spawn` convenience method implemented out of the box).
 - Quite fast (<200ns time from sending a message to it being processed for sending without waiting for a result)
 
+## Okay, sounds great! How do I use it?
+
+Check out the [docs](https://docs.rs/xtra) and the [examples](https://github.com/Restioson/xtra/blob/master/examples)
+to get started! Enabling the `with-tokio-0_2` or `with-async_std-1` features are recommended in order to enable some 
+convenience methods (such as `Actor::spawn`). Which you enable will depend on which executor you want to use (check out
+their docs to learn more about each). If you have any questions, feel free to [open an issue](https://github.com/Restioson/xtra/issues/new)
+or message me on the [Rust discord](https://bit.ly/rust-community).
+
 ## To do
 - Thread-local actors that are `!Send`
-- Documentation
+- Examples in documentation
 - Actor notifications (sending messages to self) and creating an address from the actor's context
 - Scheduling of repeated-at-interval and time-delayed messages for actors
 

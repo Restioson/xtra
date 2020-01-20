@@ -1,4 +1,4 @@
-use xtra::{Actor, Context, Message, Handler};
+use xtra::{Actor, Context, Handler, Message};
 
 struct Printer {
     times: usize,

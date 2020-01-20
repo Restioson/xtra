@@ -1,7 +1,7 @@
 use crate::Actor;
 use std::marker::PhantomData;
 
-/// `Context` is used to signal things to the [`ActorManager`](trait.ActorManager.html)'s
+/// `Context` is used to signal things to the [`ActorManager`](struct.ActorManager.html)'s
 /// management loop. Currently, it can be used to stop the actor ([`Context::stop`](struct.Context.html#method.stop)).
 pub struct Context<A: Actor> {
     pub(crate) running: bool,

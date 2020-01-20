@@ -3,6 +3,8 @@ use crate::{Actor, Address, Context};
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use futures::StreamExt;
 
+/// A manager for the actor which handles incoming messages and stores the context. Its managing
+/// loop can be started with [`ActorManager::manage`](struct.ActorManager.html#method.manage).
 pub struct ActorManager<A: Actor> {
     receiver: UnboundedReceiver<Box<dyn Envelope<Actor = A>>>,
     actor: A,
@@ -16,7 +18,8 @@ impl<A: Actor> Drop for ActorManager<A> {
 }
 
 impl<A: Actor> ActorManager<A> {
-    #[cfg(any(feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-runtime")))]
+    #[cfg(any(doc, feature = "with-runtime"))]
     pub(crate) fn spawn(actor: A) -> Address<A>
     where
         A: Send,
@@ -45,6 +48,7 @@ impl<A: Actor> ActorManager<A> {
         (addr, mgr)
     }
 
+    /// Starts the manager mainloop. This will start the actor and allow it to respond to messages.
     pub async fn manage(mut self) {
         self.actor.started(&mut self.ctx);
 

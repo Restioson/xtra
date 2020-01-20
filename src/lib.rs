@@ -18,7 +18,7 @@ use std::future::Future;
 /// trait can be sent a given message.
 pub trait Message: Send + 'static {
     /// The return type of the message. It will be returned when the [`Address::send`](struct.Address.html#method.send)
-    /// or [`Address::send_async`](struct.Address.html#method.send) methods are called.
+    /// or [`Address::send_async`](struct.Address.html#method.send_async) methods are called.
     type Result: Send;
 }
 
@@ -32,12 +32,25 @@ pub trait Handler<M: Message>: Actor {
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
 /// asynchronously, and the logic to handle the message.
 pub trait AsyncHandler<M: Message>: Actor {
+    /// The responding future of the asynchronous actor. This should probably look like:
+    /// ```ignore
+    /// type Responder<'a>: Future<Output = M::Result> + Send
+    /// ```
     type Responder<'a>: Future<Output = M::Result> + Send;
 
-    /// Handle a given message, returning a future eventually resolving to its result.
+    /// Handle a given message, returning a future eventually resolving to its result. The signature
+    /// of this function should probably look like:
+    /// ```ignore
+    /// fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::Responder<'_>
+    /// ```
     fn handle<'a>(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder<'a>;
 }
 
+/// An actor which can handle [`Message`s](trait.Message.html) one at a time. Actors can only be
+/// communicated with by sending [`Message`s](trait.Message.html) through their [`Address`ess](struct.Address.html).
+/// They can modify their private state, respond to messages, and spawn other actors. They can also
+/// stop themselves through their [`Context`](struct.Context.html) by calling [`Context::stop`](struct.Context.html#method.stop).
+/// This will result in any attempt to send messages to the actor in future failing.
 pub trait Actor: 'static + Sized {
     /// Called as soon as the actor has been started.
     fn started(&mut self, _ctx: &mut Context<Self>) {}
@@ -46,7 +59,10 @@ pub trait Actor: 'static + Sized {
     /// cleanup before the actor is dropped.
     fn stopped(&mut self, _ctx: &mut Context<Self>) {}
 
-    #[cfg(any(feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+    /// Spawns the actor onto the global runtime executor (i.e, `tokio` or `async_std`'s executors).
+    /// Only callable when the `with-tokio-0_2` or `with-async_std-1` features are enabled.
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-runtime")))]
+    #[cfg(any(doc, feature = "with-runtime"))]
     fn spawn(self) -> Address<Self>
     where
         Self: Sized + Send,
@@ -54,6 +70,9 @@ pub trait Actor: 'static + Sized {
         ActorManager::spawn(self)
     }
 
+    /// Returns the actor's address and manager in a ready-to-start state. To spawn the actor, the
+    /// [`ActorManager::manage`](struct.ActorManager.html#method.manage) method must be called and
+    /// the future it returns spawned onto an executor.
     fn start(self) -> (Address<Self>, ActorManager<Self>)
     where
         Self: Sized,
