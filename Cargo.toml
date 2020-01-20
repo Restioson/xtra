@@ -1,10 +1,13 @@
 [package]
 name = "xtra"
-version = "0.1.0"
+version = "0.1.1"
 description = "A tiny actor framework"
 authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
 license = "MPL-2.0"
+repository = "https://github.com/Restioson/xtra"
+documentation = "https://docs.rs/xtra"
+readme = "README.md"
 
 [dependencies]
 futures = { version = "^0.3" }
