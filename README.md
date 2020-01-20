@@ -1,5 +1,5 @@
 # xtra
-A tiny (<1k LOC) actor framework. It is modelled around Actix (copyright and license [here](https://github.com/Restioson/xtra/blob/master/LICENSE-ACTIX). It's probably best to not use this production.
+A tiny (<1k LOC) actor framework. It is modelled around Actix (copyright and license [here](https://github.com/Restioson/xtra/blob/master/LICENSE-ACTIX)). It's probably best to not use this production.
 
 ## Features
 - Asynchronous and synchronous responders
