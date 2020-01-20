@@ -15,22 +15,8 @@ impl<A: Actor + ?Sized> Context<A> {
         Context {
             running: true,
             phantom: PhantomData,
-            //            notifications: Vec::new(),
         }
     }
-
-    //    /// Send a message to this actor to be processed immediately after it has finished processing
-    //    /// the current message. An unlimited number of notifications can be queued at one time (but,
-    //    /// as always, they will only be processed one-by-one). Be aware that this does allocate space
-    //    /// in a [`Vec`](https://doc.rust-lang.org/std/vec/struct.Vec.html).
-    //    pub fn notify<M>(&mut self, notification: M)
-    //    where
-    //        M: Message,
-    //        A: Handler<'a, M>,
-    //    {
-    //        let notification = Box::new(NonReturningEnvelope::new(notification));
-    //        self.notifications.push(notification);
-    //    }
 
     /// Stop the actor as soon as it has finished processing current message. This will mean that it
     /// will be dropped, and [`Actor::stopping`](trait.Actor.html#method.stopping) and then

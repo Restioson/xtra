@@ -42,13 +42,6 @@ impl<A: Actor> ActorManager<A> {
         (addr, mgr)
     }
 
-    //    /// Handle notifications (messages to self)
-    //    async fn handle_notifications(&mut self) {
-    //        while let Some(mut notif) = self.ctx.notifications.pop() {
-    //            notif.handle(&mut self.actor, &mut self.ctx).await;
-    //        }
-    //    }
-
     pub async fn manage(mut self) {
         self.actor.started(&mut self.ctx);
 
@@ -59,16 +52,6 @@ impl<A: Actor> ActorManager<A> {
             if !self.ctx.running {
                 return;
             }
-            //
-            //            // Handle notifications (messages to self)
-            //            while let Some(mut notif) = self.ctx.notifications.pop() {
-            //                notif.handle(&mut self.actor, &mut self.ctx).await;
-            //            }
         }
-
-        //        // TODO(weak_address)
-        //        if self.actor.stopping(&mut self.ctx) == KeepRunning::Yes {
-        //            self.handle_notifications().await
-        //        }
     }
 }
