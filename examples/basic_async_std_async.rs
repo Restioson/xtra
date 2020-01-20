@@ -31,7 +31,7 @@ impl AsyncHandler<Print> for Printer {
     }
 }
 
-#[tokio::main]
+#[async_std::main]
 async fn main() {
     let addr = Printer::new().spawn();
     loop {

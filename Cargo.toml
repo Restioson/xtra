@@ -24,6 +24,16 @@ path = "examples/basic_tokio_async.rs"
 required-features = ["with-tokio-0_2", "tokio/full"]
 
 [[example]]
+name = "basic_async_std"
+path = "examples/basic_async_std.rs"
+required-features = ["with-async_std-1", "async-std/attributes"]
+
+[[example]]
+name = "basic_async_std_async"
+path = "examples/basic_async_std_async.rs"
+required-features = ["with-async_std-1", "async-std/attributes"]
+
+[[example]]
 name = "crude_bench"
 path = "examples/crude_bench.rs"
 required-features = ["with-tokio-0_2", "tokio/full"]

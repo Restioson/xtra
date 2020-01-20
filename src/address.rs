@@ -1,5 +1,8 @@
-use crate::envelope::{Envelope, SyncNonReturningEnvelope, SyncReturningEnvelope, AsyncReturningEnvelope, AsyncNonReturningEnvelope};
-use crate::{Actor, Handler, Message, AsyncHandler};
+use crate::envelope::{
+    AsyncNonReturningEnvelope, AsyncReturningEnvelope, Envelope, SyncNonReturningEnvelope,
+    SyncReturningEnvelope,
+};
+use crate::{Actor, AsyncHandler, Handler, Message};
 use futures::channel::mpsc::UnboundedSender;
 use futures::future::Either;
 use futures::{Future, TryFutureExt};
@@ -14,7 +17,7 @@ pub struct Address<A: Actor> {
 }
 
 impl<A: Actor> Address<A> {
-    pub fn do_send<'a, M>(&self, message: M) -> Result<(), Disconnected>
+    pub fn do_send<M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
         A: Handler<M>,
@@ -25,10 +28,10 @@ impl<A: Actor> Address<A> {
             .map_err(|_| Disconnected)
     }
 
-    pub fn do_send_async<'a, M>(&self, message: M) -> Result<(), Disconnected>
-        where
-            M: Message,
-            A: AsyncHandler<M>,
+    pub fn do_send_async<M>(&self, message: M) -> Result<(), Disconnected>
+    where
+        M: Message,
+        A: AsyncHandler<M>,
     {
         let envelope = AsyncNonReturningEnvelope::new(message);
         self.sender
@@ -36,7 +39,7 @@ impl<A: Actor> Address<A> {
             .map_err(|_| Disconnected)
     }
 
-    pub fn send<'a, M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
+    pub fn send<M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
     where
         M: Message,
         A: Handler<M>,
@@ -58,10 +61,10 @@ impl<A: Actor> Address<A> {
     }
 
     pub fn send_async<M>(&self, message: M) -> impl Future<Output = Result<M::Result, Disconnected>>
-        where
-            M: Message,
-            A: AsyncHandler<M>,
-            for<'a> A::Responder<'a>: Future<Output = M::Result> + Send,
+    where
+        M: Message,
+        A: AsyncHandler<M>,
+        for<'a> A::Responder<'a>: Future<Output = M::Result> + Send,
     {
         let t = AsyncReturningEnvelope::new(message);
         let envelope: AsyncReturningEnvelope<A, M> = t.0;

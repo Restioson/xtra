@@ -1,8 +1,8 @@
 #![feature(generic_associated_types, type_alias_impl_trait)]
 
-use xtra::{Actor, Context, Handler, Message, AsyncHandler};
-use std::time::Instant;
 use futures::Future;
+use std::time::Instant;
+use xtra::{Actor, AsyncHandler, Context, Handler, Message};
 
 struct Counter {
     count: usize,

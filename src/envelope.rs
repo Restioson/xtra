@@ -1,4 +1,4 @@
-use crate::{Actor, Context, Handler, Message, AsyncHandler};
+use crate::{Actor, AsyncHandler, Context, Handler, Message};
 use futures::channel::oneshot::{self, Receiver, Sender};
 use futures::{future, Future, FutureExt};
 use std::marker::PhantomData;
@@ -51,11 +51,7 @@ where
 {
     type Actor = A;
 
-    fn handle(
-        &mut self,
-        act: &mut Self::Actor,
-        ctx: &mut Context<Self::Actor>,
-    ) -> Fut {
+    fn handle(&mut self, act: &mut Self::Actor, ctx: &mut Context<Self::Actor>) -> Fut {
         let message_result = act.handle(self.message.take().unwrap(), ctx);
 
         // We don't actually care if the receiver is listening
@@ -89,8 +85,9 @@ impl<A: Actor + ?Sized, M: Message> AsyncReturningEnvelope<A, M> {
 }
 
 impl<M: Message, A: ?Sized> Envelope for AsyncReturningEnvelope<A, M>
-    where A: AsyncHandler<M>,
-          for<'a> A::Responder<'a>: Future<Output = M::Result>,
+where
+    A: AsyncHandler<M>,
+    for<'a> A::Responder<'a>: Future<Output = M::Result>,
 {
     type Actor = A;
 
@@ -98,19 +95,15 @@ impl<M: Message, A: ?Sized> Envelope for AsyncReturningEnvelope<A, M>
         &'a mut self,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> Fut<'a>
-    {
-        Box::pin(
-            act.handle(self.message.take().unwrap(), ctx)
-                .map(move |r| {
-                    // We don't actually care if the receiver is listening
-                    let _ = self
-                        .result_sender
-                        .take()
-                        .expect("Sender must be Some")
-                        .send(r);
-                }),
-        )
+    ) -> Fut<'a> {
+        Box::pin(act.handle(self.message.take().unwrap(), ctx).map(move |r| {
+            // We don't actually care if the receiver is listening
+            let _ = self
+                .result_sender
+                .take()
+                .expect("Sender must be Some")
+                .send(r);
+        }))
     }
 }
 
@@ -131,11 +124,7 @@ impl<A: Actor + ?Sized, M: Message> SyncNonReturningEnvelope<A, M> {
 impl<'a, A: Handler<M> + ?Sized, M: Message> Envelope for SyncNonReturningEnvelope<A, M> {
     type Actor = A;
 
-    fn handle(
-        &mut self,
-        act: &mut Self::Actor,
-        ctx: &mut Context<Self::Actor>,
-    ) -> Fut {
+    fn handle(&mut self, act: &mut Self::Actor, ctx: &mut Context<Self::Actor>) -> Fut {
         act.handle(self.message.take().unwrap(), ctx);
         Box::pin(future::ready(()))
     }
@@ -155,10 +144,10 @@ impl<A: Actor + ?Sized, M: Message> AsyncNonReturningEnvelope<A, M> {
     }
 }
 
-
 impl<A: AsyncHandler<M> + ?Sized, M: Message> Envelope for AsyncNonReturningEnvelope<A, M>
-    where A: AsyncHandler<M>,
-          for<'a> A::Responder<'a>: Future<Output = M::Result>,
+where
+    A: AsyncHandler<M>,
+    for<'a> A::Responder<'a>: Future<Output = M::Result>,
 {
     type Actor = A;
 

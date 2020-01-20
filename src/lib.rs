@@ -26,7 +26,7 @@ pub trait Message: Send + 'static {
 /// synchronously, and the logic to handle the message.
 pub trait Handler<M: Message>: Actor {
     /// Handle a given message, returning its result.
-    fn handle(&mut self, message: M, ctx:  &mut Context<Self>) -> M::Result;
+    fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result;
 }
 
 /// A trait indicating that an [`Actor`](struct.Actor.html) can handle a given [`Message`](trait.Message.html)
@@ -56,6 +56,7 @@ pub trait Actor: Send + 'static {
     /// is dropped.
     fn stopped(&mut self, _ctx: &mut Context<Self>) {}
 
+    #[cfg(any(feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     fn spawn(self) -> Address<Self>
     where
         Self: Sized,
