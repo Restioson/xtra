@@ -1,6 +1,6 @@
 [package]
 name = "xtra"
-version = "0.1.4"
+version = "0.2.0"
 description = "A tiny actor framework"
 authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
@@ -8,6 +8,7 @@ license = "MPL-2.0"
 repository = "https://github.com/Restioson/xtra"
 documentation = "https://docs.rs/xtra"
 readme = "README.md"
+keywords = ["async", "actor", "futures", "tokio", "async-std"]
 
 [dependencies]
 futures = { version = "^0.3" }
@@ -15,9 +16,8 @@ tokio = { version = "^0.2", features = ["rt-core", "time"], optional = true }
 async-std = { version = "^1", features = ["unstable"], optional = true }
 
 [features]
-with-runtime = []
-with-tokio-0_2 = ["tokio", "with-runtime"]
-with-async_std-1 = ["async-std", "with-runtime"]
+with-tokio-0_2 = ["tokio"]
+with-async_std-1 = ["async-std"]
 
 [[example]]
 name = "basic_tokio"

@@ -18,8 +18,7 @@ impl<A: Actor> Drop for ActorManager<A> {
 }
 
 impl<A: Actor> ActorManager<A> {
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-runtime")))]
-    #[cfg(any(doc, feature = "with-runtime"))]
+    #[cfg(any(feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     pub(crate) fn spawn(actor: A) -> Address<A>
     where
         A: Send,

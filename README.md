@@ -5,7 +5,7 @@ A tiny (<1k LOC) actor framework. It is modelled around Actix (copyright and lic
 - Small and lightweight: it only depends on `futures` by default.
 - Asynchronous and synchronous responders
 - Simple asynchronous message handling interface which allows `async`/`await` syntax (no more `ActorFuture` - 
-asynchronous responders just return `impl Future`)
+asynchronous responders just return `impl Future`, even when borrowing `self`)
 - Does not depend on its own runtime and can be run with any futures executor ([Tokio](https://tokio.rs/) and 
 [async-std](https://async.rs/) have the `Actor::spawn` convenience method implemented out of the box).
 - Quite fast (<200ns time from sending a message to it being processed for sending without waiting for a result on my

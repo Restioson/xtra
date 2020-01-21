@@ -1,4 +1,4 @@
-#![feature(generic_associated_types)]
+#![feature(generic_associated_types, doc_cfg)]
 
 mod envelope;
 
@@ -60,9 +60,9 @@ pub trait Actor: 'static + Sized {
     fn stopped(&mut self, _ctx: &mut Context<Self>) {}
 
     /// Spawns the actor onto the global runtime executor (i.e, `tokio` or `async_std`'s executors).
-    /// Only callable when the `with-tokio-0_2` or `with-async_std-1` features are enabled.
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-runtime")))]
-    #[cfg(any(doc, feature = "with-runtime"))]
+    #[doc(cfg(feature = "with-tokio-0_2"))]
+    #[doc(cfg(feature = "with-async_std-1"))]
+    #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     fn spawn(self) -> Address<Self>
     where
         Self: Sized + Send,
