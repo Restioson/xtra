@@ -96,6 +96,8 @@ impl Handler<TimeReturn> for ReturnTimer {
 #[tokio::main]
 async fn main() {
     const COUNT: usize = 50_000_000; // May take a while on some machines
+    const COUNT2: usize = 1_000_000; // Reduce count when tokio future rescheduling is involved to
+                                     // make the benches run faster
 
     /* Time do_send */
 
@@ -103,7 +105,7 @@ async fn main() {
 
     let start = Instant::now();
     for _ in 0..COUNT {
-        addr.do_send(Increment);
+        let _ = addr.do_send(Increment);
     }
 
     // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
@@ -113,6 +115,7 @@ async fn main() {
     let duration = Instant::now() - start;
     let average_ns = duration.as_nanos() / total_count as u128; // ~150ns on my machine
     println!("do_send avg time of processing: {}ns", average_ns);
+    assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 
 
 
@@ -122,7 +125,7 @@ async fn main() {
 
     let start = Instant::now();
     for _ in 0..COUNT {
-        addr.do_send_async(Increment);
+        let _ = addr.do_send_async(Increment);
     }
 
     // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
@@ -132,6 +135,7 @@ async fn main() {
     let duration = Instant::now() - start;
     let average_ns = duration.as_nanos() / total_count as u128; // ~170ns on my machine
     println!("do_send_async avg time of processing: {}ns", average_ns);
+    assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 
 
 
@@ -151,40 +155,9 @@ async fn main() {
     let duration = Instant::now() - start;
     let average_ns = duration.as_nanos() / total_count as u128; // ~350ns on my machine
     println!("send avg time of processing: {}ns", average_ns);
+    assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 
 
-
-
-
-    /* Time send latency */
-
-    let addr = SendTimer { time: Duration::new(0, 0) }.spawn();
-
-    for _ in 0..COUNT {
-        let _ = addr.send(TimeSend(Instant::now())).await;
-    }
-
-    let duration = addr.send(GetTime).await.unwrap();
-    let average_ns = duration.as_nanos() / total_count as u128;
-
-    println!("send_await avg time to processing: {}ns", average_ns);
-
-
-
-
-    /* Time return latency */
-
-    let addr = ReturnTimer.spawn();
-    let mut duration = Duration::new(0, 0);
-
-    for _ in 0..COUNT {
-        let d = addr.send(TimeReturn).await.unwrap();
-        duration += d.elapsed();
-    }
-
-    let average_ns = duration.as_nanos() / total_count as u128;
-
-    println!("send_await avg time to respond after processing: {}ns", average_ns);
 
     /* Time send.await avg time of processing
      *
@@ -192,7 +165,6 @@ async fn main() {
      * it is ridiculously slower than the `send avg time of processing` benchmark.
      */
 
-    const COUNT2: usize = 1_000_000;
     let addr = Counter { count: 0 }.spawn();
 
     let start = Instant::now();
@@ -206,4 +178,5 @@ async fn main() {
     let duration = Instant::now() - start;
     let average_ns = duration.as_nanos() / total_count as u128; // ~1microsecond on my computer
     println!("send_await avg time of processing: {}ns", average_ns);
+    assert_eq!(total_count, COUNT2, "total_count should equal COUNT2!");
 }
