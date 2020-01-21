@@ -51,7 +51,7 @@ impl<A: Actor> ActorManager<A> {
     pub async fn manage(mut self) {
         self.actor.started(&mut self.ctx);
 
-        while let Some(mut msg) = self.receiver.next().await {
+        while let Some(msg) = self.receiver.next().await {
             msg.handle(&mut self.actor, &mut self.ctx).await;
 
             // Check if the context was stopped

@@ -58,19 +58,13 @@ impl<A: Actor> Address<A> {
         A: Handler<M> + Send,
         M::Result: Send,
     {
-        let t = SyncReturningEnvelope::new(message);
-        let envelope: SyncReturningEnvelope<A, M> = t.0;
-        let rx = t.1;
+        let (envelope, rx) = SyncReturningEnvelope::new(message);
 
-        let res = self
+        let _ = self
             .sender
-            .unbounded_send(Box::new(envelope))
-            .map_err(|_| Disconnected);
+            .unbounded_send(Box::new(envelope));
 
-        match res {
-            Ok(()) => Either::Left(rx.map_err(|_| Disconnected)),
-            Err(e) => Either::Right(futures::future::err(e)),
-        }
+        rx.map_err(|_| Disconnected)
     }
 
     /// Sends a [`Message`](trait.Message.html) that will be handled asynchronously to the actor,
@@ -82,19 +76,13 @@ impl<A: Actor> Address<A> {
         A: AsyncHandler<M> + Send,
         for<'a> A::Responder<'a>: Future<Output = M::Result> + Send,
     {
-        let t = AsyncReturningEnvelope::new(message);
-        let envelope: AsyncReturningEnvelope<A, M> = t.0;
-        let rx = t.1;
+        let (envelope, rx) = AsyncReturningEnvelope::new(message);
 
-        let res = self
+        let _ = self
             .sender
-            .unbounded_send(Box::new(envelope))
-            .map_err(|_| Disconnected);
+            .unbounded_send(Box::new(envelope));
 
-        match res {
-            Ok(()) => Either::Left(rx.map_err(|_| Disconnected)),
-            Err(e) => Either::Right(futures::future::err(e)),
-        }
+        rx.map_err(|_| Disconnected)
     }
 }
 

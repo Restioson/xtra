@@ -19,15 +19,15 @@ pub(crate) trait Envelope: Send {
     // But this is actually about 10% *slower* for `do_send`. I don't know why. Maybe something to
     // do with branch [mis]prediction or compiler optimisation
     fn handle<'a>(
-        &'a mut self,
+        self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> Fut<'a>;
 }
 
 pub(crate) struct SyncReturningEnvelope<A: Actor + Send, M: Message> {
-    message: Option<M>, // Options so that we can opt.take()
-    result_sender: Option<Sender<M::Result>>,
+    message: M,
+    result_sender: Sender<M::Result>,
     phantom: PhantomData<A>,
 }
 
@@ -35,8 +35,8 @@ impl<A: Actor + Send, M: Message> SyncReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> (Self, Receiver<M::Result>) {
         let (tx, rx) = oneshot::channel();
         let envelope = SyncReturningEnvelope {
-            message: Some(message),
-            result_sender: Some(tx),
+            message,
+            result_sender: tx,
             phantom: PhantomData,
         };
 
@@ -44,7 +44,7 @@ impl<A: Actor + Send, M: Message> SyncReturningEnvelope<A, M> {
     }
 }
 
-impl<'a, A, M: Message> Envelope for SyncReturningEnvelope<A, M>
+impl<A, M: Message> Envelope for SyncReturningEnvelope<A, M>
 where
     A: Handler<M> + Send,
     M: Message,
@@ -52,23 +52,23 @@ where
 {
     type Actor = A;
 
-    fn handle(&mut self, act: &mut Self::Actor, ctx: &mut Context<Self::Actor>) -> Fut {
-        let message_result = act.handle(self.message.take().unwrap(), ctx);
+    fn handle<'a>(
+        self: Box<Self>,
+        act: &'a mut Self::Actor,
+        ctx: &'a mut Context<Self::Actor>,
+    ) -> Fut<'a> {
+        let message_result = act.handle(self.message, ctx);
 
         // We don't actually care if the receiver is listening
-        let _ = self
-            .result_sender
-            .take()
-            .expect("Sender must be Some")
-            .send(message_result);
+        let _ = self.result_sender.send(message_result);
 
         Box::pin(future::ready(()))
     }
 }
 
 pub(crate) struct AsyncReturningEnvelope<A: Actor, M: Message> {
-    message: Option<M>, // Options so that we can opt.take()
-    result_sender: Option<Sender<M::Result>>,
+    message: M,
+    result_sender: Sender<M::Result>,
     phantom: PhantomData<A>,
 }
 
@@ -76,8 +76,8 @@ impl<A: Actor, M: Message> AsyncReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> (Self, Receiver<M::Result>) {
         let (tx, rx) = oneshot::channel();
         let envelope = AsyncReturningEnvelope {
-            message: Some(message),
-            result_sender: Some(tx),
+            message,
+            result_sender: tx,
             phantom: PhantomData,
         };
 
@@ -94,53 +94,58 @@ where
     type Actor = A;
 
     fn handle<'a>(
-        &'a mut self,
+        self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> Fut<'a> {
-        Box::pin(act.handle(self.message.take().unwrap(), ctx).map(move |r| {
+        let Self {
+            message,
+            result_sender,
+            ..
+        } = *self;
+        Box::pin(act.handle(message, ctx).map(move |r| {
             // We don't actually care if the receiver is listening
-            let _ = self
-                .result_sender
-                .take()
-                .expect("Sender must be Some")
-                .send(r);
+            let _ = result_sender.send(r);
         }))
     }
 }
 
 pub(crate) struct SyncNonReturningEnvelope<A: Actor, M: Message> {
-    message: Option<M>, // Option so that we can opt.take()
+    message: M,
     phantom: PhantomData<A>,
 }
 
 impl<A: Actor, M: Message> SyncNonReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> Self {
         SyncNonReturningEnvelope {
-            message: Some(message),
+            message,
             phantom: PhantomData,
         }
     }
 }
 
-impl<'a, A: Handler<M> + Send, M: Message> Envelope for SyncNonReturningEnvelope<A, M> {
+impl<A: Handler<M> + Send, M: Message> Envelope for SyncNonReturningEnvelope<A, M> {
     type Actor = A;
 
-    fn handle(&mut self, act: &mut Self::Actor, ctx: &mut Context<Self::Actor>) -> Fut {
-        act.handle(self.message.take().unwrap(), ctx);
+    fn handle<'a>(
+        self: Box<Self>,
+        act: &'a mut Self::Actor,
+        ctx: &'a mut Context<Self::Actor>,
+    ) -> Fut<'a> {
+        act.handle(self.message, ctx);
         Box::pin(future::ready(()))
     }
 }
 
 pub(crate) struct AsyncNonReturningEnvelope<A: Actor, M: Message> {
-    message: Option<M>, // Option so that we can opt.take()
+    message: M,
     phantom: PhantomData<A>,
 }
 
 impl<A: Actor, M: Message> AsyncNonReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> Self {
         AsyncNonReturningEnvelope {
-            message: Some(message),
+            message,
             phantom: PhantomData,
         }
     }
@@ -155,10 +160,10 @@ where
     type Actor = A;
 
     fn handle<'a>(
-        &'a mut self,
+        self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> Fut {
-        Box::pin(act.handle(self.message.take().unwrap(), ctx).map(|_| ()))
+    ) -> Fut<'a> {
+        Box::pin(act.handle(self.message, ctx).map(|_| ()))
     }
 }
