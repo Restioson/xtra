@@ -11,6 +11,8 @@ use futures::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
 
+/// The future returned by a method such as [`AddressExt::send`](trait.AddressExt.html#method.send).
+/// It resolves to `Result<M::Result, Disconnected>`.
 pub struct MessageResponseFuture<M: Message>(Receiver<M::Result>);
 
 impl<M: Message> Future for MessageResponseFuture<M> {
@@ -22,8 +24,14 @@ impl<M: Message> Future for MessageResponseFuture<M> {
     }
 }
 
-/// General trait for any kind of address, be it strong or weak. This trait contains all functions
-/// of the address.
+/// The actor is no longer running and disconnected from the sending address. For why this could
+/// occur, see the [`Actor::stopping`](trait.Actor.html#method.stopping) and
+/// [`Actor::stopped`](trait.Actor.html#method.stopped) methods.
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub struct Disconnected;
+
+/// General trait for any kind of address to an actor that is `Send`, be it strong or weak. This
+/// trait contains all functions of the address.
 #[doc(spotlight)]
 pub trait AddressExt<A: Actor> {
     /// Sends a [`Message`](trait.Message.html) that will be handled synchronously to the actor,
@@ -228,9 +236,3 @@ impl<A: Actor> Clone for WeakAddress<A> {
         }
     }
 }
-
-/// The actor is no longer running and disconnected from the sending address. For why this could
-/// occur, see the [`Actor::stopping`](trait.Actor.html#method.stopping) and
-/// [`Actor::stopped`](trait.Actor.html#method.stopped) methods.
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Disconnected;

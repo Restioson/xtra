@@ -4,9 +4,9 @@ use crate::{Actor, Address};
 /// management loop. Currently, it can be used to stop the actor ([`Context::stop`](struct.Context.html#method.stop)).
 pub struct Context<A: Actor> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
-    /// to calling the `stopping` method on the actor
+    /// for it to call the `stopping` method on the actor
     pub(crate) running: bool,
-    /// The address kept by the context to
+    /// The address kept by the context to allow for the `Context::address` method to work.
     address: Address<A>,
 }
 
