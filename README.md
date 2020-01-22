@@ -2,7 +2,7 @@
 A tiny, fast, and safe actor framework. It is modelled around Actix (copyright and license [here](https://github.com/Restioson/xtra/blob/master/LICENSE-ACTIX)).
 
 ## Features
-- Safe: there is no unsafe code in `xtra` (there is some necessary in `futures`, but that's par for the course).
+- Safe: there is no unsafe code in xtra (there is some necessary in `futures`, but that's par for the course).
 - Small and lightweight: it only depends on `futures` by default.
 - Asynchronous and synchronous message handlers.
 - Simple asynchronous message handling interface which allows `async`/`await` syntax. No more `ActorFuture` and 
@@ -47,6 +47,7 @@ impl Message for Print {
     type Result = ();
 }
 
+// In the real world, the synchronous Handler trait would be better-suited (and is a few ns faster)
 impl AsyncHandler<Print> for Printer {
     type Responder<'a> = impl Future<Output = ()> + 'a;
 
@@ -90,6 +91,6 @@ See the full list of breaking changes by version [here](https://github.com/Resti
 ## To do
 - Thread-local actors that are `!Send`
 - Examples in documentation
+- More internal documentation
 - Actor notifications (sending messages to self) and creating an address from the actor's context
 - Scheduling of repeated-at-interval and time-delayed messages for actors
-

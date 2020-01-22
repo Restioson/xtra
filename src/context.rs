@@ -5,7 +5,6 @@ use crate::{Actor, Address};
 pub struct Context<A: Actor> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
     /// to calling the `stopping` method on the actor
-    // TODO stopping
     pub(crate) running: bool,
     /// The address kept by the context to
     address: Address<A>,
@@ -19,10 +18,10 @@ impl<A: Actor> Context<A> {
         }
     }
 
-    /// Stop the actor as soon as it has finished processing current message. This will mean that it
-    /// will be dropped, and [`Actor::stopped`](trait.Actor.html#method.stopped) will be called.
-    /// Any subsequent attempts to send messages to this actor will return the
-    /// [`Disconnected`](struct.Disconnected.html) error.
+    /// Stop the actor as soon as it has finished processing current message. This will mean that the
+    /// [`Actor::stopping`](trait.Actor.html#method.stopping) method will be called.
+    /// If that returns [`KeepRunning::No`](enum.KeepRunning.html#variant.No), any subsequent attempts
+    /// to send messages to this actor will return the [`Disconnected`](struct.Disconnected.html) error.
     pub fn stop(&mut self) {
         self.running = false;
     }

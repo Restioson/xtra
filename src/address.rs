@@ -88,6 +88,8 @@ impl<A: Actor> Address<A> {
 }
 
 impl<A: Actor> AddressExt<A> for Address<A> {
+    // To read more about what an envelope is and why we use them, look under `envelope.rs`
+
     fn do_send<M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
@@ -227,6 +229,8 @@ impl<A: Actor> Clone for WeakAddress<A> {
     }
 }
 
-/// The actor is no longer running and disconnected
+/// The actor is no longer running and disconnected from the sending address. For why this could
+/// occur, see the [`Actor::stopping`](trait.Actor.html#method.stopping) and
+/// [`Actor::stopped`](trait.Actor.html#method.stopped) methods.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Disconnected;

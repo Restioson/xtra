@@ -11,7 +11,8 @@ pub(crate) enum ManagerMessage<A: Actor> {
     /// [`ActorManager`](struct.ActorManager.html) so that it can check if the actor should be
     /// dropped
     LastAddress,
-    /// A message being sent to the actor
+    /// A message being sent to the actor. To read about envelopes and why we use them, check out
+    /// `envelope.rs`
     Message(Box<dyn Envelope<Actor = A>>),
 }
 
@@ -21,6 +22,10 @@ pub struct ActorManager<A: Actor> {
     receiver: UnboundedReceiver<ManagerMessage<A>>,
     actor: A,
     ctx: Context<A>,
+    /// The reference counter of the actor. This tells us how many external strong addresses
+    /// (and weak addresses, but we don't care about those) exist to the actor. This is obtained
+    /// by doing `Arc::strong_count(ref_count) - 2`, because Context has an address which counts
+    /// towards this, and this ref counter itself in the manager adds to the count too.
     ref_counter: Arc<()>,
 }
 
@@ -31,6 +36,7 @@ impl<A: Actor> Drop for ActorManager<A> {
 }
 
 impl<A: Actor> ActorManager<A> {
+    /// Spawn the manager future onto the tokio or async-std executor
     #[cfg(any(feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     pub(crate) fn spawn(actor: A) -> Address<A>
     where
@@ -47,6 +53,9 @@ impl<A: Actor> ActorManager<A> {
         addr
     }
 
+    /// Return the actor and its address in ready-to-run the actor by returning its address and
+    /// its manager. The `ActorManager::manage` future has to be executed for the actor to actually
+    /// start.
     pub(crate) fn start(actor: A) -> (Address<A>, ActorManager<A>) {
         let (sender, receiver) = mpsc::unbounded();
         let ref_counter = Arc::new(());
@@ -66,10 +75,12 @@ impl<A: Actor> ActorManager<A> {
         (addr, mgr)
     }
 
-    /// Starts the manager mainloop. This will start the actor and allow it to respond to messages.
+    /// Starts the manager loop. This will start the actor and allow it to respond to messages.
     pub async fn manage(mut self) {
         self.actor.started(&mut self.ctx);
 
+        // Idk why anyone would do this, but we have to check that they didn't do ctx.stop() in the
+        // started method, otherwise it would kinda be a bug
         if !self.ctx.running {
             let keep_running = self.actor.stopping(&mut self.ctx);
 
@@ -80,6 +91,7 @@ impl<A: Actor> ActorManager<A> {
             }
         }
 
+        // Listen for any messages for the ActorManager
         while let Some(msg) = self.receiver.next().await {
             match msg {
                 // A new message from an address has arrived, so handle it
