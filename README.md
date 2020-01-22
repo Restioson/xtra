@@ -76,6 +76,17 @@ convenience methods (such as `Actor::spawn`). Which you enable will depend on wh
 their docs to learn more about each). If you have any questions, feel free to [open an issue](https://github.com/Restioson/xtra/issues/new)
 or message me on the [Rust discord](https://bit.ly/rust-community).
 
+## Latest Breaking Changes
+From version 0.1.x to 0.2.0:
+- Removal of the `with-runtime` feature
+    - *How to upgrade:* You probably weren't using this anyway, but rather use `with-tokio-*` or `with-async_std-*`
+    instead.
+- `Address` methods were moved to `AddressExt` to accommodate new `Address` types
+    - *How to upgrade:* add `use xtra::AddressExt` to wherever address methods are used (or, better yet, 
+    `use xtra::prelude::*`).
+    
+See the full list of breaking changes by version [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md)
+
 ## To do
 - Thread-local actors that are `!Send`
 - Examples in documentation

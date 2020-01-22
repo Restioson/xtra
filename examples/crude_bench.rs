@@ -110,7 +110,7 @@ async fn main() {
     let total_count = addr.send(GetCount).await.unwrap();
 
     let duration = Instant::now() - start;
-    let average_ns = duration.as_nanos() / total_count as u128; // ~150ns on my machine
+    let average_ns = duration.as_nanos() / total_count as u128; // <150ns on my machine
     println!("do_send avg time of processing: {}ns", average_ns);
     assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 
@@ -128,7 +128,7 @@ async fn main() {
     let total_count = addr.send(GetCount).await.unwrap();
 
     let duration = Instant::now() - start;
-    let average_ns = duration.as_nanos() / total_count as u128; // ~170ns on my machine
+    let average_ns = duration.as_nanos() / total_count as u128; // <170ns on my machine
     println!("do_send_async avg time of processing: {}ns", average_ns);
     assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 
@@ -146,7 +146,7 @@ async fn main() {
     let total_count = addr.send(GetCount).await.unwrap();
 
     let duration = Instant::now() - start;
-    let average_ns = duration.as_nanos() / total_count as u128; // ~350ns on my machine
+    let average_ns = duration.as_nanos() / total_count as u128; // 350~300ns on my machine
     println!("send avg time of processing: {}ns", average_ns);
     assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 }
