@@ -91,8 +91,6 @@ From version 0.1.x to 0.2.0:
 See the full list of breaking changes by version [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md)
 
 ## To do
-- Thread-local actors that are `!Send`
 - Examples in documentation
-- More internal documentation
 - Actor notifications (sending messages to self) and creating an address from the actor's context
 - Scheduling of repeated-at-interval and time-delayed messages for actors
