@@ -1,18 +1,21 @@
-use crate::Actor;
-use std::marker::PhantomData;
+use crate::{Actor, Address};
 
 /// `Context` is used to signal things to the [`ActorManager`](struct.ActorManager.html)'s
 /// management loop. Currently, it can be used to stop the actor ([`Context::stop`](struct.Context.html#method.stop)).
 pub struct Context<A: Actor> {
+    /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
+    /// to calling the `stopping` method on the actor
+    // TODO stopping
     pub(crate) running: bool,
-    phantom: PhantomData<A>, // TODO(weak_address)
+    /// The address kept by the context to
+    address: Address<A>,
 }
 
 impl<A: Actor> Context<A> {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(address: Address<A>) -> Self {
         Context {
             running: true,
-            phantom: PhantomData,
+            address,
         }
     }
 
@@ -22,5 +25,10 @@ impl<A: Actor> Context<A> {
     /// [`Disconnected`](struct.Disconnected.html) error.
     pub fn stop(&mut self) {
         self.running = false;
+    }
+
+    /// Get an address to the current actor.
+    pub fn address(&self) -> Address<A> {
+        self.address.clone()
     }
 }

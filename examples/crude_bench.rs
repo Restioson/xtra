@@ -2,8 +2,8 @@
 #![feature(asm)]
 
 use futures::Future;
-use std::time::{Instant, Duration};
-use xtra::{Actor, AsyncHandler, Context, Handler, Message};
+use std::time::{Duration, Instant};
+use xtra::prelude::*;
 
 struct Counter {
     count: usize,
@@ -92,12 +92,9 @@ impl Handler<TimeReturn> for ReturnTimer {
     }
 }
 
-
 #[tokio::main]
 async fn main() {
     const COUNT: usize = 50_000_000; // May take a while on some machines
-    const COUNT2: usize = 1_000_000; // Reduce count when tokio future rescheduling is involved to
-                                     // make the benches run faster
 
     /* Time do_send */
 
@@ -117,8 +114,6 @@ async fn main() {
     println!("do_send avg time of processing: {}ns", average_ns);
     assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 
-
-
     /* Time do_send_async */
 
     let addr = Counter { count: 0 }.spawn();
@@ -137,8 +132,6 @@ async fn main() {
     println!("do_send_async avg time of processing: {}ns", average_ns);
     assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 
-
-
     /* Time send avg time of processing */
 
     let addr = Counter { count: 0 }.spawn();
@@ -156,27 +149,4 @@ async fn main() {
     let average_ns = duration.as_nanos() / total_count as u128; // ~350ns on my machine
     println!("send avg time of processing: {}ns", average_ns);
     assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
-
-
-
-    /* Time send.await avg time of processing
-     *
-     * This particular benchmark includes the time it takes for tokio to reschedule the future, so
-     * it is ridiculously slower than the `send avg time of processing` benchmark.
-     */
-
-    let addr = Counter { count: 0 }.spawn();
-
-    let start = Instant::now();
-    for _ in 0..COUNT2 {
-        let _ = addr.send(Increment).await;
-    }
-
-    // awaiting on GetCount will make sure all previous messages are processed first
-    let total_count = addr.send(GetCount).await.unwrap();
-
-    let duration = Instant::now() - start;
-    let average_ns = duration.as_nanos() / total_count as u128; // ~1microsecond on my computer
-    println!("send_await avg time of processing: {}ns", average_ns);
-    assert_eq!(total_count, COUNT2, "total_count should equal COUNT2!");
 }
