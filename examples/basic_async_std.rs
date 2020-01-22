@@ -1,4 +1,5 @@
 use xtra::prelude::*;
+use xtra::{Disconnected, KeepRunning};
 
 struct Printer {
     times: usize,

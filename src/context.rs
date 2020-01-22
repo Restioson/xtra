@@ -27,8 +27,12 @@ impl<A: Actor> Context<A> {
         self.running = false;
     }
 
-    /// Get an address to the current actor.
-    pub fn address(&self) -> Address<A> {
-        self.address.clone()
+    /// Get an address to the current actor if the actor is still running.
+    pub fn address(&self) -> Option<Address<A>> {
+        if self.running {
+            Some(self.address.clone())
+        } else {
+            None
+        }
     }
 }

@@ -66,9 +66,11 @@ pub trait AddressExt<A: Actor> {
 }
 
 /// An `Address` is a reference to an actor through which [`Message`s](trait.Message.html) can be
-/// sent. It can be cloned, and when all `Address`es are dropped, the actor will be stopped. It is
-/// created by calling the [`Actor::start`](trait.Actor.html#method.start) or
-/// [`Actor::spawn`](trait.Actor.html#method.start) methods.
+/// sent. It can be cloned, and when all `Address`es are dropped, the actor will be stopped. Therefore,
+/// any existing `Address`es will inhibit the dropping of an actor. If this is undesirable, then
+/// the [`WeakAddress`](struct.WeakAddress.html) struct should be used instead. This struct is created
+/// by calling the [`Actor::start`](trait.Actor.html#method.start) or  [`Actor::spawn`](trait.Actor.html#method.start)
+/// methods.
 pub struct Address<A: Actor> {
     pub(crate) sender: UnboundedSender<ManagerMessage<A>>,
     pub(crate) ref_counter: Arc<()>,
@@ -147,11 +149,11 @@ impl<A: Actor> Clone for Address<A> {
 
 impl<A: Actor> Drop for Address<A> {
     fn drop(&mut self) {
-        // Context holds one strong address (for `Context::address`), so if there are 2 strong
-        // addresses, this would be the 2nd-only one in existence. Therefore, we should notify the
-        // ActorManager that there are potentially no more strong Addresses and the actor should be
-        // stopped.
-        if Arc::strong_count(&self.ref_counter) == 2 {
+        // Context holds one strong address (for `Context::address`) and so does ActorManager, so if
+        // there are 3 strong addresses, this would be the only external one in existence. Therefore, we
+        // should notify the ActorManager that there are potentially no more strong Addresses and the
+        // actor should be stopped.
+        if Arc::strong_count(&self.ref_counter) == 3 {
             let _ = self.sender.unbounded_send(ManagerMessage::LastAddress);
         }
     }

@@ -3,7 +3,7 @@
 mod envelope;
 
 mod address;
-pub use address::{Address, AddressExt, WeakAddress, Disconnected};
+pub use address::{Address, AddressExt, Disconnected, WeakAddress};
 
 mod context;
 pub use context::Context;
@@ -13,7 +13,7 @@ pub use manager::ActorManager;
 
 pub mod prelude {
     pub use crate::address::{Address, AddressExt};
-    pub use crate::{Actor, Context, Handler, AsyncHandler, Message};
+    pub use crate::{Actor, AsyncHandler, Context, Handler, Message};
 }
 
 use futures::future::Future;
@@ -61,18 +61,20 @@ pub trait Actor: 'static + Sized {
     #[allow(unused_variables)]
     fn started(&mut self, ctx: &mut Context<Self>) {}
 
-    /// Called when the actor is in the process of stopping. This could be used for any cleanup
-    /// before the actor is dropped that requires access to the actor's context. This method can also
-    /// prevent the actor from being dropped by returning [`KeepRunning::Yes`](enum.KeepRunning.html#variant.Yes).
-    /// Be aware that if [`KeepRunning::Yes`](enum.KeepRunning.html#variant.Yes) is returned
+    /// Called when the actor calls the [`Context::stop`](struct.Context.html#method.stop). This method
+    /// can prevent the actor from stopping by returning [`KeepRunning::Yes`](enum.KeepRunning.html#variant.Yes).
     #[allow(unused_variables)]
-    fn stopping(&mut self, reason: StopReason, ctx: &mut Context<Self>) -> KeepRunning {
+    fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
         KeepRunning::No
     }
 
-    /// Called when the actor is in the process of stopping. This should be used for any final
-    /// cleanup before the actor is dropped.
-    fn stopped(&mut self) {}
+    /// Called when the actor is in the process of stopping. This could be because
+    /// [`KeepRunning::No`](enum.KeepRunning.html#variant.No) was returned from the
+    /// [`Actor::stopping`](trait.Actor.html#method.stopping) method, or because there are no more
+    /// strong addresses ([`Address`](struct.Address.html), as opposed to [`WeakAddress`](struct.WeakAddress.html).
+    /// This should be used for any final cleanup before the actor is dropped.
+    #[allow(unused_variables)]
+    fn stopped(&mut self, ctx: &mut Context<Self>) {}
 
     /// Spawns the actor onto the global runtime executor (i.e, `tokio` or `async_std`'s executors).
     #[doc(cfg(feature = "with-tokio-0_2"))]
@@ -94,19 +96,8 @@ pub trait Actor: 'static + Sized {
 }
 
 /// Whether to keep the actor running after it has been put into a stopping state.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum KeepRunning {
     Yes,
     No,
-}
-
-/// The reason that the actor was stopped.
-pub enum StopReason {
-    /// There are no more strong addresses to the actor. Assuming that there are no weak addresses ([`WeakAddress`](struct.WeakAddress.html)),
-    /// this means that the actor may never receive any work to do, since there would be no way to
-    /// send it messages to process. If it is desirable that the actor handles messages indefinitely,
-    /// then strong addresses ([`Address`](struct.Address.html)) should be used.
-    NoMoreAddresses,
-
-    /// [`Context::stop`](struct.Context.html#stop) was called by the actor itself.
-    StopCalled,
 }

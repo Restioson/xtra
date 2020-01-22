@@ -1,12 +1,12 @@
 use crate::envelope::Envelope;
-use crate::{Actor, Address, Context};
+use crate::{Actor, Address, Context, KeepRunning};
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use futures::StreamExt;
 use std::sync::Arc;
 
 /// A message that can be sent by an [`Address`](struct.Address.html) to the [`ActorManager`](struct.ActorManager.html)
 pub(crate) enum ManagerMessage<A: Actor> {
-    /// The address sending this is being dropped and is the only other strong address in existence
+    /// The address sending this is being dropped and is the only external strong address in existence
     /// other than the one held by the [`Context`](struct.Context.html). This notifies the
     /// [`ActorManager`](struct.ActorManager.html) so that it can check if the actor should be
     /// dropped
@@ -26,7 +26,7 @@ pub struct ActorManager<A: Actor> {
 
 impl<A: Actor> Drop for ActorManager<A> {
     fn drop(&mut self) {
-        self.actor.stopped();
+        self.actor.stopped(&mut self.ctx);
     }
 }
 
@@ -70,6 +70,16 @@ impl<A: Actor> ActorManager<A> {
     pub async fn manage(mut self) {
         self.actor.started(&mut self.ctx);
 
+        if !self.ctx.running {
+            let keep_running = self.actor.stopping(&mut self.ctx);
+
+            if keep_running == KeepRunning::Yes {
+                self.ctx.running = true;
+            } else {
+                return; // Ok then
+            }
+        }
+
         while let Some(msg) = self.receiver.next().await {
             match msg {
                 // A new message from an address has arrived, so handle it
@@ -79,15 +89,22 @@ impl<A: Actor> ActorManager<A> {
                     // Check if the context was stopped, and if so return, thereby dropping the
                     // manager and calling `stopped` on the actor
                     if !self.ctx.running {
-                        return;
+                        let keep_running = self.actor.stopping(&mut self.ctx);
+
+                        if keep_running == KeepRunning::Yes {
+                            self.ctx.running = true;
+                        } else {
+                            return;
+                        }
                     }
                 }
                 // An address in the process of being dropped has realised that it could be the last
                 // strong address to the actor, so we need to check if that is still the case, if so
                 // stopping the actor
                 ManagerMessage::LastAddress => {
-                    // strong_count() == 1 because Context holds one strong address too
-                    if Arc::strong_count(&self.ref_counter) == 1 {
+                    // strong_count() == 2 because Context and manager both hold a strong arc to
+                    // the refcount
+                    if Arc::strong_count(&self.ref_counter) == 2 {
                         return;
                     }
                 }
