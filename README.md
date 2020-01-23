@@ -90,5 +90,3 @@ See the full list of breaking changes by version [here](https://github.com/Resti
 
 ## To do
 - Examples in documentation
-- Actor notifications (sending messages to self) and creating an address from the actor's context
-- Scheduling of repeated-at-interval and time-delayed messages for actors

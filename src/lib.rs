@@ -63,6 +63,10 @@ pub trait Actor: 'static + Sized {
 
     /// Called when the actor calls the [`Context::stop`](struct.Context.html#method.stop). This method
     /// can prevent the actor from stopping by returning [`KeepRunning::Yes`](enum.KeepRunning.html#variant.Yes).
+    ///
+    /// **Note:** this method will *only* be called when `Context::stop` is called. Other, general
+    /// destructor behaviour should be encapsulated in the [`Actor::stopped`](trait.Actor.html#method.stopped)
+    /// method.
     #[allow(unused_variables)]
     fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
         KeepRunning::No
