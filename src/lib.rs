@@ -1,4 +1,4 @@
-#![feature(generic_associated_types, doc_cfg, doc_spotlight)]
+#![feature(generic_associated_types, weak_counts, doc_cfg, doc_spotlight)]
 
 mod envelope;
 
@@ -90,7 +90,7 @@ pub trait Actor: 'static + Sized {
     /// Returns the actor's address and manager in a ready-to-start state. To spawn the actor, the
     /// [`ActorManager::manage`](struct.ActorManager.html#method.manage) method must be called and
     /// the future it returns spawned onto an executor.
-    fn start(self) -> (Address<Self>, ActorManager<Self>) {
+    fn create(self) -> (Address<Self>, ActorManager<Self>) {
         ActorManager::start(self)
     }
 }

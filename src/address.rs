@@ -13,14 +13,22 @@ use std::sync::{Arc, Weak};
 
 /// The future returned by a method such as [`AddressExt::send`](trait.AddressExt.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
-pub struct MessageResponseFuture<M: Message>(Receiver<M::Result>);
+pub enum MessageResponseFuture<M: Message> {
+    Disconnected,
+    Result(Receiver<M::Result>),
+}
 
 impl<M: Message> Future for MessageResponseFuture<M> {
     type Output = Result<M::Result, Disconnected>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut futures::task::Context) -> Poll<Self::Output> {
-        let rx = Pin::new(&mut self.get_mut().0);
-        rx.poll(ctx).map(|res| res.map_err(|_| Disconnected))
+        match self.get_mut() {
+            MessageResponseFuture::Disconnected => Poll::Ready(Err(Disconnected)),
+            MessageResponseFuture::Result(rx) => {
+                let rx = Pin::new(rx);
+                rx.poll(ctx).map(|res| res.map_err(|_| Disconnected))
+            },
+        }
     }
 }
 
@@ -93,6 +101,13 @@ impl<A: Actor> Address<A> {
             ref_counter: Arc::downgrade(&self.ref_counter),
         }
     }
+
+    /// Converts this address into a weak address to the actor. Unlike with the strong variety of
+    /// address (this kind), an actor will not be prevented from being dropped if only weak addresses
+    /// exist.
+    pub fn into_weak(self) -> WeakAddress<A> {
+        self.weak()
+    }
 }
 
 impl<A: Actor> AddressExt<A> for Address<A> {
@@ -130,7 +145,7 @@ impl<A: Actor> AddressExt<A> for Address<A> {
         let _ = self
             .sender
             .unbounded_send(ManagerMessage::Message(Box::new(envelope)));
-        MessageResponseFuture(rx)
+        MessageResponseFuture::Result(rx)
     }
 
     fn send_async<M>(&self, message: M) -> MessageResponseFuture<M>
@@ -143,7 +158,7 @@ impl<A: Actor> AddressExt<A> for Address<A> {
         let _ = self
             .sender
             .unbounded_send(ManagerMessage::Message(Box::new(envelope)));
-        MessageResponseFuture(rx)
+        MessageResponseFuture::Result(rx)
     }
 }
 
@@ -164,6 +179,7 @@ impl<A: Actor> Drop for Address<A> {
         // should notify the ActorManager that there are potentially no more strong Addresses and the
         // actor should be stopped.
         if Arc::strong_count(&self.ref_counter) == 3 {
+            println!("sending last addr");
             let _ = self.sender.unbounded_send(ManagerMessage::LastAddress);
         }
     }
@@ -183,10 +199,17 @@ impl<A: Actor> AddressExt<A> for WeakAddress<A> {
         M: Message,
         A: Handler<M> + Send,
     {
-        let envelope = SyncNonReturningEnvelope::new(message);
-        self.sender
-            .unbounded_send(ManagerMessage::Message(Box::new(envelope)))
-            .map_err(|_| Disconnected)
+        // Check that there are external strong addresses. If there are none, the actor is
+        // disconnected and our message would interrupt its dropping. strong_count() == 2 because
+        // Context and manager both hold a strong arc to the refcount
+        if self.ref_counter.strong_count() > 2 {
+            let envelope = SyncNonReturningEnvelope::new(message);
+            self.sender
+                .unbounded_send(ManagerMessage::Message(Box::new(envelope)))
+                .map_err(|_| Disconnected)
+        } else {
+            Err(Disconnected)
+        }
     }
 
     fn do_send_async<M>(&self, message: M) -> Result<(), Disconnected>
@@ -194,10 +217,14 @@ impl<A: Actor> AddressExt<A> for WeakAddress<A> {
         M: Message,
         A: AsyncHandler<M> + Send,
     {
-        let envelope = AsyncNonReturningEnvelope::new(message);
-        self.sender
-            .unbounded_send(ManagerMessage::Message(Box::new(envelope)))
-            .map_err(|_| Disconnected)
+        if self.ref_counter.strong_count() > 2 {
+            let envelope = AsyncNonReturningEnvelope::new(message);
+            self.sender
+                .unbounded_send(ManagerMessage::Message(Box::new(envelope)))
+                .map_err(|_| Disconnected)
+        } else {
+            Err(Disconnected)
+        }
     }
 
     fn send<M>(&self, message: M) -> MessageResponseFuture<M>
@@ -206,11 +233,15 @@ impl<A: Actor> AddressExt<A> for WeakAddress<A> {
         A: Handler<M> + Send,
         M::Result: Send,
     {
-        let (envelope, rx) = SyncReturningEnvelope::new(message);
-        let _ = self
-            .sender
-            .unbounded_send(ManagerMessage::Message(Box::new(envelope)));
-        MessageResponseFuture(rx)
+        if self.ref_counter.strong_count() > 2 {
+            let (envelope, rx) = SyncReturningEnvelope::new(message);
+            let _ = self
+                .sender
+                .unbounded_send(ManagerMessage::Message(Box::new(envelope)));
+            MessageResponseFuture::Result(rx)
+        } else {
+            MessageResponseFuture::Disconnected
+        }
     }
 
     fn send_async<M>(&self, message: M) -> MessageResponseFuture<M>
@@ -219,11 +250,15 @@ impl<A: Actor> AddressExt<A> for WeakAddress<A> {
         A: AsyncHandler<M> + Send,
         for<'a> A::Responder<'a>: Future<Output = M::Result> + Send,
     {
-        let (envelope, rx) = AsyncReturningEnvelope::new(message);
-        let _ = self
-            .sender
-            .unbounded_send(ManagerMessage::Message(Box::new(envelope)));
-        MessageResponseFuture(rx)
+        if self.ref_counter.strong_count() > 2 {
+            let (envelope, rx) = AsyncReturningEnvelope::new(message);
+            let _ = self
+                .sender
+                .unbounded_send(ManagerMessage::Message(Box::new(envelope)));
+            MessageResponseFuture::Result(rx)
+        } else {
+            MessageResponseFuture::Disconnected
+        }
     }
 }
 

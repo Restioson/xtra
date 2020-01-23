@@ -1,8 +1,9 @@
 use crate::envelope::Envelope;
 use crate::{Actor, Address, Context, KeepRunning};
 use futures::channel::mpsc::{self, UnboundedReceiver};
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use std::sync::Arc;
+use futures::task::Poll;
 
 /// A message that can be sent by an [`Address`](struct.Address.html) to the [`ActorManager`](struct.ActorManager.html)
 pub(crate) enum ManagerMessage<A: Actor> {
@@ -14,6 +15,8 @@ pub(crate) enum ManagerMessage<A: Actor> {
     /// A message being sent to the actor. To read about envelopes and why we use them, check out
     /// `envelope.rs`
     Message(Box<dyn Envelope<Actor = A>>),
+    /// A notification queued with `Context::notify_later`
+    LateNotification(Box<dyn Envelope<Actor = A>>),
 }
 
 /// A manager for the actor which handles incoming messages and stores the context. Its managing
@@ -75,20 +78,44 @@ impl<A: Actor> ActorManager<A> {
         (addr, mgr)
     }
 
-    /// Starts the manager loop. This will start the actor and allow it to respond to messages.
-    pub async fn manage(mut self) {
-        self.actor.started(&mut self.ctx);
-
-        // Idk why anyone would do this, but we have to check that they didn't do ctx.stop() in the
-        // started method, otherwise it would kinda be a bug
+    /// Check if the Context is still sent to running, returning whether to return from the manage
+    /// loop or not
+    fn check_runnning(&mut self) -> bool {
+        // Check if the context was stopped, and if so return, thereby dropping the
+        // manager and calling `stopped` on the actor
         if !self.ctx.running {
             let keep_running = self.actor.stopping(&mut self.ctx);
 
             if keep_running == KeepRunning::Yes {
                 self.ctx.running = true;
             } else {
-                return; // Ok then
+                return false;
             }
+        }
+
+        true
+    }
+
+    /// Handle all immediate notifications, returning whether to return from the manage loop or not
+    async fn handle_immediate_notifications(&mut self) -> bool {
+        while let Some(notification) = self.ctx.immediate_notifications.pop() {
+            notification.handle(&mut self.actor, &mut self.ctx).await;
+            if !self.check_runnning() {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Starts the manager loop. This will start the actor and allow it to respond to messages.
+    pub async fn manage(mut self) {
+        self.actor.started(&mut self.ctx);
+
+        // Idk why anyone would do this, but we have to check that they didn't do ctx.stop() in the
+        // started method, otherwise it would kinda be a bug
+        if !self.check_runnning() {
+            return;
         }
 
         // Listen for any messages for the ActorManager
@@ -97,28 +124,53 @@ impl<A: Actor> ActorManager<A> {
                 // A new message from an address has arrived, so handle it
                 ManagerMessage::Message(msg) => {
                     msg.handle(&mut self.actor, &mut self.ctx).await;
-
-                    // Check if the context was stopped, and if so return, thereby dropping the
-                    // manager and calling `stopped` on the actor
-                    if !self.ctx.running {
-                        let keep_running = self.actor.stopping(&mut self.ctx);
-
-                        if keep_running == KeepRunning::Yes {
-                            self.ctx.running = true;
-                        } else {
-                            return;
-                        }
+                    if !self.check_runnning() {
+                        return;
+                    }
+                    if !self.handle_immediate_notifications().await {
+                        return;
+                    }
+                }
+                // A late notification has arrived, so handle it
+                ManagerMessage::LateNotification(notification) => {
+                    notification.handle(&mut self.actor, &mut self.ctx).await;
+                    if !self.check_runnning() {
+                        return;
+                    }
+                    if !self.handle_immediate_notifications().await {
+                        return;
                     }
                 }
                 // An address in the process of being dropped has realised that it could be the last
                 // strong address to the actor, so we need to check if that is still the case, if so
                 // stopping the actor
                 ManagerMessage::LastAddress => {
+                    println!("{}", Arc::strong_count(&self.ref_counter));
                     // strong_count() == 2 because Context and manager both hold a strong arc to
                     // the refcount
                     if Arc::strong_count(&self.ref_counter) == 2 {
-                        return;
+                        self.ctx.stop();
+                        break;
                     }
+                }
+            }
+        }
+
+
+        // Handle any last late notifications that were sent after the last strong address was dropped
+        // We can't .await, because that would mean that we are awaiting forever! So, instead, we do
+        // `next_message` and check if the result is `Ok`. Because we know that any late notifications
+        // sent from the context must be fully send by now due to it being marked as stopped (so
+        // that no other addresses can be created and sending concurrently), we can make the inference
+        // that if `next_message` returns `Err`, there are no more late notifications to handle.
+        while let Ok(Some(msg)) = self.receiver.try_next() {
+            if let ManagerMessage::LateNotification(notification) = msg {
+                notification.handle(&mut self.actor, &mut self.ctx).await;
+                if !self.check_runnning() {
+                    return;
+                }
+                if !self.handle_immediate_notifications().await {
+                    return;
                 }
             }
         }
