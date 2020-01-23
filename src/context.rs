@@ -1,5 +1,5 @@
 use crate::envelope::{AsyncNonReturningEnvelope, Envelope, SyncNonReturningEnvelope};
-use crate::{Actor, Address, AsyncHandler, Handler, Message, WeakAddress};
+use crate::{Actor, Address, AsyncHandler, Handler, Message};
 use crate::manager::ManagerMessage;
 #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
 use {std::time::Duration, crate::AddressExt};

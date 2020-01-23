@@ -10,6 +10,8 @@ use futures::task::Poll;
 use futures::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
+#[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+use futures::{Stream, StreamExt};
 
 /// The future returned by a method such as [`AddressExt::send`](trait.AddressExt.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -79,6 +81,70 @@ pub trait AddressExt<A: Actor> {
         M: Message,
         A: AsyncHandler<M> + Send,
         for<'a> A::Responder<'a>: Future<Output = M::Result> + Send;
+
+    /// Attaches a stream to this actor such that all messages produced by it are forwarded to the
+    /// actor and handled synchronously. This could, for instance, be used to forward messages from a
+    /// socket to the actor (after the messages have been appropriately `map`ped). This is a
+    /// convenience method over a manual async stream forwarding loop.
+    #[doc(cfg(feature = "with-tokio-0_2"))]
+    #[doc(cfg(feature = "with-async_std-1"))]
+    #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+    fn attach_stream<S, M>(self, mut stream: S)
+        where M: Message,
+              A: Handler<M> + Send,
+              S: Stream<Item = M> + Send + Unpin + 'static,
+              Self: Sized + Send + 'static,
+    {
+        #[cfg(feature = "with-tokio-0_2")]
+        tokio::spawn(async move {
+            while let Some(msg) = stream.next().await {
+                if let Err(_) = self.do_send(msg) {
+                    break;
+                }
+            }
+        });
+
+        #[cfg(feature = "with-async_std-1")]
+        async_std::task::spawn(async move {
+            while let Some(msg) = stream.next().await {
+                if let Err(_) = self.do_send(msg) {
+                    break;
+                }
+            }
+        });
+    }
+
+    /// Attaches a stream to this actor such that all messages produced by it are forwarded to the
+    /// actor and handled asynchronously. This could, for instance, be used to forward messages from a
+    /// socket to the actor (after the messages have been appropriately `map`ped). This is a
+    /// convenience method over a manual async stream forwarding loop.
+    #[doc(cfg(feature = "with-tokio-0_2"))]
+    #[doc(cfg(feature = "with-async_std-1"))]
+    #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+    fn attach_stream_async<S, M>(self, mut stream: S)
+        where M: Message,
+              A: AsyncHandler<M> + Send,
+              S: Stream<Item = M> + Send + Unpin + 'static,
+              Self: Sized + Send + 'static,
+    {
+        #[cfg(feature = "with-tokio-0_2")]
+        tokio::spawn(async move {
+            while let Some(msg) = stream.next().await {
+                if let Err(_) = self.do_send_async(msg) {
+                    break;
+                }
+            }
+        });
+
+        #[cfg(feature = "with-async_std-1")]
+        async_std::task::spawn(async move {
+            while let Some(msg) = stream.next().await {
+                if let Err(_) = self.do_send_async(msg) {
+                    break;
+                }
+            }
+        });
+    }
 }
 
 /// An `Address` is a reference to an actor through which [`Message`s](trait.Message.html) can be
