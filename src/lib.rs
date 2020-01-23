@@ -52,7 +52,7 @@ pub trait AsyncHandler<M: Message>: Actor {
 }
 
 /// An actor which can handle [`Message`s](trait.Message.html) one at a time. Actors can only be
-/// communicated with by sending [`Message`s](trait.Message.html) through their [`Address`ess](struct.Address.html).
+/// communicated with by sending [`Message`s](trait.Message.html) through their [`Address`es](struct.Address.html).
 /// They can modify their private state, respond to messages, and spawn other actors. They can also
 /// stop themselves through their [`Context`](struct.Context.html) by calling [`Context::stop`](struct.Context.html#method.stop).
 /// This will result in any attempt to send messages to the actor in future failing.

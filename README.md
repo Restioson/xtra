@@ -9,8 +9,8 @@ A tiny, fast, and safe actor framework. It is modelled around Actix (copyright a
 laborious combinators - asynchronous responders just return `impl Future`, even when borrowing `self`.
 - Does not depend on its own runtime and can be run with any futures executor ([Tokio](https://tokio.rs/) and 
 [async-std](https://async.rs/) have the `Actor::spawn` convenience method implemented out of the box).
-- Quite fast (<170ns time from sending a message to it being processed for sending without waiting for a result on my
-development machine with an AMD Ryzen 3 3200G)
+- Quite fast (under Tokio, <170ns time from sending a message to it being processed for sending without waiting for a 
+result on my development machine with an AMD Ryzen 3 3200G)
 
 ## Caveats
 - The main caveat of this crate is that it uses many unstable features. For example, to get rid of `ActorFuture`,
@@ -85,8 +85,6 @@ From version 0.1.x to 0.2.0:
 - `Address` methods were moved to `AddressExt` to accommodate new `Address` types
     - *How to upgrade:* add `use xtra::AddressExt` to wherever address methods are used (or, better yet, 
     `use xtra::prelude::*`).
-- `Address::send` and `Address::send_async` now return `MessageResponseFuture` instead of the equivalently-typed
-  `impl Future`. I'm not sure if this is breaking, so I'll put it here anyway.
 
 See the full list of breaking changes by version [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md)
 

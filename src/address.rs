@@ -179,7 +179,6 @@ impl<A: Actor> Drop for Address<A> {
         // should notify the ActorManager that there are potentially no more strong Addresses and the
         // actor should be stopped.
         if Arc::strong_count(&self.ref_counter) == 3 {
-            println!("sending last addr");
             let _ = self.sender.unbounded_send(ManagerMessage::LastAddress);
         }
     }

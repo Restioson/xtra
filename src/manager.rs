@@ -1,9 +1,8 @@
 use crate::envelope::Envelope;
 use crate::{Actor, Address, Context, KeepRunning};
 use futures::channel::mpsc::{self, UnboundedReceiver};
-use futures::{StreamExt, TryStreamExt};
+use futures::{StreamExt};
 use std::sync::Arc;
-use futures::task::Poll;
 
 /// A message that can be sent by an [`Address`](struct.Address.html) to the [`ActorManager`](struct.ActorManager.html)
 pub(crate) enum ManagerMessage<A: Actor> {
@@ -145,7 +144,6 @@ impl<A: Actor> ActorManager<A> {
                 // strong address to the actor, so we need to check if that is still the case, if so
                 // stopping the actor
                 ManagerMessage::LastAddress => {
-                    println!("{}", Arc::strong_count(&self.ref_counter));
                     // strong_count() == 2 because Context and manager both hold a strong arc to
                     // the refcount
                     if Arc::strong_count(&self.ref_counter) == 2 {
