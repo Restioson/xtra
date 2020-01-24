@@ -1,4 +1,4 @@
-use crate::envelope::{Envelope, NonReturningEnvelope};
+use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::ManagerMessage;
 use crate::{Actor, Address, Message, Handler};
 #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
@@ -13,7 +13,7 @@ pub struct Context<A: Actor> {
     /// The address kept by the context to allow for the `Context::address` method to work.
     address: Address<A>,
     /// Notifications that must be stored for immediate processing.
-    pub(crate) immediate_notifications: Vec<Box<dyn Envelope<Actor = A>>>,
+    pub(crate) immediate_notifications: Vec<Box<dyn MessageEnvelope<Actor = A>>>,
 }
 
 impl<A: Actor> Context<A> {

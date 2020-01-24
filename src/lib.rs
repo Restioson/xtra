@@ -2,14 +2,18 @@
     generic_associated_types,
     weak_counts,
     specialization,
-    type_alias_impl_trait
+    type_alias_impl_trait,
+    doc_cfg,
+    doc_spotlight,
 )]
-#![feature(doc_cfg, doc_spotlight)]
+
+mod message_channel;
+pub use message_channel::{MessageChannelExt, MessageChannel, WeakMessageChannel};
 
 mod envelope;
 
 mod address;
-pub use address::{Address, AddressExt, Disconnected, WeakAddress};
+pub use address::{AddressExt, Address, WeakAddress, Disconnected};
 
 mod context;
 pub use context::Context;
@@ -19,6 +23,7 @@ pub use manager::ActorManager;
 
 pub mod prelude {
     pub use crate::address::{Address, AddressExt};
+    pub use crate::message_channel::{MessageChannelExt, MessageChannel};
     pub use crate::{Actor, Context, Handler, Message, SyncHandler};
 }
 

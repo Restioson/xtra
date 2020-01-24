@@ -1,6 +1,6 @@
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::ManagerMessage;
-use crate::{Actor, Handler, Message};
+use crate::{Actor, Handler, Message, MessageChannel, WeakMessageChannel};
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot::Receiver;
 use futures::task::{Context, Poll};
@@ -37,8 +37,8 @@ impl<M: Message> Future for MessageResponseFuture<M> {
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Disconnected;
 
-/// General trait for any kind of address to an actor that is `Send`, be it strong or weak. This
-/// trait contains all functions of the address.
+/// General trait for any kind of address to an actor, be it strong or weak. This trait contains all
+/// functions of the address.
 #[doc(spotlight)]
 pub trait AddressExt<A: Actor> {
     /// Returns whether the actor referred to by this address is running and accepting messages.
@@ -103,7 +103,7 @@ pub struct Address<A: Actor> {
     pub(crate) ref_counter: Arc<()>,
 }
 
-impl<A: Actor> Address<A> {
+impl<A: Actor + Send> Address<A> {
     /// Create a weak address to the actor. Unlike with the strong variety of address (this kind),
     /// an actor will not be prevented from being dropped if only weak addresses exist.
     pub fn downgrade(&self) -> WeakAddress<A> {
@@ -118,6 +118,20 @@ impl<A: Actor> Address<A> {
     /// exist.
     pub fn into_downgraded(self) -> WeakAddress<A> {
         self.downgrade()
+    }
+
+    pub fn channel<M: Message>(&self) -> MessageChannel<M>
+        where A: Handler<M>
+    {
+        MessageChannel {
+            address: Box::new(self.clone())
+        }
+    }
+
+    pub fn into_channel<M: Message>(self) -> MessageChannel<M>
+        where A: Handler<M>
+    {
+        self.channel()
     }
 }
 
@@ -220,6 +234,22 @@ impl<A: Actor> Drop for Address<A> {
 pub struct WeakAddress<A: Actor> {
     pub(crate) sender: UnboundedSender<ManagerMessage<A>>,
     ref_counter: Weak<()>,
+}
+
+impl<A: Actor + Send> WeakAddress<A> {
+    pub fn channel<M: Message>(&self) -> WeakMessageChannel<M>
+        where A: Handler<M>
+    {
+        WeakMessageChannel {
+            address: Box::new(self.clone())
+        }
+    }
+
+    pub fn into_channel<M: Message>(self) -> WeakMessageChannel<M>
+        where A: Handler<M>
+    {
+        self.channel()
+    }
 }
 
 impl<A: Actor> AddressExt<A> for WeakAddress<A> {

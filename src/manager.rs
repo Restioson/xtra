@@ -1,4 +1,4 @@
-use crate::envelope::Envelope;
+use crate::envelope::MessageEnvelope;
 use crate::{Actor, Address, Context, KeepRunning};
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use futures::StreamExt;
@@ -13,9 +13,9 @@ pub(crate) enum ManagerMessage<A: Actor> {
     LastAddress,
     /// A message being sent to the actor. To read about envelopes and why we use them, check out
     /// `envelope.rs`
-    Message(Box<dyn Envelope<Actor = A>>),
+    Message(Box<dyn MessageEnvelope<Actor = A>>),
     /// A notification queued with `Context::notify_later`
-    LateNotification(Box<dyn Envelope<Actor = A>>),
+    LateNotification(Box<dyn MessageEnvelope<Actor = A>>),
 }
 
 /// A manager for the actor which handles incoming messages and stores the context. Its managing

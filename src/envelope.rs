@@ -1,19 +1,20 @@
-use crate::{Actor, Context, Handler, Message, SyncHandler};
+use crate::{Actor, Context, Handler, Message, SyncHandler, Disconnected, Address, AddressExt, WeakAddress};
 use futures::channel::oneshot::{self, Receiver, Sender};
-use futures::{future, Future, FutureExt};
+use futures::{future, Future, FutureExt, Sink};
 use std::marker::PhantomData;
 use std::pin::Pin;
+use crate::address::MessageResponseFuture;
 
 /// The type of future returned by `Envelope::handle`
 type Fut<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
-/// An envelope is a struct that encapsulates a message and its return channel sender (if applicable).
+/// A message envelope is a struct that encapsulates a message and its return channel sender (if applicable).
 /// Firstly, this allows us to be generic over returning and non-returning messages (as all use the
 /// same `handle` method and return the same pinned & boxed future), but almost more importantly it
 /// allows us to erase the type of the message when this is in dyn Trait format, thereby being able to
 /// use only one channel to send all the kinds of messages that the actor can receives. This does,
 /// however, induce a bit of allocation (as envelopes have to be boxed).
-pub(crate) trait Envelope: Send {
+pub(crate) trait MessageEnvelope: Send {
     /// The type of actor that this envelope carries a message for
     type Actor: Actor;
 
@@ -66,7 +67,7 @@ impl<A: Actor + Send, M: Message> ReturningEnvelope<A, M> {
     }
 }
 
-impl<M, A> Envelope for ReturningEnvelope<A, M>
+impl<M, A> MessageEnvelope for ReturningEnvelope<A, M>
 where
     A: Handler<M> + Send,
     for<'a> A::Responder<'a>: Future<Output = M::Result>,
@@ -91,7 +92,7 @@ where
     }
 }
 
-impl<A, M> Envelope for ReturningEnvelope<A, M>
+impl<A, M> MessageEnvelope for ReturningEnvelope<A, M>
 where
     A: Handler<M> + SyncHandler<M> + Send,
     M: Message,
@@ -127,7 +128,7 @@ impl<A: Actor, M: Message> NonReturningEnvelope<A, M> {
     }
 }
 
-impl<A, M> Envelope for NonReturningEnvelope<A, M>
+impl<A, M> MessageEnvelope for NonReturningEnvelope<A, M>
 where
     A: Handler<M> + Send,
     for<'a> A::Responder<'a>: Future<Output = M::Result>,
@@ -144,7 +145,7 @@ where
     }
 }
 
-impl<A, M> Envelope for NonReturningEnvelope<A, M>
+impl<A, M> MessageEnvelope for NonReturningEnvelope<A, M>
 where
     A: Handler<M> + SyncHandler<M> + Send,
     M: Message,
@@ -156,5 +157,59 @@ where
     ) -> Fut<'a> {
         SyncHandler::handle(act, self.message, ctx);
         Box::pin(future::ready(()))
+    }
+}
+
+/// Similar to `MessageEnvelope`, but used to erase the type of the actor instead of the channel.
+/// This is used in `message_channel.rs`. All of its methods map to an equivalent method in
+/// `Address` or `AddressExt`
+pub(crate) trait AddressEnvelope<M: Message>: Sink<M, Error = Disconnected> + Unpin {
+    fn is_connected(&self) -> bool;
+    fn do_send(&self, message: M) -> Result<(), Disconnected>;
+    fn send(&self, message: M) -> MessageResponseFuture<M>;
+
+    /// It is an error for this method to be called on an already weak address
+    fn downgrade(&self) -> Box<dyn AddressEnvelope<M>>;
+}
+
+impl<A, M> AddressEnvelope<M> for Address<A>
+    where A: Handler<M> + Send,
+          M: Message
+{
+    fn is_connected(&self) -> bool {
+        AddressExt::is_connected(self)
+    }
+
+    fn do_send(&self, message: M) -> Result<(), Disconnected> {
+        AddressExt::do_send(self, message)
+    }
+
+    fn send(&self, message: M) -> MessageResponseFuture<M> {
+        AddressExt::send(self, message)
+    }
+
+    fn downgrade(&self) -> Box<dyn AddressEnvelope<M>> {
+        Box::new(Address::downgrade(self))
+    }
+}
+
+impl<A, M> AddressEnvelope<M> for WeakAddress<A>
+    where A: Handler<M> + Send,
+          M: Message
+{
+    fn is_connected(&self) -> bool {
+        AddressExt::is_connected(self)
+    }
+
+    fn do_send(&self, message: M) -> Result<(), Disconnected> {
+        AddressExt::do_send(self, message)
+    }
+
+    fn send(&self, message: M) -> MessageResponseFuture<M> {
+        AddressExt::send(self, message)
+    }
+
+    fn downgrade(&self) -> Box<dyn AddressEnvelope<M>> {
+        unimplemented!()
     }
 }
