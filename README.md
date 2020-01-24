@@ -70,6 +70,9 @@ async fn main() {
 }
 ```
 
+For a longer example, check out [Vertex](https://github.com/Restioson/vertex/tree/room-persistence), a chat application
+written with xtra (on the server).
+
 ## Okay, sounds great! How do I use it?
 Check out the [docs](https://docs.rs/xtra) and the [examples](https://github.com/Restioson/xtra/blob/master/examples)
 to get started! Enabling the `with-tokio-0_2` or `with-async_std-1` features are recommended in order to enable some 
