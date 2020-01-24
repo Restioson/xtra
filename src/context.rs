@@ -1,6 +1,6 @@
 use crate::envelope::{Envelope, NonReturningEnvelope};
 use crate::manager::ManagerMessage;
-use crate::{Actor, Address, Message, SyncHandler};
+use crate::{Actor, Address, Message, Handler};
 #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
 use {crate::AddressExt, std::time::Duration};
 
@@ -49,7 +49,7 @@ impl<A: Actor> Context<A> {
     pub fn notify_immediately<M>(&mut self, msg: M)
     where
         M: Message,
-        A: SyncHandler<M> + Send,
+        A: Handler<M> + Send,
     {
         let envelope = Box::new(NonReturningEnvelope::<A, M>::new(msg));
         self.immediate_notifications.push(envelope);
@@ -60,7 +60,7 @@ impl<A: Actor> Context<A> {
     pub fn notify_later<M>(&mut self, msg: M)
     where
         M: Message,
-        A: SyncHandler<M> + Send,
+        A: Handler<M> + Send,
     {
         let envelope = NonReturningEnvelope::<A, M>::new(msg);
         let _ = self
@@ -79,7 +79,7 @@ impl<A: Actor> Context<A> {
     where
         F: Send + 'static + Fn() -> M,
         M: Message,
-        A: SyncHandler<M> + Send,
+        A: Handler<M> + Send,
     {
         let addr = self.address.downgrade();
 
@@ -115,7 +115,7 @@ impl<A: Actor> Context<A> {
     pub fn notify_after<M>(&mut self, duration: Duration, notification: M)
     where
         M: Message,
-        A: SyncHandler<M> + Send,
+        A: Handler<M> + Send,
     {
         let addr = self.address.downgrade();
 
