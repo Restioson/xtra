@@ -1,8 +1,8 @@
-use crate::envelope::{AsyncNonReturningEnvelope, Envelope, SyncNonReturningEnvelope};
-use crate::{Actor, Address, AsyncHandler, Handler, Message};
+use crate::envelope::{Envelope, NonReturningEnvelope};
 use crate::manager::ManagerMessage;
+use crate::{Actor, Address, Message, SyncHandler};
 #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
-use {std::time::Duration, crate::AddressExt};
+use {crate::AddressExt, std::time::Duration};
 
 /// `Context` is used to signal things to the [`ActorManager`](struct.ActorManager.html)'s
 /// management loop. Currently, it can be used to stop the actor ([`Context::stop`](struct.Context.html#method.stop)).
@@ -49,22 +49,9 @@ impl<A: Actor> Context<A> {
     pub fn notify_immediately<M>(&mut self, msg: M)
     where
         M: Message,
-        A: Handler<M> + Send,
+        A: SyncHandler<M> + Send,
     {
-        let envelope = Box::new(SyncNonReturningEnvelope::new(msg));
-        self.immediate_notifications.push(envelope);
-    }
-
-    /// Notify this actor with a message that is handled asynchronously before any other messages
-    /// from the general queue are processed (therefore, immediately). If multiple
-    /// `notify_immediately` messages are queued, they will still be processed in the order that they
-    /// are queued (i.e the immediate priority is only over other messages).
-    pub fn notify_immediately_async<M>(&mut self, msg: M)
-    where
-        M: Message,
-        A: AsyncHandler<M> + Send,
-    {
-        let envelope = Box::new(AsyncNonReturningEnvelope::new(msg));
+        let envelope = Box::new(NonReturningEnvelope::<A, M>::new(msg));
         self.immediate_notifications.push(envelope);
     }
 
@@ -73,22 +60,12 @@ impl<A: Actor> Context<A> {
     pub fn notify_later<M>(&mut self, msg: M)
     where
         M: Message,
-        A: Handler<M> + Send,
+        A: SyncHandler<M> + Send,
     {
-        let envelope = SyncNonReturningEnvelope::new(msg);
-        let _ = self.address.sender
-            .unbounded_send(ManagerMessage::LateNotification(Box::new(envelope)));
-    }
-
-    /// Notify this actor with a message that is handled asynchronously after any other messages
-    /// from the general queue are processed.
-    pub fn notify_later_async<M>(&mut self, msg: M)
-    where
-        M: Message,
-        A: AsyncHandler<M> + Send,
-    {
-        let envelope = AsyncNonReturningEnvelope::new(msg);
-        let _ = self.address.sender
+        let envelope = NonReturningEnvelope::<A, M>::new(msg);
+        let _ = self
+            .address
+            .sender
             .unbounded_send(ManagerMessage::LateNotification(Box::new(envelope)));
     }
 
@@ -102,9 +79,9 @@ impl<A: Actor> Context<A> {
     where
         F: Send + 'static + Fn() -> M,
         M: Message,
-        A: Handler<M> + Send,
+        A: SyncHandler<M> + Send,
     {
-        let addr = self.address.weak();
+        let addr = self.address.downgrade();
 
         #[cfg(feature = "with-tokio-0_2")]
         tokio::spawn(async move {
@@ -131,55 +108,16 @@ impl<A: Actor> Context<A> {
         }
     }
 
-    /// Notify the actor with an asynchronously handled message every interval until it is stopped
-    /// (either directly with [`Context::stop`](struct.Context.html#method.stop), or for a lack of
-    /// strong [`Address`es](struct.Address.html)). This does not take priority over other messages.
-    #[doc(cfg(feature = "with-tokio-0_2"))]
-    #[doc(cfg(feature = "with-async_std-1"))]
-    #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
-    pub fn notify_interval_async<F, M>(&mut self, duration: Duration, constructor: F)
-        where
-            F: Send + 'static + Fn() -> M,
-            M: Message,
-            A: AsyncHandler<M> + Send,
-    {
-        let addr = self.address.weak();
-
-        #[cfg(feature = "with-tokio-0_2")]
-        tokio::spawn(async move {
-            let mut timer = tokio::time::interval(duration);
-            loop {
-                timer.tick().await;
-                if let Err(_) = addr.do_send_async(constructor()) {
-                    break;
-                }
-            }
-        });
-
-        #[cfg(feature = "with-async_std-1")]
-        {
-            use async_std::prelude::FutureExt;
-            async_std::task::spawn(async move {
-                loop {
-                    futures::future::ready(()).delay(duration.clone()).await;
-                    if let Err(_) = addr.do_send_async(constructor()) {
-                        break;
-                    }
-                }
-            });
-        }
-    }
-
     /// Notify the actor with a synchronously handled message after a certain duration has elapsed.
     /// This does not take priority over other messages.
     #[doc(cfg(feature = "with-async_std-1"))]
     #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     pub fn notify_after<M>(&mut self, duration: Duration, notification: M)
-        where
-            M: Message,
-            A: Handler<M> + Send,
+    where
+        M: Message,
+        A: SyncHandler<M> + Send,
     {
-        let addr = self.address.weak();
+        let addr = self.address.downgrade();
 
         #[cfg(feature = "with-tokio-0_2")]
         tokio::spawn(async move {
@@ -193,33 +131,6 @@ impl<A: Actor> Context<A> {
             async_std::task::spawn(async move {
                 futures::future::ready(()).delay(duration.clone()).await;
                 let _ = addr.do_send(notification);
-            });
-        }
-    }
-
-    /// Notify the actor with an asynchronously handled message after a certain duration has elapsed.
-    /// This does not take priority over other messages.
-    #[doc(cfg(feature = "with-async_std-1"))]
-    #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
-    pub fn notify_after_async<M>(&mut self, duration: Duration, notification: M)
-        where
-            M: Message,
-            A: AsyncHandler<M> + Send,
-    {
-        let addr = self.address.weak();
-
-        #[cfg(feature = "with-tokio-0_2")]
-        tokio::spawn(async move {
-            tokio::time::delay_for(duration).await;
-            let _ = addr.do_send_async(notification);
-        });
-
-        #[cfg(feature = "with-async_std-1")]
-        {
-            use async_std::prelude::FutureExt;
-            async_std::task::spawn(async move {
-                futures::future::ready(()).delay(duration.clone()).await;
-                let _ = addr.do_send_async(notification);
             });
         }
     }

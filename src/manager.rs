@@ -1,7 +1,7 @@
 use crate::envelope::Envelope;
 use crate::{Actor, Address, Context, KeepRunning};
 use futures::channel::mpsc::{self, UnboundedReceiver};
-use futures::{StreamExt};
+use futures::StreamExt;
 use std::sync::Arc;
 
 /// A message that can be sent by an [`Address`](struct.Address.html) to the [`ActorManager`](struct.ActorManager.html)
@@ -153,7 +153,6 @@ impl<A: Actor> ActorManager<A> {
                 }
             }
         }
-
 
         // Handle any last late notifications that were sent after the last strong address was dropped
         // We can't .await, because that would mean that we are awaiting forever! So, instead, we do

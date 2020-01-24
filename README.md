@@ -17,7 +17,7 @@ result on my development machine with an AMD Ryzen 3 3200G)
 [Generic Associated Types (GATs)](https://github.com/rust-lang/rfcs/blob/master/text/1598-generic_associated_types.md)
 must be used. This is an incomplete and unstable feature, which [appears to be a way off from stabilisation](https://github.com/rust-lang/rust/issues/44265).
 It also uses [`impl Trait` Type Aliases](https://github.com/rust-lang/rfcs/pull/2515) to avoid `Box`ing the futures
-returned from the `AsyncHandler` trait (the library, however, is not totally alloc-free). This means that it requires
+returned from the `Handler` trait (the library, however, is not totally alloc-free). This means that it requires
 nightly to use, and may be unstable in future as those features evolve. What you get in return for this is a cleaner,
 simpler, and more expressive API. 
 - It is also still very much under development, so it may not be ready for production code.
@@ -47,8 +47,8 @@ impl Message for Print {
     type Result = ();
 }
 
-// In the real world, the synchronous Handler trait would be better-suited (and is a few ns faster)
-impl AsyncHandler<Print> for Printer {
+// In the real world, the synchronous SyncHandler trait would be better-suited (and is a few ns faster)
+impl Handler<Print> for Printer {
     type Responder<'a> = impl Future<Output = ()> + 'a;
 
     fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) -> Self::Responder<'_> {
@@ -63,7 +63,7 @@ impl AsyncHandler<Print> for Printer {
 async fn main() {
     let addr = Printer::new().spawn();
     loop {
-        addr.send_async(Print("hello".to_string()))
+        addr.send(Print("hello".to_string()))
             .await
             .expect("Printer should not be dropped");
     }
@@ -85,6 +85,10 @@ From version 0.1.x to 0.2.0:
 - `Address` methods were moved to `AddressExt` to accommodate new `Address` types
     - *How to upgrade:* add `use xtra::AddressExt` to wherever address methods are used (or, better yet, 
     `use xtra::prelude::*`).
+- All `*_async` methods were removed. Asynchronous and synchronous messages now use the same method for everything.
+    - *How to upgrade:* simply switch from the `[x]_async` method to the `[x]` method.
+- `AsyncHandler` was renamed to `Handler`, and the old `Handler` to `SyncHandler`. Also, a `Handler` and `SyncHandler` implementation can no longer coexist.
+    - *How to upgrade:* rename all `Handler` implementations to `SyncHandler`, and all `AsyncHandler` implementations to `Handler`.
 
 See the full list of breaking changes by version [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md)
 

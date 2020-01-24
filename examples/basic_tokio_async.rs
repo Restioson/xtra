@@ -20,7 +20,7 @@ impl Message for Print {
     type Result = ();
 }
 
-impl AsyncHandler<Print> for Printer {
+impl Handler<Print> for Printer {
     type Responder<'a> = impl Future<Output = ()> + 'a;
 
     fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) -> Self::Responder<'_> {
@@ -35,7 +35,7 @@ impl AsyncHandler<Print> for Printer {
 async fn main() {
     let addr = Printer::new().spawn();
     loop {
-        addr.send_async(Print("hello".to_string()))
+        addr.send(Print("hello".to_string()))
             .await
             .expect("Printer should not be dropped");
     }

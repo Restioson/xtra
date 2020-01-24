@@ -8,5 +8,7 @@
 - `Address` methods were moved to `AddressExt` to accommodate new `Address` types
     - *How to upgrade:* add `use xtra::AddressExt` to wherever address methods are used (or, better yet, 
     `use xtra::prelude::*`)
-- `Address::send` and `Address::send_async` now return `MessageResponseFuture` instead of the equivalently-typed
-  `impl Future`. I'm not sure if this is breaking, so I'll put it here anyway.
+- All `*_async` methods were removed. Asynchronous and synchronous messages now use the same method for everything.
+    - *How to upgrade:* simply switch from the `[x]_async` method to the `[x]` method.
+- `AsyncHandler` was renamed to `Handler`, and the old `Handler` to `SyncHandler`. Also, a `Handler` and `SyncHandler` implementation can no longer coexist.
+    - *How to upgrade:* rename all `Handler` implementations to `SyncHandler`, and all `AsyncHandler` implementations to `Handler`.

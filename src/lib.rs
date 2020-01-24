@@ -1,4 +1,10 @@
-#![feature(generic_associated_types, weak_counts, doc_cfg, doc_spotlight)]
+#![feature(
+    generic_associated_types,
+    weak_counts,
+    specialization,
+    type_alias_impl_trait
+)]
+#![feature(doc_cfg, doc_spotlight)]
 
 mod envelope;
 
@@ -13,30 +19,33 @@ pub use manager::ActorManager;
 
 pub mod prelude {
     pub use crate::address::{Address, AddressExt};
-    pub use crate::{Actor, AsyncHandler, Context, Handler, Message};
+    pub use crate::{Actor, Context, Handler, Message, SyncHandler};
 }
 
-use futures::future::Future;
+use futures::future::{self, Future};
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
 /// one at a time. Only actors implementing the corresponding [`Handler<M>`](trait.Handler.html)
 /// trait can be sent a given message.
 pub trait Message: Send + 'static {
     /// The return type of the message. It will be returned when the [`Address::send`](struct.Address.html#method.send)
-    /// or [`Address::send_async`](struct.Address.html#method.send_async) methods are called.
+    /// method is called.
     type Result: Send;
 }
 
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
-/// synchronously, and the logic to handle the message.
-pub trait Handler<M: Message>: Actor {
+/// synchronously, and the logic to handle the message. A `SyncHandler` implementation automatically
+/// creates a corresponding [`Handler`](trait.Handler.html) impl. This, however, is not just sugar
+/// over the asynchronous  [`Handler`](trait.Handler.html) trait -- it is also slightly faster than
+/// it for handling due to how they get specialized under the hood.
+pub trait SyncHandler<M: Message>: Actor {
     /// Handle a given message, returning its result.
     fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result;
 }
 
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
 /// asynchronously, and the logic to handle the message.
-pub trait AsyncHandler<M: Message>: Actor {
+pub trait Handler<M: Message>: Actor {
     /// The responding future of the asynchronous actor. This should probably look like:
     /// ```ignore
     /// type Responder<'a>: Future<Output = M::Result> + Send
@@ -49,6 +58,15 @@ pub trait AsyncHandler<M: Message>: Actor {
     /// fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::Responder<'_>
     /// ```
     fn handle<'a>(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder<'a>;
+}
+
+impl<M: Message, T: SyncHandler<M>> Handler<M> for T {
+    type Responder<'a> = impl Future<Output = M::Result> + 'a;
+
+    fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::Responder<'_> {
+        let res = SyncHandler::handle(self, message, ctx);
+        future::ready(res)
+    }
 }
 
 /// An actor which can handle [`Message`s](trait.Message.html) one at a time. Actors can only be
