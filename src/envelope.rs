@@ -1,9 +1,11 @@
-use crate::{Actor, Context, Handler, Message, SyncHandler, Disconnected, Address, AddressExt, WeakAddress};
+use crate::address::MessageResponseFuture;
+use crate::{
+    Actor, Address, AddressExt, Context, Disconnected, Handler, Message, SyncHandler, WeakAddress,
+};
 use futures::channel::oneshot::{self, Receiver, Sender};
 use futures::{future, Future, FutureExt, Sink};
 use std::marker::PhantomData;
 use std::pin::Pin;
-use crate::address::MessageResponseFuture;
 
 /// The type of future returned by `Envelope::handle`
 type Fut<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
@@ -173,8 +175,9 @@ pub(crate) trait AddressEnvelope<M: Message>: Sink<M, Error = Disconnected> + Un
 }
 
 impl<A, M> AddressEnvelope<M> for Address<A>
-    where A: Handler<M> + Send,
-          M: Message
+where
+    A: Handler<M> + Send,
+    M: Message,
 {
     fn is_connected(&self) -> bool {
         AddressExt::is_connected(self)
@@ -194,8 +197,9 @@ impl<A, M> AddressEnvelope<M> for Address<A>
 }
 
 impl<A, M> AddressEnvelope<M> for WeakAddress<A>
-    where A: Handler<M> + Send,
-          M: Message
+where
+    A: Handler<M> + Send,
+    M: Message,
 {
     fn is_connected(&self) -> bool {
         AddressExt::is_connected(self)

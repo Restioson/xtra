@@ -4,16 +4,16 @@
     specialization,
     type_alias_impl_trait,
     doc_cfg,
-    doc_spotlight,
+    doc_spotlight
 )]
 
 mod message_channel;
-pub use message_channel::{MessageChannelExt, MessageChannel, WeakMessageChannel};
+pub use message_channel::{MessageChannel, MessageChannelExt, WeakMessageChannel};
 
 mod envelope;
 
 mod address;
-pub use address::{AddressExt, Address, WeakAddress, Disconnected};
+pub use address::{Address, AddressExt, Disconnected, WeakAddress};
 
 mod context;
 pub use context::Context;
@@ -23,7 +23,7 @@ pub use manager::ActorManager;
 
 pub mod prelude {
     pub use crate::address::{Address, AddressExt};
-    pub use crate::message_channel::{MessageChannelExt, MessageChannel};
+    pub use crate::message_channel::{MessageChannel, MessageChannelExt};
     pub use crate::{Actor, Context, Handler, Message, SyncHandler};
 }
 

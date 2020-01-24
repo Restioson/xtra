@@ -1,9 +1,11 @@
-use crate::{Message, Disconnected};
 use crate::address::MessageResponseFuture;
-use futures::{Stream, StreamExt, Sink, FutureExt};
 use crate::envelope::AddressEnvelope;
-use std::pin::Pin;
+use crate::{Disconnected, Message};
 use futures::task::{Context, Poll};
+use futures::Sink;
+#[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+use futures::{FutureExt, Stream, StreamExt};
+use std::pin::Pin;
 
 /// General trait for any kind of channel of messages, be it strong or weak. This trait contains all
 /// functions of the channel.
@@ -36,9 +38,9 @@ pub trait MessageChannelExt<M: Message> {
     #[doc(cfg(feature = "with-async_std-1"))]
     #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     fn attach_stream<S>(self, stream: S)
-        where
-            S: Stream<Item = M> + Send + Unpin + 'static,
-            Self: Sized + Send + Sink<M, Error = Disconnected> + 'static;
+    where
+        S: Stream<Item = M> + Send + Unpin + 'static,
+        Self: Sized + Send + Sink<M, Error = Disconnected> + 'static;
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
@@ -56,7 +58,7 @@ pub struct MessageChannel<M: Message> {
 impl<M: Message> MessageChannel<M> {
     pub fn downgrade(&self) -> WeakMessageChannel<M> {
         WeakMessageChannel {
-            address: self.address.downgrade()
+            address: self.address.downgrade(),
         }
     }
 
@@ -80,9 +82,9 @@ impl<M: Message> MessageChannelExt<M> for MessageChannel<M> {
 
     #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     fn attach_stream<S>(self, stream: S)
-        where
-            S: Stream<Item=M> + Send + Unpin + 'static,
-            Self: Sized + Send + Sink<M, Error=Disconnected> + 'static
+    where
+        S: Stream<Item = M> + Send + Unpin + 'static,
+        Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
         let fut = stream.map(|i| Ok(i)).forward(self).map(|_| ());
 
@@ -140,9 +142,9 @@ impl<M: Message> MessageChannelExt<M> for WeakMessageChannel<M> {
 
     #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     fn attach_stream<S>(self, stream: S)
-        where
-            S: Stream<Item=M> + Send + Unpin + 'static,
-            Self: Sized + Send + Sink<M, Error=Disconnected> + 'static
+    where
+        S: Stream<Item = M> + Send + Unpin + 'static,
+        Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
         let fut = stream.map(|i| Ok(i)).forward(self).map(|_| ());
 

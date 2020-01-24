@@ -138,6 +138,47 @@ async fn main() {
     println!("do_send async avg time of processing: {}ns", average_ns);
     assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 
+    /* Time channel do_send */
+
+    let addr = Counter { count: 0 }.spawn();
+    let chan = addr.channel();
+
+    let start = Instant::now();
+    for _ in 0..COUNT {
+        let _ = chan.do_send(Increment);
+    }
+
+    // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
+    // future tokio reschedule time because of the .await
+    let total_count = addr.send(GetCount).await.unwrap();
+
+    let duration = Instant::now() - start;
+    let average_ns = duration.as_nanos() / total_count as u128; // <170ns on my machine
+    println!("channel do_send avg time of processing: {}ns", average_ns);
+    assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
+
+    /* Time channel do_send async */
+
+    let addr = Counter { count: 0 }.spawn();
+    let chan = addr.channel();
+
+    let start = Instant::now();
+    for _ in 0..COUNT {
+        let _ = chan.do_send(IncrementAsync);
+    }
+
+    // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
+    // future tokio reschedule time because of the .await
+    let total_count = addr.send(GetCount).await.unwrap();
+
+    let duration = Instant::now() - start;
+    let average_ns = duration.as_nanos() / total_count as u128; // <170ns on my machine
+    println!(
+        "channel do_send async avg time of processing: {}ns",
+        average_ns
+    );
+    assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
+
     /* Time send avg time of processing */
 
     let addr = Counter { count: 0 }.spawn();

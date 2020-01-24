@@ -4,9 +4,9 @@ use crate::{Actor, Handler, Message, MessageChannel, WeakMessageChannel};
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot::Receiver;
 use futures::task::{Context, Poll};
-use futures::{Future, FutureExt, Sink};
+use futures::{Future, Sink};
 #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
-use futures::{Stream, StreamExt};
+use futures::{Stream, StreamExt, FutureExt};
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
 
@@ -121,15 +121,17 @@ impl<A: Actor + Send> Address<A> {
     }
 
     pub fn channel<M: Message>(&self) -> MessageChannel<M>
-        where A: Handler<M>
+    where
+        A: Handler<M>,
     {
         MessageChannel {
-            address: Box::new(self.clone())
+            address: Box::new(self.clone()),
         }
     }
 
     pub fn into_channel<M: Message>(self) -> MessageChannel<M>
-        where A: Handler<M>
+    where
+        A: Handler<M>,
     {
         self.channel()
     }
@@ -238,15 +240,17 @@ pub struct WeakAddress<A: Actor> {
 
 impl<A: Actor + Send> WeakAddress<A> {
     pub fn channel<M: Message>(&self) -> WeakMessageChannel<M>
-        where A: Handler<M>
+    where
+        A: Handler<M>,
     {
         WeakMessageChannel {
-            address: Box::new(self.clone())
+            address: Box::new(self.clone()),
         }
     }
 
     pub fn into_channel<M: Message>(self) -> WeakMessageChannel<M>
-        where A: Handler<M>
+    where
+        A: Handler<M>,
     {
         self.channel()
     }
