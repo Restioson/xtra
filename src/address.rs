@@ -75,20 +75,32 @@ pub trait AddressExt<A: Actor> {
     #[doc(cfg(feature = "with-tokio-0_2"))]
     #[doc(cfg(feature = "with-async_std-1"))]
     #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
-    fn attach_stream<S, M>(self, stream: S)
-    where
-        M: Message,
-        A: Handler<M> + Send,
-        S: Stream<Item = M> + Send + Unpin + 'static,
-        Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
+    fn attach_stream<S, M>(self, mut stream: S)
+        where
+            M: Message,
+            A: Handler<M> + Send,
+            S: Stream<Item = M> + Send + Unpin + 'static,
+            Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
-        let fut = stream.map(|i| Ok(i)).forward(self).map(|_| ());
-
         #[cfg(feature = "with-async_std-1")]
-        async_std::task::spawn(fut);
+            async_std::spawn(async move {
+            while let Some(m) = stream.next().await {
+                if let Err(e) = self.do_send(m) {
+                    break;
+                }
+                async_std::task::yield_now().await;
+            }
+        });
 
         #[cfg(feature = "with-tokio-0_2")]
-        tokio::spawn(fut);
+            tokio::spawn(async move {
+            while let Some(m) = stream.next().await {
+                if let Err(e) = self.do_send(m) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        });
     }
 }
 
