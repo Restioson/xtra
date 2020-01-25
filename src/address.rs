@@ -228,11 +228,10 @@ impl<A: Actor> Clone for Address<A> {
 
 impl<A: Actor> Drop for Address<A> {
     fn drop(&mut self) {
-        // Context holds one strong address (for `Context::address`) and so does ActorManager, so if
-        // there are 3 strong addresses, this would be the only external one in existence. Therefore, we
-        // should notify the ActorManager that there are potentially no more strong Addresses and the
-        // actor should be stopped.
-        if Arc::strong_count(&self.ref_counter) == 3 {
+        // ActorManager holds one strong address, so if there are 2 strong addresses, this would be
+        // the only external one in existence. Therefore, we should notify the ActorManager that
+        // there are potentially no more strong Addresses and the actor should be stopped.
+        if Arc::strong_count(&self.ref_counter) == 2 {
             let _ = self.sender.unbounded_send(ManagerMessage::LastAddress);
         }
     }
@@ -244,7 +243,7 @@ impl<A: Actor> Drop for Address<A> {
 /// or [`Address::into_downgraded`](struct.Address.html#method.into_downgraded) methods.
 pub struct WeakAddress<A: Actor> {
     pub(crate) sender: UnboundedSender<ManagerMessage<A>>,
-    ref_counter: Weak<()>,
+    pub(crate) ref_counter: Weak<()>,
 }
 
 impl<A: Actor + Send> WeakAddress<A> {
@@ -278,7 +277,7 @@ impl<A: Actor> AddressExt<A> for WeakAddress<A> {
         // Check that there are external strong addresses. If there are none, the actor is
         // disconnected and our message would interrupt its dropping. strong_count() == 2 because
         // Context and manager both hold a strong arc to the refcount
-        self.ref_counter.strong_count() > 2 && !self.sender.is_closed()
+        self.ref_counter.strong_count() > 1 && !self.sender.is_closed()
     }
 
     fn do_send<M>(&self, message: M) -> Result<(), Disconnected>

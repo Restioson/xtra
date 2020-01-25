@@ -1,5 +1,5 @@
 use crate::envelope::MessageEnvelope;
-use crate::{Actor, Address, Context, KeepRunning};
+use crate::{Actor, Address, Context, KeepRunning, WeakAddress};
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use futures::StreamExt;
 use std::sync::Arc;
@@ -26,8 +26,7 @@ pub struct ActorManager<A: Actor> {
     ctx: Context<A>,
     /// The reference counter of the actor. This tells us how many external strong addresses
     /// (and weak addresses, but we don't care about those) exist to the actor. This is obtained
-    /// by doing `Arc::strong_count(ref_count) - 2`, because Context has an address which counts
-    /// towards this, and this ref counter itself in the manager adds to the count too.
+    /// by doing `Arc::strong_count(ref_count) - 1` because this ref counter itself in the manager adds to the count too.
     ref_counter: Arc<()>,
 }
 
@@ -61,16 +60,21 @@ impl<A: Actor> ActorManager<A> {
     pub(crate) fn start(actor: A) -> (Address<A>, ActorManager<A>) {
         let (sender, receiver) = mpsc::unbounded();
         let ref_counter = Arc::new(());
-        let addr = Address {
-            sender,
-            ref_counter: ref_counter.clone(),
+        let addr = WeakAddress {
+            sender: sender.clone(),
+            ref_counter: Arc::downgrade(&ref_counter),
         };
-        let ctx = Context::new(addr.clone());
+        let ctx = Context::new(addr);
 
         let mgr = ActorManager {
             receiver,
             actor,
             ctx,
+            ref_counter: ref_counter.clone(),
+        };
+
+        let addr = Address {
+            sender,
             ref_counter,
         };
 
@@ -144,9 +148,8 @@ impl<A: Actor> ActorManager<A> {
                 // strong address to the actor, so we need to check if that is still the case, if so
                 // stopping the actor
                 ManagerMessage::LastAddress => {
-                    // strong_count() == 2 because Context and manager both hold a strong arc to
-                    // the refcount
-                    if Arc::strong_count(&self.ref_counter) == 2 {
+                    // strong_count() == 1 manager holds a strong arc to the refcount
+                    if Arc::strong_count(&self.ref_counter) == 1 {
                         self.ctx.stop();
                         break;
                     }

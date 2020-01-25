@@ -1,6 +1,6 @@
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::ManagerMessage;
-use crate::{Actor, Address, Handler, Message};
+use crate::{Actor, Address, Handler, Message, WeakAddress};
 #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
 use {crate::AddressExt, std::time::Duration};
 
@@ -11,13 +11,13 @@ pub struct Context<A: Actor> {
     /// for it to call the `stopping` method on the actor
     pub(crate) running: bool,
     /// The address kept by the context to allow for the `Context::address` method to work.
-    address: Address<A>,
+    address: WeakAddress<A>,
     /// Notifications that must be stored for immediate processing.
     pub(crate) immediate_notifications: Vec<Box<dyn MessageEnvelope<Actor = A>>>,
 }
 
 impl<A: Actor> Context<A> {
-    pub(crate) fn new(address: Address<A>) -> Self {
+    pub(crate) fn new(address: WeakAddress<A>) -> Self {
         Context {
             running: true,
             address,
@@ -36,7 +36,12 @@ impl<A: Actor> Context<A> {
     /// Get an address to the current actor if the actor is still running.
     pub fn address(&self) -> Option<Address<A>> {
         if self.running {
-            Some(self.address.clone())
+            let strong = Address {
+                sender: self.address.sender.clone(),
+                ref_counter: self.address.ref_counter.upgrade().unwrap()
+            };
+
+            Some(strong)
         } else {
             None
         }
@@ -81,7 +86,7 @@ impl<A: Actor> Context<A> {
         M: Message,
         A: Handler<M> + Send,
     {
-        let addr = self.address.downgrade();
+        let addr = self.address.clone();
 
         #[cfg(feature = "with-tokio-0_2")]
         tokio::spawn(async move {
@@ -117,7 +122,7 @@ impl<A: Actor> Context<A> {
         M: Message,
         A: Handler<M> + Send,
     {
-        let addr = self.address.downgrade();
+        let addr = self.address.clone();
 
         #[cfg(feature = "with-tokio-0_2")]
         tokio::spawn(async move {
