@@ -165,7 +165,7 @@ where
 /// Similar to `MessageEnvelope`, but used to erase the type of the actor instead of the channel.
 /// This is used in `message_channel.rs`. All of its methods map to an equivalent method in
 /// `Address` or `AddressExt`
-pub(crate) trait AddressEnvelope<M: Message>: Sink<M, Error = Disconnected> + Unpin {
+pub(crate) trait AddressEnvelope<M: Message>: Sink<M, Error = Disconnected> + Unpin + Send {
     fn is_connected(&self) -> bool;
     fn do_send(&self, message: M) -> Result<(), Disconnected>;
     fn send(&self, message: M) -> MessageResponseFuture<M>;
