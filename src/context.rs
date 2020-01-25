@@ -5,7 +5,7 @@ use crate::{Actor, Address, Handler, Message};
 use {crate::AddressExt, std::time::Duration};
 
 /// `Context` is used to signal things to the [`ActorManager`](struct.ActorManager.html)'s
-/// management loop. Currently, it can be used to stop the actor ([`Context::stop`](struct.Context.html#method.stop)).
+/// management loop or to get the actor's address from inside of a message handler.
 pub struct Context<A: Actor> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
     /// for it to call the `stopping` method on the actor

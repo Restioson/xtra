@@ -63,6 +63,7 @@ impl Handler<Print> for Printer {
 async fn main() {
     let addr = Printer::new().spawn();
     loop {
+        // Likewise, in the real world the `.do_send` method should be used here as it is about 2x as fast
         addr.send(Print("hello".to_string()))
             .await
             .expect("Printer should not be dropped");
