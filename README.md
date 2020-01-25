@@ -96,5 +96,9 @@ From version 0.1.x to 0.2.0:
 
 See the full list of breaking changes by version [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md)
 
+Note: this crate has been yanked a bunch in `0.2`. This is because of a git mess-up on my part, `cargo doc` not playing
+nice with type alias impl trait and GATs, a mistake in the code making `MessageChannel` unusable, and having to mitigate
+[this bug in `futures`](https://github.com/rust-lang/futures-rs/issues/2052). Apologies!
+
 ## To do
 - Examples in documentation
