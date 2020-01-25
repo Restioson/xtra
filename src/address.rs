@@ -83,7 +83,7 @@ pub trait AddressExt<A: Actor> {
             Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
         #[cfg(feature = "with-async_std-1")]
-            async_std::spawn(async move {
+            async_std::task::spawn(async move {
             while let Some(m) = stream.next().await {
                 if let Err(e) = self.do_send(m) {
                     break;
