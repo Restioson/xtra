@@ -1,3 +1,5 @@
+//! Xtra is a tiny, fast, and safe actor system.
+
 #![feature(
     generic_associated_types,
     weak_counts,
@@ -6,6 +8,8 @@
     doc_cfg,
     doc_spotlight
 )]
+
+#![deny(missing_docs, unsafe_code)]
 
 mod message_channel;
 pub use message_channel::{MessageChannel, MessageChannelExt, WeakMessageChannel};
@@ -21,13 +25,14 @@ pub use context::Context;
 mod manager;
 pub use manager::ActorManager;
 
+/// Commonly used types from `xtra`
 pub mod prelude {
     pub use crate::address::{Address, AddressExt};
     pub use crate::message_channel::{MessageChannel, MessageChannelExt};
     pub use crate::{Actor, Context, Handler, Message, SyncHandler};
 }
 
-use futures::future::{self, Future};
+use futures::future::{self, Future, Ready};
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
 /// one at a time. Only actors implementing the corresponding [`Handler<M>`](trait.Handler.html)
@@ -49,7 +54,8 @@ pub trait SyncHandler<M: Message>: Actor {
 }
 
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
-/// asynchronously, and the logic to handle the message.
+/// asynchronously, and the logic to handle the message. If the message should be handled synchronously,
+/// then the [`SyncHandler`](trait.SyncHandler.html) trait should rather be implemented.
 pub trait Handler<M: Message>: Actor {
     /// The responding future of the asynchronous actor. This should probably look like:
     /// ```ignore
@@ -62,14 +68,18 @@ pub trait Handler<M: Message>: Actor {
     /// ```ignore
     /// fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::Responder<'_>
     /// ```
+    /// or:
+    /// ```ignore
+    /// fn handle<'a>(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder<'a>
+    /// ```
     fn handle<'a>(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder<'a>;
 }
 
 impl<M: Message, T: SyncHandler<M>> Handler<M> for T {
-    type Responder<'a> = impl Future<Output = M::Result> + 'a;
+    type Responder<'a> = Ready<M::Result>;
 
     fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::Responder<'_> {
-        let res = SyncHandler::handle(self, message, ctx);
+        let res: M::Result = SyncHandler::handle(self, message, ctx);
         future::ready(res)
     }
 }
@@ -125,6 +135,8 @@ pub trait Actor: 'static + Sized {
 /// Whether to keep the actor running after it has been put into a stopping state.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum KeepRunning {
+    /// Keep the actor running and prevent it from being stopped
     Yes,
+    /// Stop the actor
     No,
 }

@@ -96,7 +96,7 @@ pub trait AddressExt<A: Actor> {
 /// sent. It can be cloned, and when all `Address`es are dropped, the actor will be stopped. Therefore,
 /// any existing `Address`es will inhibit the dropping of an actor. If this is undesirable, then
 /// the [`WeakAddress`](struct.WeakAddress.html) struct should be used instead. This struct is created
-/// by calling the [`Actor::start`](trait.Actor.html#method.start) or  [`Actor::spawn`](trait.Actor.html#method.start)
+/// by calling the [`Actor::create`](trait.Actor.html#method.create) or  [`Actor::spawn`](trait.Actor.html#method.spawn)
 /// methods.
 pub struct Address<A: Actor> {
     pub(crate) sender: UnboundedSender<ManagerMessage<A>>,
@@ -120,6 +120,10 @@ impl<A: Actor + Send> Address<A> {
         self.downgrade()
     }
 
+    /// Gets a message channel to the actor. Like an address, a message channel allows messages
+    /// to be sent to an actor. Unlike an address, rather than allowing you to send any kind of
+    /// message to one kind of actor, a message channel allows you to send one kind of message to
+    /// any kind of actor.
     pub fn channel<M: Message>(&self) -> MessageChannel<M>
     where
         A: Handler<M>,
@@ -129,6 +133,10 @@ impl<A: Actor + Send> Address<A> {
         }
     }
 
+    /// Converts this address into a message channel to the actor. Like an address, a message channel
+    /// allows messages to be sent to an actor. Unlike an address, rather than allowing you to send
+    /// any kind of message to one kind of actor, a message channel allows you to send one kind of
+    /// message to any kind of actor.
     pub fn into_channel<M: Message>(self) -> MessageChannel<M>
     where
         A: Handler<M>,
@@ -232,13 +240,18 @@ impl<A: Actor> Drop for Address<A> {
 
 /// A `WeakAddress` is a reference to an actor through which [`Message`s](trait.Message.html) can be
 /// sent. It can be cloned. Unlike [`Address`](struct.Address.html), a `WeakAddress` will not inhibit
-/// the dropping of an actor. It is created by the [`Address::weak`](struct.Address.html) method.
+/// the dropping of an actor. It is created by the [`Address::downgrade`](struct.Address.html#method.downgrade)
+/// or [`Address::into_downgraded`](struct.Address.html#method.into_downgraded) methods.
 pub struct WeakAddress<A: Actor> {
     pub(crate) sender: UnboundedSender<ManagerMessage<A>>,
     ref_counter: Weak<()>,
 }
 
 impl<A: Actor + Send> WeakAddress<A> {
+    /// Gets a message channel to the actor. Like an address, a message channel allows messages
+    /// to be sent to an actor. Unlike an address, rather than allowing you to send any kind of
+    /// message to one kind of actor, a message channel allows you to send one kind of message to
+    /// any kind of actor.
     pub fn channel<M: Message>(&self) -> WeakMessageChannel<M>
     where
         A: Handler<M>,
@@ -248,6 +261,10 @@ impl<A: Actor + Send> WeakAddress<A> {
         }
     }
 
+    /// Converts this address into a message channel to the actor. Like an address, a message channel
+    /// allows messages to be sent to an actor. Unlike an address, rather than allowing you to send
+    /// any kind of message to one kind of actor, a message channel allows you to send one kind of
+    /// message to any kind of actor.
     pub fn into_channel<M: Message>(self) -> WeakMessageChannel<M>
     where
         A: Handler<M>,

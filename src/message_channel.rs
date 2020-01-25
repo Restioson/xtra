@@ -56,12 +56,17 @@ pub struct MessageChannel<M: Message> {
 }
 
 impl<M: Message> MessageChannel<M> {
+    /// Create a weak message channel to the actor. Unlike with the strong variety of channel (this kind),
+    /// an actor will not be prevented from being dropped if only weak channels exist.
     pub fn downgrade(&self) -> WeakMessageChannel<M> {
         WeakMessageChannel {
             address: self.address.downgrade(),
         }
     }
 
+    /// Converts this message channel into a weak channel to the actor. Unlike with the strong variety of
+    /// channel (this kind), an actor will not be prevented from being dropped if only weak channels
+    /// exist.
     pub fn into_downgraded(self) -> WeakMessageChannel<M> {
         self.downgrade()
     }
@@ -120,9 +125,11 @@ impl<M: Message> Sink<M> for MessageChannel<M> {
 /// any actor that can handle it. It is like [`Address`](struct.Address.html), but associated with
 /// the message type rather than the actor type. Any existing `WeakMessageChannel`s will *not* prevent the
 /// dropping of the actor. If this is undesirable, then the [`MessageChannel`](struct.MessageChannel.html)
-/// struct should be used instead. This struct is created by calling the
-/// [`MessageChannel::downgrade`](struct.MessageChannel.html#method.downgrade) or
-/// [`MessageChannel::into_downgraded`](struct.MessageChannel.html#method.into_downgraded) methods.
+/// struct should be used instead. This struct is created by calling
+/// [`MessageChannel::downgrade`](struct.MessageChannel.html#method.downgrade)
+/// [`MessageChannel::into_downgraded`](struct.MessageChannel.html#method.into_downgraded),
+/// [`WeakAddress::channel`](struct.WeakAddress.html#method.channel),
+/// or [`WeakAddress::into_channel`](struct.WeakAddress.html#method.into_channel).
 pub struct WeakMessageChannel<M: Message> {
     pub(crate) address: Box<dyn AddressEnvelope<M>>,
 }
