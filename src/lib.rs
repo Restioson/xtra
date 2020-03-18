@@ -5,8 +5,7 @@
     weak_counts,
     specialization,
     type_alias_impl_trait,
-    doc_cfg,
-    doc_spotlight
+    doc_cfg
 )]
 
 #![deny(missing_docs, unsafe_code)]
