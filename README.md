@@ -5,8 +5,7 @@ A tiny, fast, and safe actor framework. It is modelled around Actix (copyright a
 - Safe: there is no unsafe code in xtra (there is some necessary in `futures`, but that's par for the course).
 - Small and lightweight: it only depends on `futures` by default.
 - Asynchronous and synchronous message handlers.
-- Simple asynchronous message handling interface which allows `async`/`await` syntax. No more `ActorFuture` and 
-laborious combinators - asynchronous responders just return `impl Future`, even when borrowing `self`.
+- Simple asynchronous message handling interface which allows `async`/`await` syntax even when borrowing `self`.
 - Does not depend on its own runtime and can be run with any futures executor ([Tokio](https://tokio.rs/) and 
 [async-std](https://async.rs/) have the `Actor::spawn` convenience method implemented out of the box).
 - Quite fast (under Tokio, <170ns time from sending a message to it being processed for sending without waiting for a 
@@ -71,7 +70,7 @@ async fn main() {
 }
 ```
 
-For a longer example, check out [Vertex](https://github.com/Restioson/vertex/tree/room-persistence), a chat application
+For a longer example, check out [Vertex](https://github.com/Restioson/vertex/tree/development), a chat application
 written with xtra (on the server).
 
 ## Okay, sounds great! How do I use it?
