@@ -39,7 +39,6 @@ pub struct Disconnected;
 
 /// General trait for any kind of address to an actor, be it strong or weak. This trait contains all
 /// functions of the address.
-#[doc(spotlight)]
 pub trait AddressExt<A: Actor> {
     /// Returns whether the actor referred to by this address is running and accepting messages.
     fn is_connected(&self) -> bool;
