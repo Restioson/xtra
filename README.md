@@ -2,7 +2,7 @@
 A tiny, fast, and safe actor framework. It is modelled around Actix (copyright and license [here](https://github.com/Restioson/xtra/blob/master/LICENSE-ACTIX)).
 
 ## Features
-- Safe: there is no unsafe code in xtra (there is some necessary in `futures`, but that's par for the course).
+- Mostly* safe: there is no unsafe code in xtra (there is some necessary in `futures`, but that's par for the course).
 - Small and lightweight: it only depends on `futures` by default.
 - Asynchronous and synchronous message handlers.
 - Simple asynchronous message handling interface which allows `async`/`await` syntax even when borrowing `self`.
@@ -10,6 +10,9 @@ A tiny, fast, and safe actor framework. It is modelled around Actix (copyright a
 [async-std](https://async.rs/) have the `Actor::spawn` convenience method implemented out of the box).
 - Quite fast (under Tokio, <170ns time from sending a message to it being processed for sending without waiting for a 
 result on my development machine with an AMD Ryzen 3 3200G)
+
+*_Due to use of GATs, **it is possible to create undefined behaviour** by writing `impl<T> ... { type Responder<'a> = T ... }`,
+as this is not typechecked. This is a bug with GATs and will hopefully be fixed!_
 
 ## Caveats
 - The main caveat of this crate is that it uses many unstable features. For example, to get rid of `ActorFuture`,
@@ -19,6 +22,7 @@ It also uses [`impl Trait` Type Aliases](https://github.com/rust-lang/rfcs/pull/
 returned from the `Handler` trait (the library, however, is not totally alloc-free). This means that it requires
 nightly to use, and may be unstable in future as those features evolve. What you get in return for this is a cleaner,
 simpler, and more expressive API. 
+- **Possible to create UB**: see above. However, in most use cases, this will not come up. Still, it is a risk!
 - It is also still very much under development, so it may not be ready for production code.
 
 ## Example
