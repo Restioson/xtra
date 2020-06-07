@@ -38,7 +38,7 @@ impl<A: Actor> Context<A> {
         if self.running {
             let strong = Address {
                 sender: self.address.sender.clone(),
-                ref_counter: self.address.ref_counter.upgrade().unwrap()
+                ref_counter: self.address.ref_counter.upgrade().unwrap(),
             };
 
             Some(strong)
@@ -77,8 +77,8 @@ impl<A: Actor> Context<A> {
     /// Notify the actor with a synchronously handled message every interval until it is stopped
     /// (either directly with [`Context::stop`](struct.Context.html#method.stop), or for a lack of
     /// strong [`Address`es](struct.Address.html)). This does not take priority over other messages.
-    #[doc(cfg(feature = "with-tokio-0_2"))]
-    #[doc(cfg(feature = "with-async_std-1"))]
+    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-async_std-1")))]
     #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     pub fn notify_interval<F, M>(&mut self, duration: Duration, constructor: F)
     where
@@ -115,7 +115,7 @@ impl<A: Actor> Context<A> {
 
     /// Notify the actor with a synchronously handled message after a certain duration has elapsed.
     /// This does not take priority over other messages.
-    #[doc(cfg(feature = "with-async_std-1"))]
+    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-async_std-1")))]
     #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     pub fn notify_after<M>(&mut self, duration: Duration, notification: M)
     where

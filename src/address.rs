@@ -6,7 +6,7 @@ use futures::channel::oneshot::Receiver;
 use futures::task::{Context, Poll};
 use futures::{Future, Sink};
 #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
-use futures::{Stream, StreamExt, FutureExt};
+use futures::{Stream, StreamExt};
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
 
@@ -71,20 +71,20 @@ pub trait AddressExt<A: Actor> {
     /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
     /// method should be called on [`Address`](struct.Address.html). Otherwise, it should be called
     /// on [`WeakAddress`](struct.WeakAddress.html).
-    #[doc(cfg(feature = "with-tokio-0_2"))]
-    #[doc(cfg(feature = "with-async_std-1"))]
+    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-async_std-1")))]
     #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     fn attach_stream<S, M>(self, mut stream: S)
-        where
-            M: Message,
-            A: Handler<M> + Send,
-            S: Stream<Item = M> + Send + Unpin + 'static,
-            Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
+    where
+        M: Message,
+        A: Handler<M> + Send,
+        S: Stream<Item = M> + Send + Unpin + 'static,
+        Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
         #[cfg(feature = "with-async_std-1")]
-            async_std::task::spawn(async move {
+        async_std::task::spawn(async move {
             while let Some(m) = stream.next().await {
-                if let Err(e) = self.do_send(m) {
+                if let Err(_) = self.do_send(m) {
                     break;
                 }
                 async_std::task::yield_now().await;
@@ -92,9 +92,9 @@ pub trait AddressExt<A: Actor> {
         });
 
         #[cfg(feature = "with-tokio-0_2")]
-            tokio::spawn(async move {
+        tokio::spawn(async move {
             while let Some(m) = stream.next().await {
-                if let Err(e) = self.do_send(m) {
+                if let Err(_) = self.do_send(m) {
                     break;
                 }
                 tokio::task::yield_now().await;

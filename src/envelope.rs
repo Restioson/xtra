@@ -1,9 +1,9 @@
 use crate::address::MessageResponseFuture;
-use crate::{
-    Actor, Address, AddressExt, Context, Disconnected, Handler, Message, SyncHandler, WeakAddress,
-};
+use crate::*;
 use futures::channel::oneshot::{self, Receiver, Sender};
-use futures::{future, Future, FutureExt, Sink};
+#[cfg(not(feature = "stable"))]
+use futures::future;
+use futures::{Future, FutureExt, Sink};
 use std::marker::PhantomData;
 use std::pin::Pin;
 
@@ -69,11 +69,31 @@ impl<A: Actor + Send, M: Message> ReturningEnvelope<A, M> {
     }
 }
 
-impl<M, A> MessageEnvelope for ReturningEnvelope<A, M>
+#[cfg(feature = "stable")]
+impl<A: Handler<M> + Send, M: Message> MessageEnvelope for ReturningEnvelope<A, M> {
+    type Actor = A;
+
+    fn handle<'a>(
+        self: Box<Self>,
+        act: &'a mut Self::Actor,
+        ctx: &'a mut Context<Self::Actor>,
+    ) -> Fut<'a> {
+        let Self {
+            message,
+            result_sender,
+            ..
+        } = *self;
+        Box::pin(act.handle(message, ctx).map(move |r| {
+            // We don't actually care if the receiver is listening
+            let _ = result_sender.send(r);
+        }))
+    }
+}
+
+#[cfg(not(feature = "stable"))]
+impl<A: Handler<M> + Send, M: Message> MessageEnvelope for ReturningEnvelope<A, M>
 where
-    A: Handler<M> + Send,
     for<'a> A::Responder<'a>: Future<Output = M::Result>,
-    M: Message,
 {
     type Actor = A;
 
@@ -94,6 +114,7 @@ where
     }
 }
 
+#[cfg(not(feature = "stable"))]
 impl<A, M> MessageEnvelope for ReturningEnvelope<A, M>
 where
     A: Handler<M> + SyncHandler<M> + Send,
@@ -130,11 +151,23 @@ impl<A: Actor, M: Message> NonReturningEnvelope<A, M> {
     }
 }
 
-impl<A, M> MessageEnvelope for NonReturningEnvelope<A, M>
+#[cfg(feature = "stable")]
+impl<A: Handler<M> + Send, M: Message> MessageEnvelope for NonReturningEnvelope<A, M> {
+    type Actor = A;
+
+    fn handle<'a>(
+        self: Box<Self>,
+        act: &'a mut Self::Actor,
+        ctx: &'a mut Context<Self::Actor>,
+    ) -> Fut<'a> {
+        Box::pin(act.handle(self.message, ctx).map(|_| ()))
+    }
+}
+
+#[cfg(not(feature = "stable"))]
+impl<A: Handler<M> + Send, M: Message> MessageEnvelope for NonReturningEnvelope<A, M>
 where
-    A: Handler<M> + Send,
     for<'a> A::Responder<'a>: Future<Output = M::Result>,
-    M: Message,
 {
     type Actor = A;
 
@@ -147,6 +180,7 @@ where
     }
 }
 
+#[cfg(not(feature = "stable"))]
 impl<A, M> MessageEnvelope for NonReturningEnvelope<A, M>
 where
     A: Handler<M> + SyncHandler<M> + Send,
@@ -165,7 +199,9 @@ where
 /// Similar to `MessageEnvelope`, but used to erase the type of the actor instead of the channel.
 /// This is used in `message_channel.rs`. All of its methods map to an equivalent method in
 /// `Address` or `AddressExt`
-pub(crate) trait AddressEnvelope<M: Message>: Sink<M, Error = Disconnected> + Unpin + Send {
+pub(crate) trait AddressEnvelope<M: Message>:
+    Sink<M, Error = Disconnected> + Unpin + Send
+{
     fn is_connected(&self) -> bool;
     fn do_send(&self, message: M) -> Result<(), Disconnected>;
     fn send(&self, message: M) -> MessageResponseFuture<M>;

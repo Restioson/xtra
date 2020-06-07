@@ -1,6 +1,3 @@
-#![feature(generic_associated_types, type_alias_impl_trait)]
-#![feature(asm)]
-
 use futures::Future;
 use std::time::{Duration, Instant};
 use xtra::prelude::*;
@@ -35,12 +32,10 @@ impl SyncHandler<Increment> for Counter {
     }
 }
 
+#[async_trait::async_trait]
 impl Handler<IncrementAsync> for Counter {
-    type Responder<'a> = impl Future<Output = ()> + 'a;
-
-    fn handle(&mut self, _: IncrementAsync, _ctx: &mut Context<Self>) -> Self::Responder<'_> {
+    async fn handle(&mut self, _: IncrementAsync, _ctx: &mut Context<Self>) {
         self.count += 1;
-        async {} // Slower if you put count in here and make it async move (compiler optimisations?)
     }
 }
 

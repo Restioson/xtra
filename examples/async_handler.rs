@@ -1,5 +1,3 @@
-#![feature(type_alias_impl_trait, generic_associated_types)]
-
 use futures::Future;
 use xtra::prelude::*;
 
@@ -20,10 +18,9 @@ impl Message for Print {
     type Result = ();
 }
 
+#[async_trait::async_trait]
 impl Handler<Print> for Printer {
-    type Responder<'a> = impl Future<Output = ()> + 'a;
-
-    fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) -> Self::Responder<'_> {
+    async fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) {
         async move {
             self.times += 1;
             println!("Printing {}. Printed {} times so far.", print.0, self.times);
