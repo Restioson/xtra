@@ -5,13 +5,14 @@ For better ergonomics with xtra, try the [spaad](https://crates.io/crates/spaad)
 
 ## Features
 - Safe: there is no unsafe code in xtra.
-- Small and lightweight: it only depends on `futures` and `async_trait` by default.
+- Tiny: xtra is only ~1.1kloc.
+- Lightweight: it only depends on `futures` and `async_trait` by default.
 - Asynchronous and synchronous message handlers.
 - Simple asynchronous message handling interface which allows `async`/`await` syntax even when borrowing `self`.
 - Does not depend on its own runtime and can be run with any futures executor ([Tokio](https://tokio.rs/) and 
 [async-std](https://async.rs/) have the `Actor::spawn` convenience method implemented out of the box).
-- Quite fast (under Tokio, <170ns time from sending a message to it being processed for sending without waiting for a 
-result on my development machine with an AMD Ryzen 3 3200G)
+- Quite fast. Running on Tokio, <170ns time from sending a message to it being processed for sending without waiting for a 
+result on my development machine with an AMD Ryzen 3 3200G.
 - However, it is also relatively new and less mature than other options.
 
 ## Example
@@ -60,6 +61,8 @@ async fn main() {
 
 For a longer example, check out [Vertex](https://github.com/Restioson/vertex/tree/development), a chat application
 written with xtra nightly (on the server).
+
+Too verbose? Check out the [spaad](https://crates.io/crates/spaad) sister-crate!
 
 ## Okay, sounds great! How do I use it?
 Check out the [docs](https://docs.rs/xtra) and the [examples](https://github.com/Restioson/xtra/blob/master/examples)
