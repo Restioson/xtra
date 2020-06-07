@@ -1,7 +1,7 @@
 #![feature(type_alias_impl_trait, generic_associated_types)]
 
-use futures::Future;
 use xtra::prelude::*;
+use futures::Future;
 
 struct Printer {
     times: usize,
@@ -22,7 +22,6 @@ impl Message for Print {
 
 impl Handler<Print> for Printer {
     type Responder<'a> = impl Future<Output = ()> + 'a;
-
     fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) -> Self::Responder<'_> {
         async move {
             self.times += 1;
@@ -31,7 +30,7 @@ impl Handler<Print> for Printer {
     }
 }
 
-#[async_std::main]
+#[tokio::main]
 async fn main() {
     let addr = Printer::new().spawn();
     loop {

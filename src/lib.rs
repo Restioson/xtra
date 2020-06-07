@@ -1,13 +1,14 @@
 //! Xtra is a tiny, fast, and safe actor system.
 
-#![feature(
-    generic_associated_types,
-    weak_counts,
-    specialization,
-    type_alias_impl_trait,
-    doc_cfg
+#![cfg_attr(
+    not(feature = "stable"),
+    feature(
+        generic_associated_types,
+        specialization,
+        type_alias_impl_trait,
+        doc_cfg,
+    )
 )]
-
 #![deny(missing_docs, unsafe_code)]
 
 mod message_channel;
@@ -31,6 +32,7 @@ pub mod prelude {
     pub use crate::{Actor, Context, Handler, Message, SyncHandler};
 }
 
+#[cfg(not(feature = "stable"))]
 use futures::future::{self, Future, Ready};
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
@@ -55,11 +57,26 @@ pub trait SyncHandler<M: Message>: Actor {
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
 /// asynchronously, and the logic to handle the message. If the message should be handled synchronously,
 /// then the [`SyncHandler`](trait.SyncHandler.html) trait should rather be implemented.
+///
+/// With the `stable` feature enabled, this is an [`async_trait`](https://github.com/dtolnay/async-trait/),
+/// so implementations should be annotated `#[async_trait]`.
+#[cfg_attr(feature = "stable", async_trait::async_trait)]
 pub trait Handler<M: Message>: Actor {
+    /// Handle a given message, returning its result.
+    ///
+    /// With the `stable` feature enabled, this is an [`async_trait`](https://github.com/dtolnay/async-trait/),
+    /// so this method can be declared roughly as such:
+    /// ```ignore
+    /// async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result
+    /// ```
+    #[cfg(feature = "stable")]
+    async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result;
+
     /// The responding future of the asynchronous actor. This should probably look like:
     /// ```ignore
     /// type Responder<'a>: Future<Output = M::Result> + Send
     /// ```
+    #[cfg(not(feature = "stable"))]
     type Responder<'a>: Future<Output = M::Result> + Send;
 
     /// Handle a given message, returning a future eventually resolving to its result. The signature
@@ -71,12 +88,22 @@ pub trait Handler<M: Message>: Actor {
     /// ```ignore
     /// fn handle<'a>(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder<'a>
     /// ```
+    #[cfg(not(feature = "stable"))]
     fn handle<'a>(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder<'a>;
 }
 
-impl<M: Message, T: SyncHandler<M>> Handler<M> for T {
+#[cfg_attr(feature = "stable", async_trait::async_trait)]
+impl<M: Message, T: SyncHandler<M> + Send> Handler<M> for T {
+    #[cfg(feature = "stable")]
+    async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result {
+        let res: M::Result = SyncHandler::handle(self, message, ctx);
+        res
+    }
+
+    #[cfg(not(feature = "stable"))]
     type Responder<'a> = Ready<M::Result>;
 
+    #[cfg(not(feature = "stable"))]
     fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::Responder<'_> {
         let res: M::Result = SyncHandler::handle(self, message, ctx);
         future::ready(res)
@@ -113,8 +140,8 @@ pub trait Actor: 'static + Sized {
     fn stopped(&mut self, ctx: &mut Context<Self>) {}
 
     /// Spawns the actor onto the global runtime executor (i.e, `tokio` or `async_std`'s executors).
-    #[doc(cfg(feature = "with-tokio-0_2"))]
-    #[doc(cfg(feature = "with-async_std-1"))]
+    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-async_std-1")))]
     #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     fn spawn(self) -> Address<Self>
     where

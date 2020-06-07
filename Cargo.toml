@@ -1,6 +1,6 @@
 [package]
 name = "xtra"
-version = "0.2.8"
+version = "0.3.0"
 description = "A tiny actor framework"
 authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
@@ -8,14 +8,18 @@ license = "MPL-2.0"
 repository = "https://github.com/Restioson/xtra"
 documentation = "https://docs.rs/xtra"
 readme = "README.md"
-keywords = ["async", "actor", "futures", "tokio", "async-std"]
+keywords = ["async", "actor", "futures", "xtra", "async-await"]
+categories = ["asynchronous", "concurrency"]
 
 [dependencies]
 futures = { version = "^0.3" }
+async-trait = { version = "^0.1", optional = true }
 tokio = { version = "^0.2", features = ["rt-core", "time"], optional = true }
 async-std = { version = "^1", features = ["unstable"], optional = true }
 
 [features]
+default = ["stable"]
+stable = ["async-trait"]
 with-tokio-0_2 = ["tokio"]
 with-async_std-1 = ["async-std"]
 
@@ -25,21 +29,21 @@ path = "examples/basic_tokio.rs"
 required-features = ["with-tokio-0_2", "tokio/full"]
 
 [[example]]
-name = "basic_tokio_async"
-path = "examples/basic_tokio_async.rs"
-required-features = ["with-tokio-0_2", "tokio/full"]
-
-[[example]]
 name = "basic_async_std"
 path = "examples/basic_async_std.rs"
-required-features = ["with-async_std-1", "async-std/attributes"]
+required-features = ["with-async_std-1", "async-std/attributes", "stable"]
 
 [[example]]
-name = "basic_async_std_async"
-path = "examples/basic_async_std_async.rs"
-required-features = ["with-async_std-1", "async-std/attributes"]
+name = "async_handler"
+path = "examples/async_handler.rs"
+required-features = ["with-tokio-0_2", "tokio/full", "stable"]
+
+[[example]]
+name = "nightly"
+path = "examples/nightly.rs"
+required-features = ["with-tokio-0_2", "tokio/full"]
 
 [[example]]
 name = "crude_bench"
 path = "examples/crude_bench.rs"
-required-features = ["with-tokio-0_2", "tokio/full"]
+required-features = ["with-tokio-0_2", "tokio/full", "stable"]

@@ -1,36 +1,23 @@
 # xtra
 A tiny, fast, and safe actor framework. It is modelled around Actix (copyright and license [here](https://github.com/Restioson/xtra/blob/master/LICENSE-ACTIX)).
 
+For better ergonomics with xtra, try the [spaad](https://crates.io/crates/spaad) crate.
+
 ## Features
-- Mostly* safe: there is no unsafe code in xtra (there is some necessary in `futures`, but that's par for the course).
-- Small and lightweight: it only depends on `futures` by default.
+- Safe: there is no unsafe code in xtra.
+- Small and lightweight: it only depends on `futures` and `async_trait` by default.
 - Asynchronous and synchronous message handlers.
 - Simple asynchronous message handling interface which allows `async`/`await` syntax even when borrowing `self`.
 - Does not depend on its own runtime and can be run with any futures executor ([Tokio](https://tokio.rs/) and 
 [async-std](https://async.rs/) have the `Actor::spawn` convenience method implemented out of the box).
 - Quite fast (under Tokio, <170ns time from sending a message to it being processed for sending without waiting for a 
 result on my development machine with an AMD Ryzen 3 3200G)
-
-*_Due to use of GATs, **it is possible to create undefined behaviour** by writing `impl<T> ... { type Responder<'a> = T ... }`,
-as this is not typechecked. This is a bug with GATs and will hopefully be fixed!_
-
-## Caveats
-- The main caveat of this crate is that it uses many unstable features. For example, to get rid of `ActorFuture`,
-[Generic Associated Types (GATs)](https://github.com/rust-lang/rfcs/blob/master/text/1598-generic_associated_types.md)
-must be used. This is an incomplete and unstable feature, which [appears to be a way off from stabilisation](https://github.com/rust-lang/rust/issues/44265).
-It also uses [`impl Trait` Type Aliases](https://github.com/rust-lang/rfcs/pull/2515) to avoid `Box`ing the futures
-returned from the `Handler` trait (the library, however, is not totally alloc-free). This means that it requires
-nightly to use, and may be unstable in future as those features evolve. What you get in return for this is a cleaner,
-simpler, and more expressive API. 
-- **Possible to create UB**: see above. However, in most use cases, this will not come up. Still, it is a risk!
-- It is also still very much under development, so it may not be ready for production code.
+- However, it is also relatively new and less mature than other options.
 
 ## Example
 ```rust
-#![feature(type_alias_impl_trait, generic_associated_types)]
-
-use futures::Future;
 use xtra::prelude::*;
+use async_trait::async_trait;
 
 struct Printer {
     times: usize,
@@ -50,15 +37,12 @@ impl Message for Print {
     type Result = ();
 }
 
-// In the real world, the synchronous SyncHandler trait would be better-suited (and is a few ns faster)
+// In the real world, the synchronous SyncHandler trait would be better-suited
+#[async_trait]
 impl Handler<Print> for Printer {
-    type Responder<'a> = impl Future<Output = ()> + 'a;
-
-    fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) -> Self::Responder<'_> {
-        async move {
-            self.times += 1; // Look ma, no ActorFuture!
-            println!("Printing {}. Printed {} times so far.", print.0, self.times);
-        }
+    async fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) {
+        self.times += 1; // Look ma, no ActorFuture!
+        println!("Printing {}. Printed {} times so far.", print.0, self.times);
     }
 }
 
@@ -75,7 +59,7 @@ async fn main() {
 ```
 
 For a longer example, check out [Vertex](https://github.com/Restioson/vertex/tree/development), a chat application
-written with xtra (on the server).
+written with xtra nightly (on the server).
 
 ## Okay, sounds great! How do I use it?
 Check out the [docs](https://docs.rs/xtra) and the [examples](https://github.com/Restioson/xtra/blob/master/examples)
@@ -85,17 +69,12 @@ their docs to learn more about each). If you have any questions, feel free to [o
 or message me on the [Rust discord](https://bit.ly/rust-community).
 
 ## Latest Breaking Changes
-From version 0.1.x to 0.2.0:
-- Removal of the `with-runtime` feature
-    - *How to upgrade:* You probably weren't using this anyway, but rather use `with-tokio-*` or `with-async_std-*`
-    instead.
-- `Address` methods were moved to `AddressExt` to accommodate new `Address` types
-    - *How to upgrade:* add `use xtra::AddressExt` to wherever address methods are used (or, better yet, 
-    `use xtra::prelude::*`).
-- All `*_async` methods were removed. Asynchronous and synchronous messages now use the same method for everything.
-    - *How to upgrade:* simply switch from the `[x]_async` method to the `[x]` method.
-- `AsyncHandler` was renamed to `Handler`, and the old `Handler` to `SyncHandler`. Also, a `Handler` and `SyncHandler` implementation can no longer coexist.
-    - *How to upgrade:* rename all `Handler` implementations to `SyncHandler`, and all `AsyncHandler` implementations to `Handler`.
+From version 0.2.x to 0.3.0:
+- The default API of the `Handler` trait has now changed to an `async_trait` so that xtra can compile on stable.
+    - *How to upgrade, alternative 1:* change the implementations by annotating the implementation with `#[async_trait]`,
+      removing `Responder` and making `handle` an `async fn` which directly returns the message's result.
+    - *How to upgrade, alternative 2:* if you want to avoid the extra box, you can disable the default `stable` feature
+      in your `Cargo.toml` to keep the old API.
 
 See the full list of breaking changes by version [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md)
 
