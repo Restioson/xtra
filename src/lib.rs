@@ -61,6 +61,7 @@ pub trait SyncHandler<M: Message>: Actor {
 /// With the `stable` feature enabled, this is an [`async_trait`](https://github.com/dtolnay/async-trait/),
 /// so implementations should be annotated `#[async_trait]`.
 #[cfg_attr(feature = "stable", async_trait::async_trait)]
+#[cfg(feature = "stable")]
 pub trait Handler<M: Message>: Actor {
     /// Handle a given message, returning its result.
     ///
@@ -69,14 +70,18 @@ pub trait Handler<M: Message>: Actor {
     /// ```ignore
     /// async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result
     /// ```
-    #[cfg(feature = "stable")]
     async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result;
+}
 
+/// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
+/// asynchronously, and the logic to handle the message. If the message should be handled synchronously,
+/// then the [`SyncHandler`](trait.SyncHandler.html) trait should rather be implemented.
+#[cfg(not(feature = "stable"))]
+pub trait Handler<M: Message>: Actor {
     /// The responding future of the asynchronous actor. This should probably look like:
     /// ```ignore
     /// type Responder<'a>: Future<Output = M::Result> + Send
     /// ```
-    #[cfg(not(feature = "stable"))]
     type Responder<'a>: Future<Output = M::Result> + Send;
 
     /// Handle a given message, returning a future eventually resolving to its result. The signature
@@ -88,7 +93,6 @@ pub trait Handler<M: Message>: Actor {
     /// ```ignore
     /// fn handle<'a>(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder<'a>
     /// ```
-    #[cfg(not(feature = "stable"))]
     fn handle<'a>(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder<'a>;
 }
 
