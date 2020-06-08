@@ -38,7 +38,11 @@ impl<A: Actor> Drop for ActorManager<A> {
 
 impl<A: Actor> ActorManager<A> {
     /// Spawn the manager future onto the tokio or async-std executor
-    #[cfg(any(feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+    #[cfg(any(
+        feature = "with-tokio-0_2",
+        feature = "with-async_std-1",
+        feature = "with-wasm_bindgen-0_2"
+    ))]
     pub(crate) fn spawn(actor: A) -> Address<A>
     where
         A: Send,
@@ -50,6 +54,9 @@ impl<A: Actor> ActorManager<A> {
 
         #[cfg(feature = "with-async_std-1")]
         async_std::task::spawn(mgr.manage());
+
+        #[cfg(feature = "with-wasm_bindgen-0_2")]
+        wasm_bindgen_futures::spawn_local(mgr.manage());
 
         addr
     }

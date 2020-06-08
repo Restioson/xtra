@@ -146,7 +146,13 @@ pub trait Actor: 'static + Sized {
     /// Spawns the actor onto the global runtime executor (i.e, `tokio` or `async_std`'s executors).
     #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-async_std-1")))]
-    #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg(any(
+        doc,
+        feature = "with-tokio-0_2",
+        feature = "with-async_std-1",
+        feature = "with-wasm_bindgen-0_2",
+    ))]
     fn spawn(self) -> Address<Self>
     where
         Self: Send,
