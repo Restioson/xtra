@@ -16,12 +16,16 @@ futures = { version = "^0.3" }
 async-trait = { version = "^0.1", optional = true }
 tokio = { version = "^0.2", features = ["rt-core", "time"], optional = true }
 async-std = { version = "^1", features = ["unstable"], optional = true }
+wasm-bindgen = { version = "^0.2", optional = true }
+wasm-bindgen-futures = { version = "^0.4", optional = true }
+futures-timer = { version = "3.0.2", optional = true }
 
 [features]
 default = ["stable"]
 stable = ["async-trait"]
 with-tokio-0_2 = ["tokio"]
 with-async_std-1 = ["async-std"]
+with-wasm_bindgen-0_2 = ["wasm-bindgen", "wasm-bindgen-futures", "futures-timer/wasm-bindgen"]
 
 [[example]]
 name = "basic_tokio"
@@ -47,3 +51,8 @@ required-features = ["with-tokio-0_2", "tokio/full"]
 name = "crude_bench"
 path = "examples/crude_bench.rs"
 required-features = ["with-tokio-0_2", "tokio/full", "stable"]
+
+[workspace]
+members = [
+    "examples/basic_wasm_bindgen"
+]

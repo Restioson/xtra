@@ -5,7 +5,12 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot::Receiver;
 use futures::task::{Context, Poll};
 use futures::{Future, Sink};
-#[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+#[cfg(any(
+    doc,
+    feature = "with-tokio-0_2",
+    feature = "with-async_std-1",
+    feature = "with-wasm_bindgen-0_2"
+))]
 use futures::{Stream, StreamExt};
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
@@ -73,7 +78,13 @@ pub trait AddressExt<A: Actor> {
     /// on [`WeakAddress`](struct.WeakAddress.html).
     #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-async_std-1")))]
-    #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg(any(
+        doc,
+        feature = "with-tokio-0_2",
+        feature = "with-async_std-1",
+        feature = "with-wasm_bindgen-0_2"
+    ))]
     fn attach_stream<S, M>(self, mut stream: S)
     where
         M: Message,
@@ -98,6 +109,15 @@ pub trait AddressExt<A: Actor> {
                     break;
                 }
                 tokio::task::yield_now().await;
+            }
+        });
+
+        #[cfg(feature = "with-wasm_bindgen-0_2")]
+        wasm_bindgen_futures::spawn_local(async move {
+            while let Some(m) = stream.next().await {
+                if let Err(_) = self.do_send(m) {
+                    break;
+                }
             }
         });
     }

@@ -3,7 +3,12 @@ use crate::envelope::AddressEnvelope;
 use crate::{Disconnected, Message};
 use futures::task::{Context, Poll};
 use futures::Sink;
-#[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+#[cfg(any(
+    doc,
+    feature = "with-tokio-0_2",
+    feature = "with-async_std-1",
+    feature = "with-wasm_bindgen-0_2",
+))]
 use futures::{FutureExt, Stream, StreamExt};
 use std::pin::Pin;
 
@@ -36,7 +41,13 @@ pub trait MessageChannelExt<M: Message> {
     /// on [`WeakMessageChannel`](struct.WeakMessageChannel.html).
     #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-async_std-1")))]
-    #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg(any(
+        doc,
+        feature = "with-tokio-0_2",
+        feature = "with-async_std-1",
+        feature = "with-wasm_bindgen-0_2"
+    ))]
     fn attach_stream<S>(self, stream: S)
     where
         S: Stream<Item = M> + Send + Unpin + 'static,
@@ -85,7 +96,12 @@ impl<M: Message> MessageChannelExt<M> for MessageChannel<M> {
         self.address.send(message)
     }
 
-    #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+    #[cfg(any(
+        doc,
+        feature = "with-tokio-0_2",
+        feature = "with-async_std-1",
+        feature = "with-wasm_bindgen-0_2"
+    ))]
     fn attach_stream<S>(self, stream: S)
     where
         S: Stream<Item = M> + Send + Unpin + 'static,
@@ -98,6 +114,9 @@ impl<M: Message> MessageChannelExt<M> for MessageChannel<M> {
 
         #[cfg(feature = "with-tokio-0_2")]
         tokio::spawn(fut);
+
+        #[cfg(feature = "with-wasm_bindgen-0_2")]
+        wasm_bindgen_futures::spawn_local(fut);
     }
 }
 
@@ -147,7 +166,12 @@ impl<M: Message> MessageChannelExt<M> for WeakMessageChannel<M> {
         self.address.send(message)
     }
 
-    #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+    #[cfg(any(
+        doc,
+        feature = "with-tokio-0_2",
+        feature = "with-async_std-1",
+        feature = "with-wasm_bindgen-0_2"
+    ))]
     fn attach_stream<S>(self, stream: S)
     where
         S: Stream<Item = M> + Send + Unpin + 'static,
@@ -160,6 +184,9 @@ impl<M: Message> MessageChannelExt<M> for WeakMessageChannel<M> {
 
         #[cfg(feature = "with-tokio-0_2")]
         tokio::spawn(fut);
+
+        #[cfg(feature = "with-wasm_bindgen-0_2")]
+        wasm_bindgen_futures::spawn_local(fut);
     }
 }
 
