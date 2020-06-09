@@ -71,8 +71,8 @@ pub trait AddressExt<A: Actor> {
     /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
     /// method should be called on [`Address`](struct.Address.html). Otherwise, it should be called
     /// on [`WeakAddress`](struct.WeakAddress.html).
-    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-async_std-1")))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-async_std-1")))]
     #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     fn attach_stream<S, M>(self, mut stream: S)
     where

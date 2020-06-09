@@ -34,8 +34,8 @@ pub trait MessageChannelExt<M: Message> {
     /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
     /// method should be called on [`MessageChannel`](struct.MessageChannel.html). Otherwise, it should be called
     /// on [`WeakMessageChannel`](struct.WeakMessageChannel.html).
-    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-async_std-1")))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-async_std-1")))]
     #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
     fn attach_stream<S>(self, stream: S)
     where
