@@ -9,6 +9,7 @@
         doc_cfg,
     )
 )]
+#![cfg_attr(nightly, feature(dog_cfg))]
 #![deny(missing_docs, unsafe_code)]
 
 mod message_channel;
@@ -144,15 +145,17 @@ pub trait Actor: 'static + Sized {
     fn stopped(&mut self, ctx: &mut Context<Self>) {}
 
     /// Spawns the actor onto the global runtime executor (i.e, `tokio` or `async_std`'s executors).
-    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-wasm_bindgen-0_2")))]
     #[cfg(any(
         doc,
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
+        feature = "with-smol-0_1"
     ))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-async_std-1")))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-smol-0_1")))]
     fn spawn(self) -> Address<Self>
     where
         Self: Send,

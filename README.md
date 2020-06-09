@@ -71,6 +71,16 @@ convenience methods (such as `Actor::spawn`). Which you enable will depend on wh
 their docs to learn more about each). If you have any questions, feel free to [open an issue](https://github.com/Restioson/xtra/issues/new)
 or message me on the [Rust discord](https://bit.ly/rust-community).
 
+## Nightly API
+
+There is also a different nightly API, which is **incompatible with the stable api**.. For an example, check out
+`examples/nightly.rs`. To enable it, remove the default features from the dependency in the Cargo.toml. This API uses
+GATs and Type Alias Impl Trait to remove one boxing of a future, but according to my benchmarks, this impact has little 
+effect. Your mileage may vary. GATs are unstable and can cause undefined behaviour in safe rust, and the combination of
+GAT + TAIT can break rustdoc. Therefore, the tradeoff is a (possibly negligible) performance boost for less
+support and instability. Generally, the only situation I would recommend this to be used in is for code written for xtra
+0.2.
+
 ## Latest Breaking Changes
 From version 0.2.x to 0.3.0:
 - The default API of the `Handler` trait has now changed to an `async_trait` so that xtra can compile on stable.
@@ -80,10 +90,6 @@ From version 0.2.x to 0.3.0:
       in your `Cargo.toml` to keep the old API.
 
 See the full list of breaking changes by version [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md)
-
-Note: this crate has been yanked a bunch in `0.2`. This is because of a git mess-up on my part, `cargo doc` not playing
-nice with type alias impl trait and GATs, a mistake in the code making `MessageChannel` unusable, and having to mitigate
-[this bug in `futures`](https://github.com/rust-lang/futures-rs/issues/2052). Apologies!
 
 ## To do
 - Examples in documentation

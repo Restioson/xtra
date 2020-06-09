@@ -8,6 +8,7 @@ use futures::Sink;
     feature = "with-tokio-0_2",
     feature = "with-async_std-1",
     feature = "with-wasm_bindgen-0_2",
+    feature = "with-smol-0_1"
 ))]
 use futures::{FutureExt, Stream, StreamExt};
 use std::pin::Pin;
@@ -39,15 +40,17 @@ pub trait MessageChannelExt<M: Message> {
     /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
     /// method should be called on [`MessageChannel`](struct.MessageChannel.html). Otherwise, it should be called
     /// on [`WeakMessageChannel`](struct.WeakMessageChannel.html).
-    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(not(feature = "stable"), doc(cfg(feature = "with-wasm_bindgen-0_2")))]
     #[cfg(any(
         doc,
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
-        feature = "with-wasm_bindgen-0_2"
+        feature = "with-wasm_bindgen-0_2",
+        feature = "with-smol-0_1"
     ))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-async_std-1")))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-smol-0_1")))]
     fn attach_stream<S>(self, stream: S)
     where
         S: Stream<Item = M> + Send + Unpin + 'static,
@@ -100,7 +103,8 @@ impl<M: Message> MessageChannelExt<M> for MessageChannel<M> {
         doc,
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
-        feature = "with-wasm_bindgen-0_2"
+        feature = "with-wasm_bindgen-0_2",
+        feature = "with-smol-0_1"
     ))]
     fn attach_stream<S>(self, stream: S)
     where
@@ -117,6 +121,9 @@ impl<M: Message> MessageChannelExt<M> for MessageChannel<M> {
 
         #[cfg(feature = "with-wasm_bindgen-0_2")]
         wasm_bindgen_futures::spawn_local(fut);
+
+        #[cfg(feature = "with-smol-0_1")]
+        smol::Task::spawn(fut).detach();
     }
 }
 
@@ -170,7 +177,8 @@ impl<M: Message> MessageChannelExt<M> for WeakMessageChannel<M> {
         doc,
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
-        feature = "with-wasm_bindgen-0_2"
+        feature = "with-wasm_bindgen-0_2",
+        feature = "with-smol-0_1"
     ))]
     fn attach_stream<S>(self, stream: S)
     where
@@ -187,6 +195,9 @@ impl<M: Message> MessageChannelExt<M> for WeakMessageChannel<M> {
 
         #[cfg(feature = "with-wasm_bindgen-0_2")]
         wasm_bindgen_futures::spawn_local(fut);
+
+        #[cfg(feature = "with-smol-0_1")]
+        smol::Task::spawn(fut).detach();
     }
 }
 
