@@ -9,7 +9,8 @@ use futures::{Future, Sink};
     doc,
     feature = "with-tokio-0_2",
     feature = "with-async_std-1",
-    feature = "with-wasm_bindgen-0_2"
+    feature = "with-wasm_bindgen-0_2",
+    feature = "with-smol-0_1"
 ))]
 use futures::{Stream, StreamExt};
 use std::pin::Pin;
@@ -80,11 +81,13 @@ pub trait AddressExt<A: Actor> {
         doc,
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
-        feature = "with-wasm_bindgen-0_2"
+        feature = "with-wasm_bindgen-0_2",
+        feature = "with-smol-0_1"
     ))]
     #[cfg_attr(nightly, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(nightly, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(nightly, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-smol-0_1")))]
     fn attach_stream<S, M>(self, mut stream: S)
     where
         M: Message,
@@ -92,34 +95,25 @@ pub trait AddressExt<A: Actor> {
         S: Stream<Item = M> + Send + Unpin + 'static,
         Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
-        #[cfg(feature = "with-async_std-1")]
-        async_std::task::spawn(async move {
+        let fut = async move {
             while let Some(m) = stream.next().await {
                 if let Err(_) = self.do_send(m) {
                     break;
                 }
-                async_std::task::yield_now().await;
             }
-        });
+        };
+
+        #[cfg(feature = "with-async_std-1")]
+        async_std::task::spawn(fut);
 
         #[cfg(feature = "with-tokio-0_2")]
-        tokio::spawn(async move {
-            while let Some(m) = stream.next().await {
-                if let Err(_) = self.do_send(m) {
-                    break;
-                }
-                tokio::task::yield_now().await;
-            }
-        });
+        tokio::spawn(fut);
 
         #[cfg(feature = "with-wasm_bindgen-0_2")]
-        wasm_bindgen_futures::spawn_local(async move {
-            while let Some(m) = stream.next().await {
-                if let Err(_) = self.do_send(m) {
-                    break;
-                }
-            }
-        });
+        wasm_bindgen_futures::spawn_local(fut);
+
+        #[cfg(feature = "with-smol-0_1")]
+        smol::Task::spawn(fut).detach();
     }
 }
 

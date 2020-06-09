@@ -150,10 +150,12 @@ pub trait Actor: 'static + Sized {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
+        feature = "with-smol-0_1"
     ))]
     #[cfg_attr(nightly, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(nightly, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(nightly, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-smol-0_1")))]
     fn spawn(self) -> Address<Self>
     where
         Self: Send,

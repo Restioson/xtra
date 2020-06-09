@@ -1,0 +1,1 @@
+wasm-pack test --headless --firefox
