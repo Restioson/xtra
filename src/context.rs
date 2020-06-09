@@ -1,7 +1,12 @@
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::ManagerMessage;
 use crate::{Actor, Address, Handler, Message, WeakAddress};
-#[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+#[cfg(any(
+    doc,
+    feature = "with-tokio-0_2",
+    feature = "with-async_std-1",
+    feature = "with-wasm_bindgen-0_2"
+))]
 use {crate::AddressExt, std::time::Duration};
 
 /// `Context` is used to signal things to the [`ActorManager`](struct.ActorManager.html)'s
@@ -77,9 +82,15 @@ impl<A: Actor> Context<A> {
     /// Notify the actor with a synchronously handled message every interval until it is stopped
     /// (either directly with [`Context::stop`](struct.Context.html#method.stop), or for a lack of
     /// strong [`Address`es](struct.Address.html)). This does not take priority over other messages.
+    #[cfg(any(
+        doc,
+        feature = "with-tokio-0_2",
+        feature = "with-async_std-1",
+        feature = "with-wasm_bindgen-0_2"
+    ))]
     #[cfg_attr(nightly, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(nightly, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
     pub fn notify_interval<F, M>(&mut self, duration: Duration, constructor: F)
     where
         F: Send + 'static + Fn() -> M,
@@ -111,13 +122,32 @@ impl<A: Actor> Context<A> {
                 }
             });
         }
+
+        #[cfg(feature = "with-wasm_bindgen-0_2")]
+        {
+            use futures_timer::Delay;
+            wasm_bindgen_futures::spawn_local(async move {
+                loop {
+                    Delay::new(duration.clone()).await;
+                    if let Err(_) = addr.do_send(constructor()) {
+                        break;
+                    }
+                }
+            })
+        }
     }
 
     /// Notify the actor with a synchronously handled message after a certain duration has elapsed.
-    /// This does not take priocrity over other messages.
+    /// This does not take priority over other messages.
+    #[cfg(any(
+        doc,
+        feature = "with-tokio-0_2",
+        feature = "with-async_std-1",
+        feature = "with-wasm_bindgen-0_2"
+    ))]
     #[cfg_attr(nightly, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(nightly, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg(any(doc, feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+    #[cfg_attr(nightly, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
     pub fn notify_after<M>(&mut self, duration: Duration, notification: M)
     where
         M: Message,
@@ -138,6 +168,15 @@ impl<A: Actor> Context<A> {
                 futures::future::ready(()).delay(duration.clone()).await;
                 let _ = addr.do_send(notification);
             });
+        }
+
+        #[cfg(feature = "with-wasm_bindgen-0_2")]
+        {
+            use futures_timer::Delay;
+            wasm_bindgen_futures::spawn_local(async move {
+                Delay::new(duration.clone()).await;
+                let _ = addr.do_send(notification);
+            })
         }
     }
 }
