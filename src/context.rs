@@ -1,6 +1,7 @@
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::ManagerMessage;
 use crate::{Actor, Address, Handler, Message, WeakAddress};
+use futures::channel::mpsc::UnboundedReceiver;
 #[cfg(any(
     doc,
     feature = "with-tokio-0_2",
@@ -20,14 +21,19 @@ pub struct Context<A: Actor> {
     address: WeakAddress<A>,
     /// Notifications that must be stored for immediate processing.
     pub(crate) immediate_notifications: Vec<Box<dyn MessageEnvelope<Actor = A>>>,
+    pub(crate) receiver: UnboundedReceiver<ManagerMessage<A>>,
 }
 
 impl<A: Actor> Context<A> {
-    pub(crate) fn new(address: WeakAddress<A>) -> Self {
+    pub(crate) fn new(
+        address: WeakAddress<A>,
+        receiver: UnboundedReceiver<ManagerMessage<A>>,
+    ) -> Self {
         Context {
             running: true,
             address,
             immediate_notifications: Vec::with_capacity(1),
+            receiver,
         }
     }
 

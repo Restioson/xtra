@@ -21,7 +21,6 @@ pub(crate) enum ManagerMessage<A: Actor> {
 /// A manager for the actor which handles incoming messages and stores the context. Its managing
 /// loop can be started with [`ActorManager::manage`](struct.ActorManager.html#method.manage).
 pub struct ActorManager<A: Actor> {
-    receiver: UnboundedReceiver<ManagerMessage<A>>,
     actor: A,
     ctx: Context<A>,
     /// The reference counter of the actor. This tells us how many external strong addresses
@@ -79,10 +78,9 @@ impl<A: Actor> ActorManager<A> {
             sender: sender.clone(),
             ref_counter: Arc::downgrade(&ref_counter),
         };
-        let ctx = Context::new(addr);
+        let ctx = Context::new(addr, receiver);
 
         let mgr = ActorManager {
-            receiver,
             actor,
             ctx,
             ref_counter: ref_counter.clone(),
@@ -137,7 +135,7 @@ impl<A: Actor> ActorManager<A> {
         }
 
         // Listen for any messages for the ActorManager
-        while let Some(msg) = self.receiver.next().await {
+        while let Some(msg) = self.ctx.receiver.next().await {
             match msg {
                 // A new message from an address has arrived, so handle it
                 ManagerMessage::Message(msg) => {
@@ -178,7 +176,7 @@ impl<A: Actor> ActorManager<A> {
         // sent from the context must be fully send by now due to it being marked as stopped (so
         // that no other addresses can be created and sending concurrently), we can make the inference
         // that if `next_message` returns `Err`, there are no more late notifications to handle.
-        while let Ok(Some(msg)) = self.receiver.try_next() {
+        while let Ok(Some(msg)) = self.ctx.receiver.try_next() {
             if let ManagerMessage::LateNotification(notification) = msg {
                 notification.handle(&mut self.actor, &mut self.ctx).await;
                 if !self.check_runnning() {
