@@ -135,7 +135,7 @@ impl<A: Actor> Context<A> {
         ContinueManageLoop::Yes
     }
 
-    /// Yields to the manager to handle one message
+    /// Yields to the manager to handle one message.
     pub async fn yield_once(&mut self, act: &mut A) {
         if let Some(keep_running) = self.handle_immediate_notification(act).await {
             if !keep_running {
