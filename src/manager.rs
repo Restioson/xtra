@@ -98,7 +98,7 @@ impl<A: Actor> ActorManager<A> {
 
     /// Check if the Context is still sent to running, returning whether to return from the manage
     /// loop or not
-    fn check_runnning(&mut self) -> bool {
+    fn check_running(&mut self) -> bool {
         // Check if the context was stopped, and if so return, thereby dropping the
         // manager and calling `stopped` on the actor
         if !self.ctx.running {
@@ -118,7 +118,7 @@ impl<A: Actor> ActorManager<A> {
     async fn handle_immediate_notifications(&mut self) -> bool {
         while let Some(notification) = self.ctx.immediate_notifications.pop() {
             notification.handle(&mut self.actor, &mut self.ctx).await;
-            if !self.check_runnning() {
+            if !self.check_running() {
                 return false;
             }
         }
@@ -132,7 +132,7 @@ impl<A: Actor> ActorManager<A> {
 
         // Idk why anyone would do this, but we have to check that they didn't do ctx.stop() in the
         // started method, otherwise it would kinda be a bug
-        if !self.check_runnning() {
+        if !self.check_running() {
             return;
         }
 
@@ -142,7 +142,7 @@ impl<A: Actor> ActorManager<A> {
                 // A new message from an address has arrived, so handle it
                 ManagerMessage::Message(msg) => {
                     msg.handle(&mut self.actor, &mut self.ctx).await;
-                    if !self.check_runnning() {
+                    if !self.check_running() {
                         return;
                     }
                     if !self.handle_immediate_notifications().await {
@@ -152,7 +152,7 @@ impl<A: Actor> ActorManager<A> {
                 // A late notification has arrived, so handle it
                 ManagerMessage::LateNotification(notification) => {
                     notification.handle(&mut self.actor, &mut self.ctx).await;
-                    if !self.check_runnning() {
+                    if !self.check_running() {
                         return;
                     }
                     if !self.handle_immediate_notifications().await {
@@ -181,7 +181,7 @@ impl<A: Actor> ActorManager<A> {
         while let Ok(Some(msg)) = self.receiver.try_next() {
             if let ManagerMessage::LateNotification(notification) = msg {
                 notification.handle(&mut self.actor, &mut self.ctx).await;
-                if !self.check_runnning() {
+                if !self.check_running() {
                     return;
                 }
                 if !self.handle_immediate_notifications().await {
