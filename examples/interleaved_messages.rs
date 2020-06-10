@@ -20,7 +20,7 @@ impl Actor for ActorA {}
 impl Handler<Hello> for ActorA {
     async fn handle(&mut self, _: Hello, ctx: &mut Context<Self>) {
         println!("ActorA: Hello");
-        ctx.select(self, self.actor_b.send(Hello)).await.unwrap();
+        ctx.handle_while(self, self.actor_b.send(Hello)).await.unwrap();
     }
 }
 
@@ -32,7 +32,7 @@ impl Handler<Initialized> for ActorB {
     async fn handle(&mut self, m: Initialized, ctx: &mut Context<Self>) {
         println!("ActorB: Initialized");
         let actor_a = m.0;
-        ctx.select(self, actor_a.send(Hello)).await.unwrap();
+        ctx.handle_while(self, actor_a.send(Hello)).await.unwrap();
     }
 }
 

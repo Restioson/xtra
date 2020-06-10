@@ -14,8 +14,8 @@ use futures::future::{self, Future, Either};
 use std::sync::Arc;
 use futures::StreamExt;
 
-/// `Context` is used to signal things to the [`ActorManager`](struct.ActorManager.html)'s
-/// management loop or to get the actor's address from inside of a message handler.
+/// `Context` is used to control how the actor is managed and to get the actor's address from inside
+/// of a message handler.
 pub struct Context<A: Actor> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
     /// for it to call the `stopping` method on the actor
@@ -67,8 +67,7 @@ impl<A: Actor> Context<A> {
         }
     }
 
-    /// Check if the Context is still set to running, returning whether to return from the manage
-    /// loop or not
+    /// Check if the Context is still set to running, returning whether to continue the manage loop
     pub(crate) fn check_running(&mut self, actor: &mut A) -> bool {
         // Check if the context was stopped, and if so return, thereby dropping the
         // manager and calling `stopped` on the actor
@@ -85,12 +84,20 @@ impl<A: Actor> Context<A> {
         true
     }
 
-    /// Handle all immediate notifications, returning whether to return from the manage loop or not
-    async fn handle_immediate_notifications(&mut self, actor: &mut A) -> bool {
-        while let Some(notification) = self.immediate_notifications.pop() {
+    /// Handles a single immediate notification, returning whether to continue the manage loop
+    async fn handle_immediate_notification(&mut self, actor: &mut A) -> Option<bool> {
+        if let Some(notification) = self.immediate_notifications.pop() {
             notification.handle(actor, self).await;
-            if !self.check_running(actor) {
-                return false;
+            return Some(self.check_running(actor));
+        }
+        None
+    }
+
+    /// Handle all immediate notifications, returning whether to continue the manage loop
+    async fn handle_immediate_notifications(&mut self, actor: &mut A) -> bool {
+        while let Some(exit_loop) = self.handle_immediate_notification(actor).await {
+            if exit_loop {
+                return false
             }
         }
 
@@ -128,10 +135,31 @@ impl<A: Actor> Context<A> {
         ContinueManageLoop::Yes
     }
 
-    /// TODO doc
-    pub async fn select<F, R>(&mut self, act: &mut A, mut fut: F) -> R
+    /// Yields to the manager to handle one message
+    pub async fn yield_once(&mut self, act: &mut A) {
+        if let Some(keep_running) = self.handle_immediate_notification(act).await {
+            if !keep_running {
+                self.stop();
+            }
+            return;
+        }
+
+        match self.receiver.next().await {
+            Some(msg) => {
+                self.handle_message(msg, act).await;
+            },
+            None => self.stop(),
+        }
+    }
+
+    /// Handle any incoming messages for the actor while running a given future.
+    pub async fn handle_while<F, R>(&mut self, act: &mut A, mut fut: F) -> R
         where F: Future<Output = R> + Unpin,
     {
+        if !self.handle_immediate_notifications(act).await {
+            self.stop();
+        }
+
         let mut next_msg = self.receiver.next();
         loop {
             match future::select(fut, next_msg).await {
@@ -163,8 +191,10 @@ impl<A: Actor> Context<A> {
         self.immediate_notifications.push(envelope);
     }
 
-    /// Notify this actor with a message that is handled synchronously after any other messages
-    /// from the general queue are processed.
+    /// Notify this actor with a message that is handled after any other messages from the general
+    /// queue are processed. This is almost equivalent to calling send on
+    /// [`Context::address()`](struct.Context.html#method.address), but will never fail to send
+    /// the message.
     pub fn notify_later<M>(&mut self, msg: M)
     where
         M: Message,
