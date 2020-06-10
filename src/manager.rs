@@ -1,6 +1,6 @@
 use crate::envelope::MessageEnvelope;
-use crate::{Actor, Address, Context, KeepRunning, WeakAddress};
-use futures::channel::mpsc::{self, UnboundedReceiver};
+use crate::{Actor, Address, Context, WeakAddress};
+use futures::channel::mpsc;
 use futures::StreamExt;
 use std::sync::Arc;
 
@@ -18,15 +18,19 @@ pub(crate) enum ManagerMessage<A: Actor> {
     LateNotification(Box<dyn MessageEnvelope<Actor = A>>),
 }
 
+/// If and how to continue the manage loop
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+pub(crate) enum ContinueManageLoop {
+    Yes,
+    ExitImmediately,
+    ProcessNotifications,
+}
+
 /// A manager for the actor which handles incoming messages and stores the context. Its managing
 /// loop can be started with [`ActorManager::manage`](struct.ActorManager.html#method.manage).
 pub struct ActorManager<A: Actor> {
     actor: A,
     ctx: Context<A>,
-    /// The reference counter of the actor. This tells us how many external strong addresses
-    /// (and weak addresses, but we don't care about those) exist to the actor. This is obtained
-    /// by doing `Arc::strong_count(ref_count) - 1` because this ref counter itself in the manager adds to the count too.
-    ref_counter: Arc<()>,
 }
 
 impl<A: Actor> Drop for ActorManager<A> {
@@ -78,12 +82,11 @@ impl<A: Actor> ActorManager<A> {
             sender: sender.clone(),
             ref_counter: Arc::downgrade(&ref_counter),
         };
-        let ctx = Context::new(addr, receiver);
+        let ctx = Context::new(addr, receiver, ref_counter.clone());
 
         let mgr = ActorManager {
             actor,
             ctx,
-            ref_counter: ref_counter.clone(),
         };
 
         let addr = Address {
@@ -94,79 +97,22 @@ impl<A: Actor> ActorManager<A> {
         (addr, mgr)
     }
 
-    /// Check if the Context is still sent to running, returning whether to return from the manage
-    /// loop or not
-    fn check_runnning(&mut self) -> bool {
-        // Check if the context was stopped, and if so return, thereby dropping the
-        // manager and calling `stopped` on the actor
-        if !self.ctx.running {
-            let keep_running = self.actor.stopping(&mut self.ctx);
-
-            if keep_running == KeepRunning::Yes {
-                self.ctx.running = true;
-            } else {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    /// Handle all immediate notifications, returning whether to return from the manage loop or not
-    async fn handle_immediate_notifications(&mut self) -> bool {
-        while let Some(notification) = self.ctx.immediate_notifications.pop() {
-            notification.handle(&mut self.actor, &mut self.ctx).await;
-            if !self.check_runnning() {
-                return false;
-            }
-        }
-
-        true
-    }
-
     /// Starts the manager loop. This will start the actor and allow it to respond to messages.
     pub async fn manage(mut self) {
         self.actor.started(&mut self.ctx);
 
         // Idk why anyone would do this, but we have to check that they didn't do ctx.stop() in the
         // started method, otherwise it would kinda be a bug
-        if !self.check_runnning() {
+        if !self.ctx.check_running(&mut self.actor) {
             return;
         }
 
         // Listen for any messages for the ActorManager
         while let Some(msg) = self.ctx.receiver.next().await {
-            match msg {
-                // A new message from an address has arrived, so handle it
-                ManagerMessage::Message(msg) => {
-                    msg.handle(&mut self.actor, &mut self.ctx).await;
-                    if !self.check_runnning() {
-                        return;
-                    }
-                    if !self.handle_immediate_notifications().await {
-                        return;
-                    }
-                }
-                // A late notification has arrived, so handle it
-                ManagerMessage::LateNotification(notification) => {
-                    notification.handle(&mut self.actor, &mut self.ctx).await;
-                    if !self.check_runnning() {
-                        return;
-                    }
-                    if !self.handle_immediate_notifications().await {
-                        return;
-                    }
-                }
-                // An address in the process of being dropped has realised that it could be the last
-                // strong address to the actor, so we need to check if that is still the case, if so
-                // stopping the actor
-                ManagerMessage::LastAddress => {
-                    // strong_count() == 1 manager holds a strong arc to the refcount
-                    if Arc::strong_count(&self.ref_counter) == 1 {
-                        self.ctx.stop();
-                        break;
-                    }
-                }
+            match self.ctx.handle_message(msg, &mut self.actor).await {
+                ContinueManageLoop::Yes => {},
+                ContinueManageLoop::ProcessNotifications => break,
+                ContinueManageLoop::ExitImmediately => return,
             }
         }
 
@@ -177,14 +123,9 @@ impl<A: Actor> ActorManager<A> {
         // that no other addresses can be created and sending concurrently), we can make the inference
         // that if `next_message` returns `Err`, there are no more late notifications to handle.
         while let Ok(Some(msg)) = self.ctx.receiver.try_next() {
-            if let ManagerMessage::LateNotification(notification) = msg {
-                notification.handle(&mut self.actor, &mut self.ctx).await;
-                if !self.check_runnning() {
-                    return;
-                }
-                if !self.handle_immediate_notifications().await {
-                    return;
-                }
+            let res = self.ctx.handle_message(msg, &mut self.actor).await;
+            if res == ContinueManageLoop::ExitImmediately {
+                break;
             }
         }
     }
