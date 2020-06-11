@@ -1,5 +1,9 @@
 # Breaking Changes by Version
 
+## 0.4.0
+
+- The `stable` feature was removed. In order to enable the nightly API, enable the new `nightly` feature.
+
 ## 0.3.0
 
 - The default API of the `Handler` trait has now changed to an `async_trait` so that xtra can compile on stable.

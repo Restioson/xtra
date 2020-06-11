@@ -64,13 +64,13 @@ pub type ResponderFut<'a, R> = Pin<Box<dyn Future<Output = R> + Send + 'a>>;
 /// asynchronously, and the logic to handle the message. If the message should be handled synchronously,
 /// then the [`SyncHandler`](trait.SyncHandler.html) trait should rather be implemented.
 ///
-/// With the `stable` feature enabled, this is an [`async_trait`](https://github.com/dtolnay/async-trait/),
+/// Without the `nightly` feature enabled, this is an [`async_trait`](https://github.com/dtolnay/async-trait/),
 /// so implementations should be annotated `#[async_trait]`.
 #[cfg(not(feature = "nightly"))]
 pub trait Handler<M: Message>: Actor {
     /// Handle a given message, returning its result.
     ///
-    /// With the `stable` feature enabled, this is an [`async_trait`](https://github.com/dtolnay/async-trait/),
+    /// Without the `nightly` feature enabled, this is an [`async_trait`](https://github.com/dtolnay/async-trait/),
     /// so this method can be declared roughly as such:
     /// ```ignore
     /// async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result

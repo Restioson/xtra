@@ -74,7 +74,7 @@ or message me on the [Rust discord](https://bit.ly/rust-community).
 ## Nightly API
 
 There is also a different nightly API, which is **incompatible with the stable api**.. For an example, check out
-`examples/nightly.rs`. To enable it, remove the default features from the dependency in the Cargo.toml. This API uses
+`examples/nightly.rs`. To switch to it, enable the `nightly` feature in the Cargo.toml. This API uses
 GATs and Type Alias Impl Trait to remove one boxing of a future, but according to my benchmarks, this impact has little 
 effect. Your mileage may vary. GATs are unstable and can cause undefined behaviour in safe rust, and the combination of
 GAT + TAIT can break rustdoc. Therefore, the tradeoff is a (possibly negligible) performance boost for less
@@ -82,12 +82,8 @@ support and instability. Generally, the only situation I would recommend this to
 0.2.
 
 ## Latest Breaking Changes
-From version 0.2.x to 0.3.0:
-- The default API of the `Handler` trait has now changed to an `async_trait` so that xtra can compile on stable.
-    - *How to upgrade, alternative 1:* change the implementations by annotating the implementation with `#[async_trait]`,
-      removing `Responder` and making `handle` an `async fn` which directly returns the message's result.
-    - *How to upgrade, alternative 2:* if you want to avoid the extra box, you can disable the default `stable` feature
-      in your `Cargo.toml` to keep the old API.
+From version 0.3.x to 0.4.0:
+- The `stable` feature was removed. In order to enable the nightly API, enable the new `nightly` feature.
 
 See the full list of breaking changes by version [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md)
 
