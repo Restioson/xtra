@@ -157,7 +157,7 @@ impl<A: Actor> Context<A> {
     /// # Example
     ///
     /// ```
-    #[doc(include = "../examples/interleaved_messages.rs")]
+    #[cfg_attr(doc, doc(include = "../examples/interleaved_messages.rs"))]
     /// ```
     pub async fn handle_while<F, R>(&mut self, act: &mut A, mut fut: F) -> R
     where
