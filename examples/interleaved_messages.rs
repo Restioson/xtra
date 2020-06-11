@@ -1,5 +1,7 @@
 use async_trait::async_trait;
 use xtra::prelude::*;
+use smol::Timer;
+use std::time::Duration;
 
 struct Initialized(Address<ActorA>);
 impl Message for Initialized {
@@ -45,7 +47,7 @@ impl Handler<Hello> for ActorB {
     }
 }
 
-#[tokio::main]
+#[smol_potat::main]
 async fn main() {
     let actor_b = ActorB {}.spawn();
     let actor_a = ActorA {

@@ -65,6 +65,47 @@ pub trait MessageChannelExt<M: Message> {
 /// [`Address::channel`](struct.Address.html#method.channel),
 /// [`Address::into_channel`](struct.Address.html#method.into_channel), or the similar methods on
 /// [`WeakAddress`](struct.WeakAddress.html).
+///
+/// # Example
+///
+/// ```rust
+/// # use xtra::prelude::*;
+/// # use smol::Timer;
+/// # use std::time::Duration;
+/// struct WhatsYourName;
+///
+/// impl Message for WhatsYourName {
+///     type Result = &'static str;
+/// }
+///
+/// struct Alice;
+/// struct Bob;
+///
+/// impl Actor for Alice {}
+/// impl Actor for Bob {}
+///
+/// impl SyncHandler<WhatsYourName> for Alice {
+///     fn handle(&mut self, _: WhatsYourName, _ctx: &mut Context<Self>) -> &'static str {
+///         "Alice"
+///     }
+/// }
+///
+/// impl SyncHandler<WhatsYourName> for Bob {
+///     fn handle(&mut self, _: WhatsYourName, _ctx: &mut Context<Self>) -> &'static str {
+///         "Bob"
+///     }
+/// }
+///
+/// #[smol_potat::main]
+/// async fn main() {
+///     let channels = [Alice.spawn().into_channel(), Bob.spawn().into_channel()];
+///     let name = ["Alice", "Bob"];
+///
+///     for (channel, name) in channels.iter().zip(&name) {
+///         assert_eq!(*name, channel.send(WhatsYourName).await.unwrap());
+///     }
+/// }
+/// ```
 pub struct MessageChannel<M: Message> {
     pub(crate) address: Box<dyn AddressEnvelope<M>>,
 }
