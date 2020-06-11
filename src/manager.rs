@@ -84,10 +84,7 @@ impl<A: Actor> ActorManager<A> {
         };
         let ctx = Context::new(addr, receiver, ref_counter.clone());
 
-        let mgr = ActorManager {
-            actor,
-            ctx,
-        };
+        let mgr = ActorManager { actor, ctx };
 
         let addr = Address {
             sender,
@@ -110,7 +107,7 @@ impl<A: Actor> ActorManager<A> {
         // Listen for any messages for the ActorManager
         while let Some(msg) = self.ctx.receiver.next().await {
             match self.ctx.handle_message(msg, &mut self.actor).await {
-                ContinueManageLoop::Yes => {},
+                ContinueManageLoop::Yes => {}
                 ContinueManageLoop::ProcessNotifications => break,
                 ContinueManageLoop::ExitImmediately => return,
             }

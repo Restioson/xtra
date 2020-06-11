@@ -1,7 +1,7 @@
 //! Xtra is a tiny, fast, and safe actor system.
 
 #![cfg_attr(
-    not(feature = "stable"),
+    feature = "nightly",
     feature(
         generic_associated_types,
         specialization,
@@ -18,7 +18,7 @@ pub use message_channel::{MessageChannel, MessageChannelExt, WeakMessageChannel}
 mod envelope;
 
 mod address;
-pub use address::{Address, AddressExt, Disconnected, WeakAddress, MessageResponseFuture};
+pub use address::{Address, AddressExt, Disconnected, MessageResponseFuture, WeakAddress};
 
 mod context;
 pub use context::Context;
@@ -33,8 +33,10 @@ pub mod prelude {
     pub use crate::{Actor, Context, Handler, Message, SyncHandler};
 }
 
-#[cfg(not(feature = "stable"))]
-use futures::future::{self, Future, Ready};
+use futures::future::Future;
+#[cfg(feature = "nightly")]
+use futures::future::{self, Ready};
+use std::pin::Pin;
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
 /// one at a time. Only actors implementing the corresponding [`Handler<M>`](trait.Handler.html)
@@ -55,14 +57,16 @@ pub trait SyncHandler<M: Message>: Actor {
     fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result;
 }
 
+/// A pinned, boxed future returned from [`Handler::handle`](trait.Handler.html#method.handle)
+pub type ResponderFut<'a, R> = Pin<Box<dyn Future<Output = R> + Send + 'a>>;
+
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
 /// asynchronously, and the logic to handle the message. If the message should be handled synchronously,
 /// then the [`SyncHandler`](trait.SyncHandler.html) trait should rather be implemented.
 ///
 /// With the `stable` feature enabled, this is an [`async_trait`](https://github.com/dtolnay/async-trait/),
 /// so implementations should be annotated `#[async_trait]`.
-#[cfg_attr(feature = "stable", async_trait::async_trait)]
-#[cfg(feature = "stable")]
+#[cfg(not(feature = "nightly"))]
 pub trait Handler<M: Message>: Actor {
     /// Handle a given message, returning its result.
     ///
@@ -71,13 +75,20 @@ pub trait Handler<M: Message>: Actor {
     /// ```ignore
     /// async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result
     /// ```
-    async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result;
+    fn handle<'s, 'c, 'handler>(
+        &'s mut self,
+        message: M,
+        ctx: &'c mut Context<Self>,
+    ) -> ResponderFut<'handler, M::Result>
+    where
+        's: 'handler,
+        'c: 'handler;
 }
 
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
 /// asynchronously, and the logic to handle the message. If the message should be handled synchronously,
 /// then the [`SyncHandler`](trait.SyncHandler.html) trait should rather be implemented.
-#[cfg(not(feature = "stable"))]
+#[cfg(feature = "nightly")]
 pub trait Handler<M: Message>: Actor {
     /// The responding future of the asynchronous actor. This should probably look like:
     /// ```ignore
@@ -97,18 +108,25 @@ pub trait Handler<M: Message>: Actor {
     fn handle<'a>(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder<'a>;
 }
 
-#[cfg_attr(feature = "stable", async_trait::async_trait)]
 impl<M: Message, T: SyncHandler<M> + Send> Handler<M> for T {
-    #[cfg(feature = "stable")]
-    async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result {
+    #[cfg(not(feature = "nightly"))]
+    fn handle<'a, 'b, 'c>(
+        &'a mut self,
+        message: M,
+        ctx: &'b mut Context<Self>,
+    ) -> ResponderFut<'c, M::Result>
+    where
+        'a: 'c,
+        'b: 'c,
+    {
         let res: M::Result = SyncHandler::handle(self, message, ctx);
-        res
+        Box::pin(futures::future::ready(res))
     }
 
-    #[cfg(not(feature = "stable"))]
+    #[cfg(feature = "nightly")]
     type Responder<'a> = Ready<M::Result>;
 
-    #[cfg(not(feature = "stable"))]
+    #[cfg(feature = "nightly")]
     fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::Responder<'_> {
         let res: M::Result = SyncHandler::handle(self, message, ctx);
         future::ready(res)

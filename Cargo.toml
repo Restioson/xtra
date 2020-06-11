@@ -13,7 +13,6 @@ categories = ["asynchronous", "concurrency"]
 
 [dependencies]
 futures = { version = "^0.3" }
-async-trait = { version = "^0.1", optional = true }
 
 tokio = { version = "^0.2", features = ["rt-core", "time"], optional = true }
 smol = { version = "^0.1.11", optional = true }
@@ -24,9 +23,12 @@ wasm-bindgen = { version = "^0.2", optional = true, default-features = false }
 wasm-bindgen-futures = { version = "^0.4", optional = true, default-features = false }
 futures-timer = { version = "^3", optional = true, default-features = false }
 
+[dev-dependencies]
+async-trait = "0.1"
+
 [features]
-default = ["stable"]
-stable = ["async-trait"]
+default = []
+nightly = []
 with-tokio-0_2 = ["tokio"]
 with-async_std-1 = ["async-std"]
 with-wasm_bindgen-0_2 = ["wasm-bindgen", "wasm-bindgen-futures", "futures-timer/wasm-bindgen"]
@@ -40,33 +42,33 @@ required-features = ["with-tokio-0_2", "tokio/full"]
 [[example]]
 name = "basic_async_std"
 path = "examples/basic_async_std.rs"
-required-features = ["with-async_std-1", "async-std/attributes", "stable"]
+required-features = ["with-async_std-1", "async-std/attributes"]
 
 [[example]]
 name = "basic_smol"
 path = "examples/basic_smol.rs"
-required-features = ["with-smol-0_1", "stable"]
+required-features = ["with-smol-0_1"]
 
 [[example]]
 name = "async_handler"
 path = "examples/async_handler.rs"
-required-features = ["with-tokio-0_2", "tokio/full", "stable"]
+required-features = ["with-tokio-0_2", "tokio/full"]
 
 [[example]]
 name = "nightly"
 path = "examples/nightly.rs"
-required-features = ["with-tokio-0_2", "tokio/full"]
+required-features = ["with-tokio-0_2", "tokio/full", "nightly"]
 
 [[example]]
 name = "interleaved_messages"
 path = "examples/interleaved_messages.rs"
-required-features = ["with-tokio-0_2", "tokio/full", "stable"]
+required-features = ["with-tokio-0_2", "tokio/full"]
 
 
 [[example]]
 name = "crude_bench"
 path = "examples/crude_bench.rs"
-required-features = ["with-tokio-0_2", "tokio/full", "stable"]
+required-features = ["with-tokio-0_2", "tokio/full"]
 
 [workspace]
 members = [

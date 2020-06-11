@@ -20,7 +20,9 @@ impl Actor for ActorA {}
 impl Handler<Hello> for ActorA {
     async fn handle(&mut self, _: Hello, ctx: &mut Context<Self>) {
         println!("ActorA: Hello");
-        ctx.handle_while(self, self.actor_b.send(Hello)).await.unwrap();
+        ctx.handle_while(self, self.actor_b.send(Hello))
+            .await
+            .unwrap();
     }
 }
 
@@ -49,6 +51,6 @@ async fn main() {
     let actor_a = ActorA {
         actor_b: actor_b.clone(),
     }
-        .spawn();
+    .spawn();
     actor_b.send(Initialized(actor_a.clone())).await.unwrap();
 }

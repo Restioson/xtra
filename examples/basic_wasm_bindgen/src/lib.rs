@@ -1,5 +1,5 @@
+use wasm_bindgen::{prelude::*, JsValue};
 use xtra::prelude::*;
-use wasm_bindgen::{JsValue, prelude::*};
 
 struct Printer;
 
@@ -25,9 +25,10 @@ impl SyncHandler<Print> for Printer {
 #[wasm_bindgen]
 pub async fn start() -> Result<(), JsValue> {
     let addr = Printer::new().spawn();
-    let response = addr.send(Print("hello world".to_string()))
-            .await
-            .expect("Printer should not be dropped");
+    let response = addr
+        .send(Print("hello world".to_string()))
+        .await
+        .expect("Printer should not be dropped");
 
     assert_eq!(response, "hello world");
 

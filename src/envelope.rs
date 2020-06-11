@@ -1,7 +1,7 @@
 use crate::address::MessageResponseFuture;
 use crate::*;
 use futures::channel::oneshot::{self, Receiver, Sender};
-#[cfg(not(feature = "stable"))]
+#[cfg(feature = "nightly")]
 use futures::future;
 use futures::{Future, FutureExt, Sink};
 use std::marker::PhantomData;
@@ -69,7 +69,7 @@ impl<A: Actor + Send, M: Message> ReturningEnvelope<A, M> {
     }
 }
 
-#[cfg(feature = "stable")]
+#[cfg(not(feature = "nightly"))]
 impl<A: Handler<M> + Send, M: Message> MessageEnvelope for ReturningEnvelope<A, M> {
     type Actor = A;
 
@@ -90,7 +90,7 @@ impl<A: Handler<M> + Send, M: Message> MessageEnvelope for ReturningEnvelope<A, 
     }
 }
 
-#[cfg(not(feature = "stable"))]
+#[cfg(feature = "nightly")]
 impl<A: Handler<M> + Send, M: Message> MessageEnvelope for ReturningEnvelope<A, M>
 where
     for<'a> A::Responder<'a>: Future<Output = M::Result>,
@@ -114,7 +114,7 @@ where
     }
 }
 
-#[cfg(not(feature = "stable"))]
+#[cfg(feature = "nightly")]
 impl<A, M> MessageEnvelope for ReturningEnvelope<A, M>
 where
     A: Handler<M> + SyncHandler<M> + Send,
@@ -151,7 +151,7 @@ impl<A: Actor, M: Message> NonReturningEnvelope<A, M> {
     }
 }
 
-#[cfg(feature = "stable")]
+#[cfg(not(feature = "nightly"))]
 impl<A: Handler<M> + Send, M: Message> MessageEnvelope for NonReturningEnvelope<A, M> {
     type Actor = A;
 
@@ -164,7 +164,7 @@ impl<A: Handler<M> + Send, M: Message> MessageEnvelope for NonReturningEnvelope<
     }
 }
 
-#[cfg(not(feature = "stable"))]
+#[cfg(feature = "nightly")]
 impl<A: Handler<M> + Send, M: Message> MessageEnvelope for NonReturningEnvelope<A, M>
 where
     for<'a> A::Responder<'a>: Future<Output = M::Result>,
@@ -180,7 +180,7 @@ where
     }
 }
 
-#[cfg(not(feature = "stable"))]
+#[cfg(feature = "nightly")]
 impl<A, M> MessageEnvelope for NonReturningEnvelope<A, M>
 where
     A: Handler<M> + SyncHandler<M> + Send,

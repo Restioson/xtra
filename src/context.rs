@@ -1,7 +1,10 @@
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
-use crate::manager::{ManagerMessage, ContinueManageLoop};
-use crate::{Actor, Address, Handler, Message, WeakAddress, KeepRunning};
+use crate::manager::{ContinueManageLoop, ManagerMessage};
+use crate::{Actor, Address, Handler, KeepRunning, Message, WeakAddress};
 use futures::channel::mpsc::UnboundedReceiver;
+use futures::future::{self, Either, Future};
+use futures::StreamExt;
+use std::sync::Arc;
 #[cfg(any(
     doc,
     feature = "with-tokio-0_2",
@@ -10,9 +13,6 @@ use futures::channel::mpsc::UnboundedReceiver;
     feature = "with-smol-0_1"
 ))]
 use {crate::AddressExt, std::time::Duration};
-use futures::future::{self, Future, Either};
-use std::sync::Arc;
-use futures::StreamExt;
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -97,7 +97,7 @@ impl<A: Actor> Context<A> {
     async fn handle_immediate_notifications(&mut self, actor: &mut A) -> bool {
         while let Some(exit_loop) = self.handle_immediate_notification(actor).await {
             if exit_loop {
-                return false
+                return false;
             }
         }
 
@@ -147,14 +147,15 @@ impl<A: Actor> Context<A> {
         match self.receiver.next().await {
             Some(msg) => {
                 self.handle_message(msg, act).await;
-            },
+            }
             None => self.stop(),
         }
     }
 
     /// Handle any incoming messages for the actor while running a given future.
     pub async fn handle_while<F, R>(&mut self, act: &mut A, mut fut: F) -> R
-        where F: Future<Output = R> + Unpin,
+    where
+        F: Future<Output = R> + Unpin,
     {
         if !self.handle_immediate_notifications(act).await {
             self.stop();
@@ -168,7 +169,7 @@ impl<A: Actor> Context<A> {
                     match manager_message {
                         Some(msg) => {
                             self.handle_message(msg, act).await;
-                        },
+                        }
                         None => self.stop(),
                     }
                     next_msg = self.receiver.next();
@@ -276,7 +277,8 @@ impl<A: Actor> Context<A> {
                         break;
                     }
                 }
-            }).detach();
+            })
+            .detach();
         }
     }
 
@@ -330,7 +332,8 @@ impl<A: Actor> Context<A> {
             smol::Task::spawn(async move {
                 Timer::after(duration.clone()).await;
                 let _ = addr.do_send(notification);
-            }).detach();
+            })
+            .detach();
         }
     }
 }

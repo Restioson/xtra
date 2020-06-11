@@ -1,7 +1,7 @@
 #![feature(type_alias_impl_trait, generic_associated_types)]
 
-use xtra::prelude::*;
 use futures::Future;
+use xtra::prelude::*;
 
 struct Printer {
     times: usize,
