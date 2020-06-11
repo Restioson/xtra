@@ -25,6 +25,8 @@ futures-timer = { version = "^3", optional = true, default-features = false }
 
 [dev-dependencies]
 async-trait = "0.1"
+smol = { version = "^0.1" }
+smol-potat = { version = "^0.3" }
 
 [features]
 default = []

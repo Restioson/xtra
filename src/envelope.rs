@@ -32,7 +32,7 @@ pub(crate) trait MessageEnvelope: Send {
     /// To save on boxing for non-asynchronously handled message envelopes, we *could* return some
     /// enum like:
     ///
-    /// ```ignore
+    /// ```not_a_test
     /// enum Return<'a> {
     ///     Fut(Fut<'a>),
     ///     Noop,

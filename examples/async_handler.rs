@@ -1,4 +1,3 @@
-use futures::Future;
 use xtra::prelude::*;
 
 struct Printer {
@@ -21,10 +20,8 @@ impl Message for Print {
 #[async_trait::async_trait]
 impl Handler<Print> for Printer {
     async fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) {
-        async move {
-            self.times += 1;
-            println!("Printing {}. Printed {} times so far.", print.0, self.times);
-        }
+        self.times += 1;
+        println!("Printing {}. Printed {} times so far.", print.0, self.times);
     }
 }
 

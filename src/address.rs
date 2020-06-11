@@ -59,6 +59,34 @@ pub struct Disconnected;
 /// functions of the address.
 pub trait AddressExt<A: Actor> {
     /// Returns whether the actor referred to by this address is running and accepting messages.
+    ///
+    /// ```rust
+    /// # use xtra::prelude::*;
+    /// # use std::time::Duration;
+    /// # struct MyActor;
+    /// # impl Actor for MyActor {}
+    /// # use smol::Timer;
+    /// struct Shutdown;
+    ///
+    /// impl Message for Shutdown {
+    ///     type Result = ();
+    /// }
+    ///
+    /// impl SyncHandler<Shutdown> for MyActor {
+    ///     fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
+    ///         ctx.stop();
+    ///     }
+    /// }
+    ///
+    /// #[smol_potat::main]
+    /// async fn main() {
+    /// let addr = MyActor.spawn();
+    ///     assert!(addr.is_connected());
+    ///     addr.send(Shutdown).await;
+    /// #   Timer::after(Duration::from_secs(1)).await; // Give it time to shut down
+    ///     assert!(!addr.is_connected());
+    /// }
+    /// ```
     fn is_connected(&self) -> bool;
 
     /// Sends a [`Message`](trait.Message.html) to the actor, and does not wait for a response.
