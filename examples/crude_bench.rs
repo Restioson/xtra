@@ -1,4 +1,3 @@
-use futures::Future;
 use std::time::{Duration, Instant};
 use xtra::prelude::*;
 

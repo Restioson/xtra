@@ -18,7 +18,7 @@ pub use message_channel::{MessageChannel, MessageChannelExt, WeakMessageChannel}
 mod envelope;
 
 mod address;
-pub use address::{Address, AddressExt, Disconnected, WeakAddress};
+pub use address::{Address, AddressExt, Disconnected, WeakAddress, MessageResponseFuture};
 
 mod context;
 pub use context::Context;

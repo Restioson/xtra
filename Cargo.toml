@@ -58,6 +58,12 @@ path = "examples/nightly.rs"
 required-features = ["with-tokio-0_2", "tokio/full"]
 
 [[example]]
+name = "interleaved_messages"
+path = "examples/interleaved_messages.rs"
+required-features = ["with-tokio-0_2", "tokio/full", "stable"]
+
+
+[[example]]
 name = "crude_bench"
 path = "examples/crude_bench.rs"
 required-features = ["with-tokio-0_2", "tokio/full", "stable"]

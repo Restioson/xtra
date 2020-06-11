@@ -18,7 +18,19 @@ use std::sync::{Arc, Weak};
 
 /// The future returned by a method such as [`AddressExt::send`](trait.AddressExt.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
-pub enum MessageResponseFuture<M: Message> {
+pub struct MessageResponseFuture<M: Message>(MessageResponseFutureInner<M>);
+
+impl<M: Message> MessageResponseFuture<M> {
+    fn result(res: Receiver<M::Result>) -> Self {
+        MessageResponseFuture(MessageResponseFutureInner::Result(res))
+    }
+
+    fn disconnected() -> Self {
+        MessageResponseFuture(MessageResponseFutureInner::Disconnected)
+    }
+}
+
+enum MessageResponseFutureInner<M: Message> {
     Disconnected,
     Result(Receiver<M::Result>),
 }
@@ -27,9 +39,9 @@ impl<M: Message> Future for MessageResponseFuture<M> {
     type Output = Result<M::Result, Disconnected>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut futures::task::Context) -> Poll<Self::Output> {
-        match self.get_mut() {
-            MessageResponseFuture::Disconnected => Poll::Ready(Err(Disconnected)),
-            MessageResponseFuture::Result(rx) => {
+        match &mut self.get_mut().0 {
+            MessageResponseFutureInner::Disconnected => Poll::Ready(Err(Disconnected)),
+            MessageResponseFutureInner::Result(rx) => {
                 let rx = Pin::new(rx);
                 rx.poll(ctx).map(|res| res.map_err(|_| Disconnected))
             }
@@ -197,7 +209,7 @@ impl<A: Actor> AddressExt<A> for Address<A> {
         let _ = self
             .sender
             .unbounded_send(ManagerMessage::Message(Box::new(envelope)));
-        MessageResponseFuture::Result(rx)
+        MessageResponseFuture::result(rx)
     }
 }
 
@@ -332,9 +344,9 @@ impl<A: Actor> AddressExt<A> for WeakAddress<A> {
             let _ = self
                 .sender
                 .unbounded_send(ManagerMessage::Message(Box::new(envelope)));
-            MessageResponseFuture::Result(rx)
+            MessageResponseFuture::result(rx)
         } else {
-            MessageResponseFuture::Disconnected
+            MessageResponseFuture::disconnected()
         }
     }
 }

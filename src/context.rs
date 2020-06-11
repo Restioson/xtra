@@ -1,6 +1,7 @@
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
-use crate::manager::ManagerMessage;
-use crate::{Actor, Address, Handler, Message, WeakAddress};
+use crate::manager::{ManagerMessage, ContinueManageLoop};
+use crate::{Actor, Address, Handler, Message, WeakAddress, KeepRunning};
+use futures::channel::mpsc::UnboundedReceiver;
 #[cfg(any(
     doc,
     feature = "with-tokio-0_2",
@@ -9,9 +10,12 @@ use crate::{Actor, Address, Handler, Message, WeakAddress};
     feature = "with-smol-0_1"
 ))]
 use {crate::AddressExt, std::time::Duration};
+use futures::future::{self, Future, Either};
+use std::sync::Arc;
+use futures::StreamExt;
 
-/// `Context` is used to signal things to the [`ActorManager`](struct.ActorManager.html)'s
-/// management loop or to get the actor's address from inside of a message handler.
+/// `Context` is used to control how the actor is managed and to get the actor's address from inside
+/// of a message handler.
 pub struct Context<A: Actor> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
     /// for it to call the `stopping` method on the actor
@@ -20,14 +24,24 @@ pub struct Context<A: Actor> {
     address: WeakAddress<A>,
     /// Notifications that must be stored for immediate processing.
     pub(crate) immediate_notifications: Vec<Box<dyn MessageEnvelope<Actor = A>>>,
+    pub(crate) receiver: UnboundedReceiver<ManagerMessage<A>>,
+    /// The reference counter of the actor. This tells us how many external strong addresses
+    /// (and weak addresses, but we don't care about those) exist to the actor.
+    ref_counter: Arc<()>,
 }
 
 impl<A: Actor> Context<A> {
-    pub(crate) fn new(address: WeakAddress<A>) -> Self {
+    pub(crate) fn new(
+        address: WeakAddress<A>,
+        receiver: UnboundedReceiver<ManagerMessage<A>>,
+        ref_counter: Arc<()>,
+    ) -> Self {
         Context {
             running: true,
             address,
-            immediate_notifications: Vec::with_capacity(1),
+            immediate_notifications: Vec::new(),
+            receiver,
+            ref_counter,
         }
     }
 
@@ -53,6 +67,117 @@ impl<A: Actor> Context<A> {
         }
     }
 
+    /// Check if the Context is still set to running, returning whether to continue the manage loop
+    pub(crate) fn check_running(&mut self, actor: &mut A) -> bool {
+        // Check if the context was stopped, and if so return, thereby dropping the
+        // manager and calling `stopped` on the actor
+        if !self.running {
+            let keep_running = actor.stopping(self);
+
+            if keep_running == KeepRunning::Yes {
+                self.running = true;
+            } else {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Handles a single immediate notification, returning whether to continue the manage loop
+    async fn handle_immediate_notification(&mut self, actor: &mut A) -> Option<bool> {
+        if let Some(notification) = self.immediate_notifications.pop() {
+            notification.handle(actor, self).await;
+            return Some(self.check_running(actor));
+        }
+        None
+    }
+
+    /// Handle all immediate notifications, returning whether to continue the manage loop
+    async fn handle_immediate_notifications(&mut self, actor: &mut A) -> bool {
+        while let Some(exit_loop) = self.handle_immediate_notification(actor).await {
+            if exit_loop {
+                return false
+            }
+        }
+
+        true
+    }
+
+    /// Handle a message, returning whether to exit from the manage loop or not
+    pub(crate) async fn handle_message(
+        &mut self,
+        msg: ManagerMessage<A>,
+        actor: &mut A,
+    ) -> ContinueManageLoop {
+        match msg {
+            // A new message from an address or a notification has arrived, so handle it
+            ManagerMessage::Message(msg) | ManagerMessage::LateNotification(msg) => {
+                msg.handle(actor, self).await;
+                if !self.check_running(actor) {
+                    return ContinueManageLoop::ExitImmediately;
+                }
+                if !self.handle_immediate_notifications(actor).await {
+                    return ContinueManageLoop::ExitImmediately;
+                }
+            }
+            // An address in the process of being dropped has realised that it could be the last
+            // strong address to the actor, so we need to check if that is still the case, if so
+            // stopping the actor
+            ManagerMessage::LastAddress => {
+                // strong_count() == 1 manager holds a strong arc to the refcount
+                if Arc::strong_count(&self.ref_counter) == 1 {
+                    self.stop();
+                    return ContinueManageLoop::ProcessNotifications;
+                }
+            }
+        }
+        ContinueManageLoop::Yes
+    }
+
+    /// Yields to the manager to handle one message.
+    pub async fn yield_once(&mut self, act: &mut A) {
+        if let Some(keep_running) = self.handle_immediate_notification(act).await {
+            if !keep_running {
+                self.stop();
+            }
+            return;
+        }
+
+        match self.receiver.next().await {
+            Some(msg) => {
+                self.handle_message(msg, act).await;
+            },
+            None => self.stop(),
+        }
+    }
+
+    /// Handle any incoming messages for the actor while running a given future.
+    pub async fn handle_while<F, R>(&mut self, act: &mut A, mut fut: F) -> R
+        where F: Future<Output = R> + Unpin,
+    {
+        if !self.handle_immediate_notifications(act).await {
+            self.stop();
+        }
+
+        let mut next_msg = self.receiver.next();
+        loop {
+            match future::select(fut, next_msg).await {
+                Either::Left((res, _)) => break res,
+                Either::Right((manager_message, unfinished_fut)) => {
+                    match manager_message {
+                        Some(msg) => {
+                            self.handle_message(msg, act).await;
+                        },
+                        None => self.stop(),
+                    }
+                    next_msg = self.receiver.next();
+                    fut = unfinished_fut;
+                }
+            }
+        }
+    }
+
     /// Notify this actor with a message that is handled synchronously before any other messages
     /// from the general queue are processed (therefore, immediately). If multiple
     /// `notify_immediately` messages are queued, they will still be processed in the order that they
@@ -66,8 +191,10 @@ impl<A: Actor> Context<A> {
         self.immediate_notifications.push(envelope);
     }
 
-    /// Notify this actor with a message that is handled synchronously after any other messages
-    /// from the general queue are processed.
+    /// Notify this actor with a message that is handled after any other messages from the general
+    /// queue are processed. This is almost equivalent to calling send on
+    /// [`Context::address()`](struct.Context.html#method.address), but will never fail to send
+    /// the message.
     pub fn notify_later<M>(&mut self, msg: M)
     where
         M: Message,
