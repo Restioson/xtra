@@ -47,10 +47,10 @@ pub trait MessageChannelExt<M: Message> {
         feature = "with-wasm_bindgen-0_2",
         feature = "with-smol-0_1"
     ))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-smol-0_1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
     fn attach_stream<S>(self, stream: S)
     where
         S: Stream<Item = M> + Send + Unpin + 'static,

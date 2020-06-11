@@ -9,7 +9,7 @@
         doc_cfg,
     )
 )]
-#![cfg_attr(nightly, feature(dog_cfg))]
+#![cfg_attr(doc, feature(doc_cfg, external_doc))]
 #![deny(missing_docs, unsafe_code)]
 
 mod message_channel;
@@ -41,6 +41,18 @@ use std::pin::Pin;
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
 /// one at a time. Only actors implementing the corresponding [`Handler<M>`](trait.Handler.html)
 /// trait can be sent a given message.
+///
+/// # Example
+///
+/// ```no_run
+/// # use xtra::Message;
+/// struct MyResult;
+/// struct MyMessage;
+///
+/// impl Message for MyMessage {
+///     type Result = MyResult;
+/// }
+/// ```
 pub trait Message: Send + 'static {
     /// The return type of the message. It will be returned when the [`Address::send`](struct.Address.html#method.send)
     /// method is called.
@@ -196,6 +208,7 @@ impl<M: Message, T: SyncHandler<M> + Send> Handler<M> for T {
 /// # use std::time::Duration;
 /// # use smol::Timer;
 /// struct MyActor;
+///
 /// impl Actor for MyActor {
 ///     fn started(&mut self, ctx: &mut Context<Self>) {
 ///         println!("Started!");
@@ -210,8 +223,6 @@ impl<M: Message, T: SyncHandler<M> + Send> Handler<M> for T {
 ///         println!("Finally stopping.");
 ///     }
 /// }
-///
-/// struct Print(String);
 ///
 /// struct Goodbye;
 ///
@@ -239,17 +250,6 @@ impl<M: Message, T: SyncHandler<M> + Send> Handler<M> for T {
 /// For longer examples, see the `examples` directory.
 pub trait Actor: 'static + Sized {
     /// Called as soon as the actor has been started.
-    ///
-    /// # Example
-    /// ```
-    /// # use xtra::prelude::*;
-    /// # struct MyActor;
-    /// impl Actor for MyActor {
-    ///     fn started(&mut self, ctx: &mut Context<Self>) {
-    ///         println!("Started!");
-    ///     }
-    /// }
-    /// ```
     #[allow(unused_variables)]
     fn started(&mut self, ctx: &mut Context<Self>) {}
 
@@ -261,15 +261,15 @@ pub trait Actor: 'static + Sized {
     /// method.
     ///
     /// # Example
-    /// ```
+    /// ```no_run
     /// # use xtra::prelude::*;
     /// # use xtra::KeepRunning;
     /// # struct MyActor { is_running: bool };
-    /// impl Actor for MyActor {
-    ///     fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
-    ///         self.is_running.into()
-    ///     }
+    /// # impl Actor for MyActor {
+    /// fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
+    ///     self.is_running.into() // bool can be converted to KeepRunning with Into
     /// }
+    /// # }
     /// ```
     #[allow(unused_variables)]
     fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
@@ -281,18 +281,6 @@ pub trait Actor: 'static + Sized {
     /// [`Actor::stopping`](trait.Actor.html#method.stopping) method, or because there are no more
     /// strong addresses ([`Address`](struct.Address.html), as opposed to [`WeakAddress`](struct.WeakAddress.html).
     /// This should be used for any final cleanup before the actor is dropped.
-    ///
-    /// # Example
-    /// ```
-    /// # use xtra::prelude::*;
-    /// # use xtra::KeepRunning;
-    /// # struct MyActor { is_running: bool };
-    /// impl Actor for MyActor {
-    ///     fn stopped(&mut self, ctx: &mut Context<Self>) {
-    ///         println!("Actor stopped");
-    ///     }
-    /// }
-    /// ```
     #[allow(unused_variables)]
     fn stopped(&mut self, ctx: &mut Context<Self>) {}
 
@@ -335,10 +323,10 @@ pub trait Actor: 'static + Sized {
         feature = "with-wasm_bindgen-0_2",
         feature = "with-smol-0_1"
     ))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-smol-0_1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
     fn spawn(self) -> Address<Self>
     where
         Self: Send,
@@ -355,27 +343,12 @@ pub trait Actor: 'static + Sized {
     /// # use xtra::{KeepRunning, prelude::*};
     /// # use std::time::Duration;
     /// # use smol::Timer;
-    /// struct MyActor;
-    ///
-    /// impl Actor for MyActor {
-    ///     fn started(&mut self, ctx: &mut Context<Self>) {
-    ///         println!("Started!");
-    ///     }
-    /// }
-    ///
-    /// # struct Msg;
-    /// # impl Message for Msg {
-    /// #    type Result = ();
-    /// # }
-    /// # impl SyncHandler<Msg> for MyActor {
-    /// #     fn handle(&mut self, _: Msg, _ctx: &mut Context<Self>) {}
-    /// # }
-    ///
+    /// # struct MyActor;
+    /// # impl Actor for MyActor {}
     /// #[smol_potat::main]
     /// async fn main() {
     ///     let (addr, mgr) = MyActor.create();
     ///     smol::Task::spawn(mgr.manage()).detach(); // Actually spawn the actor onto an executor
-    ///     addr.do_send(Msg).unwrap();
     ///
     ///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
     /// }

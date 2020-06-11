@@ -86,6 +86,3 @@ From version 0.3.x to 0.4.0:
 - The `stable` feature was removed. In order to enable the nightly API, enable the new `nightly` feature.
 
 See the full list of breaking changes by version [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md)
-
-## To do
-- Examples in documentation

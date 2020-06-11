@@ -153,6 +153,12 @@ impl<A: Actor> Context<A> {
     }
 
     /// Handle any incoming messages for the actor while running a given future.
+    ///
+    /// # Example
+    ///
+    /// ```
+    #[doc(include = "../examples/interleaved_messages.rs")]
+    /// ```
     pub async fn handle_while<F, R>(&mut self, act: &mut A, mut fut: F) -> R
     where
         F: Future<Output = R> + Unpin,
@@ -218,10 +224,10 @@ impl<A: Actor> Context<A> {
         feature = "with-wasm_bindgen-0_2",
         feature = "with-smol-0_1"
     ))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-smol-0_1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
     pub fn notify_interval<F, M>(&mut self, duration: Duration, constructor: F)
     where
         F: Send + 'static + Fn() -> M,
@@ -291,10 +297,10 @@ impl<A: Actor> Context<A> {
         feature = "with-wasm_bindgen-0_2",
         feature = "with-smol-0_1"
     ))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-smol-0_1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
     pub fn notify_after<M>(&mut self, duration: Duration, notification: M)
     where
         M: Message,

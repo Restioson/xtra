@@ -47,10 +47,10 @@ impl<A: Actor> ActorManager<A> {
         feature = "with-wasm_bindgen-0_2",
         feature = "with-smol-0_1"
     ))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(nightly, doc(cfg(feature = "with-smol-0_1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
     pub(crate) fn spawn(actor: A) -> Address<A>
     where
         A: Send,
@@ -95,19 +95,30 @@ impl<A: Actor> ActorManager<A> {
     }
 
     /// Starts the manager loop. This will start the actor and allow it to respond to messages.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use xtra::prelude::*;
+    /// struct MyActor;
+    /// impl Actor for MyActor {}
+    ///
+    /// #[smol_potat::main]
+    /// async fn main() {
+    ///     let (addr, mgr) = MyActor.create();
+    ///     smol::Task::spawn(mgr.manage()).detach(); // Actually spawn the actor onto an executor
+    /// }
+    /// ```
     pub async fn manage(mut self) {
-        println!("start");
         self.actor.started(&mut self.ctx);
 
         // Idk why anyone would do this, but we have to check that they didn't do ctx.stop() in the
         // started method, otherwise it would kinda be a bug
         if !self.ctx.check_running(&mut self.actor) {
-            println!("returning lol");
             return;
         }
 
         // Listen for any messages for the ActorManager
-        println!("waiting");
         while let Some(msg) = self.ctx.receiver.next().await {
             match self.ctx.handle_message(msg, &mut self.actor).await {
                 ContinueManageLoop::Yes => {}
