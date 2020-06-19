@@ -1,6 +1,6 @@
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::ManagerMessage;
-use crate::{Actor, Handler, Message, MessageChannel, WeakMessageChannel};
+use crate::*;
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot::Receiver;
 use futures::task::{Context, Poll};
@@ -128,16 +128,18 @@ pub trait AddressExt<A: Actor> {
     #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
-    fn attach_stream<S, M>(self, mut stream: S)
-    where
-        M: Message,
-        A: Handler<M> + Send,
-        S: Stream<Item = M> + Send + Unpin + 'static,
-        Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
+    fn attach_stream<S, M, K>(self, mut stream: S)
+        where
+            K: Into<KeepRunning> + Send,
+            M: Message<Result = K>,
+            A: Handler<M> + Send,
+            S: Stream<Item = M> + Send + Unpin + 'static,
+            Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
         let fut = async move {
             while let Some(m) = stream.next().await {
-                if let Err(_) = self.do_send(m) {
+                let res = self.send(m); // Bound to make it Sync
+                if !matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
                     break;
                 }
             }

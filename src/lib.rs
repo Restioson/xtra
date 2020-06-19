@@ -385,3 +385,9 @@ impl Into<bool> for KeepRunning {
         }
     }
 }
+
+impl From<()> for KeepRunning {
+    fn from(_: ()) -> KeepRunning {
+        KeepRunning::Yes
+    }
+}
