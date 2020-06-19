@@ -1,6 +1,6 @@
 [package]
 name = "xtra"
-version = "0.4.1"
+version = "0.4.2"
 description = "A tiny actor framework"
 authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
@@ -12,7 +12,7 @@ keywords = ["async", "actor", "futures", "xtra", "async-await"]
 categories = ["asynchronous", "concurrency"]
 
 [dependencies]
-futures = { version = "^0.3" }
+futures = { version = "^0.3", default-features = false, features = ["alloc", "std"] }
 
 tokio = { version = "^0.2", features = ["rt-core", "time"], optional = true }
 smol = { version = "^0.1.11", optional = true }

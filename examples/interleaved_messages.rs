@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use xtra::prelude::*;
 use smol::Timer;
 use std::time::Duration;
+use xtra::prelude::*;
 
 struct Initialized(Address<ActorA>);
 impl Message for Initialized {

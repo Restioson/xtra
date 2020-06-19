@@ -369,9 +369,10 @@ pub enum KeepRunning {
 
 impl From<bool> for KeepRunning {
     fn from(b: bool) -> Self {
-        match b {
-            true => KeepRunning::Yes,
-            false => KeepRunning::No,
+        if b {
+            KeepRunning::Yes
+        } else {
+            KeepRunning::No
         }
     }
 }
