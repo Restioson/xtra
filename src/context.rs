@@ -95,8 +95,8 @@ impl<A: Actor> Context<A> {
 
     /// Handle all immediate notifications, returning whether to continue the manage loop
     async fn handle_immediate_notifications(&mut self, actor: &mut A) -> bool {
-        while let Some(exit_loop) = self.handle_immediate_notification(actor).await {
-            if exit_loop {
+        while let Some(continue_running) = self.handle_immediate_notification(actor).await {
+            if !continue_running {
                 return false;
             }
         }
