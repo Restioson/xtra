@@ -33,10 +33,8 @@ pub mod prelude {
     pub use crate::{Actor, Context, Handler, Message, SyncHandler};
 }
 
-use futures::future::Future;
 #[cfg(feature = "nightly")]
 use futures::future::{self, Ready};
-use std::pin::Pin;
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
 /// one at a time. Only actors implementing the corresponding [`Handler<M>`](trait.Handler.html)
@@ -94,9 +92,6 @@ pub trait SyncHandler<M: Message>: Actor {
     fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result;
 }
 
-/// A pinned, boxed future returned from [`Handler::handle`](trait.Handler.html#method.handle)
-pub type ResponderFut<'a, R> = Pin<Box<dyn Future<Output = R> + Send + 'a>>;
-
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
 /// asynchronously, and the logic to handle the message. If the message should be handled synchronously,
 /// then the [`SyncHandler`](trait.SyncHandler.html) trait should rather be implemented.
@@ -130,19 +125,13 @@ pub type ResponderFut<'a, R> = Pin<Box<dyn Future<Output = R> + Send + 'a>>;
 /// }
 /// ```
 #[cfg(not(feature = "nightly"))]
+#[async_trait::async_trait]
 pub trait Handler<M: Message>: Actor {
     /// Handle a given message, returning its result.
     ///
     /// Without the `nightly` feature enabled, this is an [`async_trait`](https://github.com/dtolnay/async-trait/).
     /// See the trait documentation to see an example of how this method can be declared.
-    fn handle<'s, 'c, 'handler>(
-        &'s mut self,
-        message: M,
-        ctx: &'c mut Context<Self>,
-    ) -> ResponderFut<'handler, M::Result>
-    where
-        's: 'handler,
-        'c: 'handler;
+    async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result;
 }
 
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
@@ -170,19 +159,12 @@ pub trait Handler<M: Message>: Actor {
     fn handle<'a>(&'a mut self, message: M, ctx: &'a mut Context<Self>) -> Self::Responder<'a>;
 }
 
+#[async_trait::async_trait]
 impl<M: Message, T: SyncHandler<M> + Send> Handler<M> for T {
     #[cfg(not(feature = "nightly"))]
-    fn handle<'a, 'b, 'c>(
-        &'a mut self,
-        message: M,
-        ctx: &'b mut Context<Self>,
-    ) -> ResponderFut<'c, M::Result>
-    where
-        'a: 'c,
-        'b: 'c,
-    {
+    async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result {
         let res: M::Result = SyncHandler::handle(self, message, ctx);
-        Box::pin(futures::future::ready(res))
+        res
     }
 
     #[cfg(feature = "nightly")]

@@ -13,6 +13,7 @@ categories = ["asynchronous", "concurrency"]
 
 [dependencies]
 futures = { version = "^0.3", default-features = false, features = ["alloc", "std"] }
+async-trait = "0.1"
 
 tokio = { version = "^0.2", features = ["rt-core", "time"], optional = true }
 smol = { version = "^0.1.11", optional = true }
@@ -24,7 +25,6 @@ wasm-bindgen-futures = { version = "^0.4", optional = true, default-features = f
 futures-timer = { version = "^3", optional = true, default-features = false }
 
 [dev-dependencies]
-async-trait = "0.1"
 smol = { version = "^0.1" }
 smol-potat = { version = "^0.3" }
 
