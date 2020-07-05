@@ -50,13 +50,13 @@ pub(crate) trait MessageEnvelope: Send {
 }
 
 /// An envelope that returns a result from a message. Constructed by the `AddressExt::do_send` method.
-pub(crate) struct ReturningEnvelope<A: Actor + Send, M: Message> {
+pub(crate) struct ReturningEnvelope<A: Actor, M: Message> {
     message: M,
     result_sender: Sender<M::Result>,
     phantom: PhantomData<A>,
 }
 
-impl<A: Actor + Send, M: Message> ReturningEnvelope<A, M> {
+impl<A: Actor, M: Message> ReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> (Self, Receiver<M::Result>) {
         let (tx, rx) = oneshot::channel();
         let envelope = ReturningEnvelope {
@@ -70,7 +70,7 @@ impl<A: Actor + Send, M: Message> ReturningEnvelope<A, M> {
 }
 
 #[cfg(not(feature = "nightly"))]
-impl<A: Handler<M> + Send, M: Message> MessageEnvelope for ReturningEnvelope<A, M> {
+impl<A: Handler<M>, M: Message> MessageEnvelope for ReturningEnvelope<A, M> {
     type Actor = A;
 
     fn handle<'a>(
@@ -91,7 +91,7 @@ impl<A: Handler<M> + Send, M: Message> MessageEnvelope for ReturningEnvelope<A, 
 }
 
 #[cfg(feature = "nightly")]
-impl<A: Handler<M> + Send, M: Message> MessageEnvelope for ReturningEnvelope<A, M>
+impl<A: Handler<M>, M: Message> MessageEnvelope for ReturningEnvelope<A, M>
 where
     for<'a> A::Responder<'a>: Future<Output = M::Result>,
 {
@@ -117,9 +117,9 @@ where
 #[cfg(feature = "nightly")]
 impl<A, M> MessageEnvelope for ReturningEnvelope<A, M>
 where
-    A: Handler<M> + SyncHandler<M> + Send,
+    A: Handler<M> + SyncHandler<M>,
     M: Message,
-    M::Result: Send,
+
 {
     fn handle<'a>(
         self: Box<Self>,
@@ -152,7 +152,7 @@ impl<A: Actor, M: Message> NonReturningEnvelope<A, M> {
 }
 
 #[cfg(not(feature = "nightly"))]
-impl<A: Handler<M> + Send, M: Message> MessageEnvelope for NonReturningEnvelope<A, M> {
+impl<A: Handler<M>, M: Message> MessageEnvelope for NonReturningEnvelope<A, M> {
     type Actor = A;
 
     fn handle<'a>(
@@ -165,7 +165,7 @@ impl<A: Handler<M> + Send, M: Message> MessageEnvelope for NonReturningEnvelope<
 }
 
 #[cfg(feature = "nightly")]
-impl<A: Handler<M> + Send, M: Message> MessageEnvelope for NonReturningEnvelope<A, M>
+impl<A: Handler<M>, M: Message> MessageEnvelope for NonReturningEnvelope<A, M>
 where
     for<'a> A::Responder<'a>: Future<Output = M::Result>,
 {
@@ -183,7 +183,7 @@ where
 #[cfg(feature = "nightly")]
 impl<A, M> MessageEnvelope for NonReturningEnvelope<A, M>
 where
-    A: Handler<M> + SyncHandler<M> + Send,
+    A: Handler<M> + SyncHandler<M>,
     M: Message,
 {
     fn handle<'a>(
@@ -212,7 +212,7 @@ pub(crate) trait AddressEnvelope<M: Message>:
 
 impl<A, M> AddressEnvelope<M> for Address<A>
 where
-    A: Handler<M> + Send,
+    A: Handler<M>,
     M: Message,
 {
     fn is_connected(&self) -> bool {
@@ -234,7 +234,7 @@ where
 
 impl<A, M> AddressEnvelope<M> for WeakAddress<A>
 where
-    A: Handler<M> + Send,
+    A: Handler<M>,
     M: Message,
 {
     fn is_connected(&self) -> bool {

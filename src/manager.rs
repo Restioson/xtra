@@ -40,38 +40,6 @@ impl<A: Actor> Drop for ActorManager<A> {
 }
 
 impl<A: Actor> ActorManager<A> {
-    /// Spawn the manager future onto the tokio or async-std executor
-    #[cfg(any(
-        feature = "with-tokio-0_2",
-        feature = "with-async_std-1",
-        feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_1"
-    ))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
-    pub(crate) fn spawn(actor: A) -> Address<A>
-    where
-        A: Send,
-    {
-        let (addr, mgr) = Self::start(actor);
-
-        #[cfg(feature = "with-tokio-0_2")]
-        tokio::spawn(mgr.manage());
-
-        #[cfg(feature = "with-async_std-1")]
-        async_std::task::spawn(mgr.manage());
-
-        #[cfg(feature = "with-wasm_bindgen-0_2")]
-        wasm_bindgen_futures::spawn_local(mgr.manage());
-
-        #[cfg(feature = "with-smol-0_1")]
-        smol::Task::spawn(mgr.manage()).detach();
-
-        addr
-    }
-
     /// Return the actor and its address in ready-to-run the actor by returning its address and
     /// its manager. The `ActorManager::manage` future has to be executed for the actor to actually
     /// start.

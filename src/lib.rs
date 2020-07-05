@@ -160,7 +160,7 @@ pub trait Handler<M: Message>: Actor {
 }
 
 #[async_trait::async_trait]
-impl<M: Message, T: SyncHandler<M> + Send> Handler<M> for T {
+impl<M: Message, T: SyncHandler<M>> Handler<M> for T {
     #[cfg(not(feature = "nightly"))]
     async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result {
         let res: M::Result = SyncHandler::handle(self, message, ctx);
@@ -230,7 +230,7 @@ impl<M: Message, T: SyncHandler<M> + Send> Handler<M> for T {
 /// ```
 ///
 /// For longer examples, see the `examples` directory.
-pub trait Actor: 'static + Sized {
+pub trait Actor: 'static + Send + Sized {
     /// Called as soon as the actor has been started.
     #[allow(unused_variables)]
     fn started(&mut self, ctx: &mut Context<Self>) {}
@@ -313,7 +313,21 @@ pub trait Actor: 'static + Sized {
     where
         Self: Send,
     {
-        ActorManager::spawn(self)
+        let (addr, mgr) = ActorManager::start(self);
+
+        #[cfg(feature = "with-tokio-0_2")]
+        tokio::spawn(mgr.manage());
+
+        #[cfg(feature = "with-async_std-1")]
+        async_std::task::spawn(mgr.manage());
+
+        #[cfg(feature = "with-wasm_bindgen-0_2")]
+        wasm_bindgen_futures::spawn_local(mgr.manage());
+
+        #[cfg(feature = "with-smol-0_1")]
+        smol::Task::spawn(mgr.manage()).detach();
+
+        addr
     }
 
     /// Returns the actor's address and manager in a ready-to-start state. To spawn the actor, the

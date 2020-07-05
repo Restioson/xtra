@@ -192,7 +192,7 @@ impl<A: Actor> Context<A> {
     pub fn notify_immediately<M>(&mut self, msg: M)
     where
         M: Message,
-        A: Handler<M> + Send,
+        A: Handler<M>,
     {
         let envelope = Box::new(NonReturningEnvelope::<A, M>::new(msg));
         self.immediate_notifications.push(envelope);
@@ -205,7 +205,7 @@ impl<A: Actor> Context<A> {
     pub fn notify_later<M>(&mut self, msg: M)
     where
         M: Message,
-        A: Handler<M> + Send,
+        A: Handler<M>,
     {
         let envelope = NonReturningEnvelope::<A, M>::new(msg);
         let _ = self
@@ -232,7 +232,7 @@ impl<A: Actor> Context<A> {
     where
         F: Send + 'static + Fn() -> M,
         M: Message,
-        A: Handler<M> + Send,
+        A: Handler<M>,
     {
         let addr = self.address.clone();
 
@@ -304,7 +304,7 @@ impl<A: Actor> Context<A> {
     pub fn notify_after<M>(&mut self, duration: Duration, notification: M)
     where
         M: Message,
-        A: Handler<M> + Send,
+        A: Handler<M>,
     {
         let addr = self.address.clone();
 

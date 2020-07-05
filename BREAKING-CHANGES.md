@@ -1,5 +1,16 @@
 # Breaking Changes by Version
 
+## 0.5.0
+
+- `Actor` now requires `Send` to implement. Previously, the trait itself did not, but using it did require `Send`.
+    - *How to upgrade:* you probably never had a non-`Send` actor in the first place.
+- The `{Weak}Address::attach_stream` method now requires that the actor implements `Handler<M>` where 
+  `M: Into<KeepRunning> + Send`. This is automatically implemented for `()`, returning `KeepRunning::Yes`. This allows
+  the user more control over the future spawned by `attach_stream`, but is breaking if the message returned did not
+  implement `Into<KeepRunning>`/
+    - *How to upgrade:* implement `Into<KeepRunning>` for all message types used in `attach_stream`. To mimic previous
+      behaviour, return `KeepRunning::Yes` in the implementation.
+
 ## 0.4.0
 
 - The `stable` feature was removed. In order to enable the nightly API, enable the new `nightly` feature.

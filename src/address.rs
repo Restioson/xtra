@@ -15,6 +15,8 @@ use futures::{Future, Sink};
 use futures::{Stream, StreamExt};
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
+use std::error::Error;
+use std::fmt::{self, Display, Formatter};
 
 /// The future returned by a method such as [`AddressExt::send`](trait.AddressExt.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -54,6 +56,14 @@ impl<M: Message> Future for MessageResponseFuture<M> {
 /// [`Actor::stopped`](trait.Actor.html#method.stopped) methods.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Disconnected;
+
+impl Display for Disconnected {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("Actor address disconnected")
+    }
+}
+
+impl Error for Disconnected {}
 
 /// General trait for any kind of address to an actor, be it strong or weak. This trait contains all
 /// functions of the address.
@@ -97,15 +107,14 @@ pub trait AddressExt<A: Actor> {
     fn do_send<M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
-        A: Handler<M> + Send;
+        A: Handler<M>;
 
     /// Sends a [`Message`](trait.Message.html) to the actor, and waits for a response. If this
     /// returns `Err(Disconnected)`, then the actor is stopped and not accepting messages.
     fn send<M>(&self, message: M) -> MessageResponseFuture<M>
     where
         M: Message,
-        A: Handler<M> + Send,
-        M::Result: Send;
+        A: Handler<M>;
 
     /// Attaches a stream to this actor such that all messages produced by it are forwarded to the
     /// actor. This could, for instance, be used to forward messages from a socket to the actor
@@ -132,7 +141,7 @@ pub trait AddressExt<A: Actor> {
         where
             K: Into<KeepRunning> + Send,
             M: Message<Result = K>,
-            A: Handler<M> + Send,
+            A: Handler<M>,
             S: Stream<Item = M> + Send + Unpin + 'static,
             Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
@@ -170,7 +179,7 @@ pub struct Address<A: Actor> {
     pub(crate) ref_counter: Arc<()>,
 }
 
-impl<A: Actor + Send> Address<A> {
+impl<A: Actor> Address<A> {
     /// Create a weak address to the actor. Unlike with the strong variety of address (this kind),
     /// an actor will not be prevented from being dropped if only weak addresses exist.
     pub fn downgrade(&self) -> WeakAddress<A> {
@@ -190,25 +199,36 @@ impl<A: Actor + Send> Address<A> {
     /// Gets a message channel to the actor. Like an address, a message channel allows messages
     /// to be sent to an actor. Unlike an address, rather than allowing you to send any kind of
     /// message to one kind of actor, a message channel allows you to send one kind of message to
-    /// any kind of actor.
+    /// any kind of actor. This method involves a clone of the address, and as such is slightly more
+    /// expensive than [`Address::into_channel`](struct.Address.html#method.into_channel).
     pub fn channel<M: Message>(&self) -> MessageChannel<M>
     where
         A: Handler<M>,
     {
-        MessageChannel {
-            address: Box::new(self.clone()),
-        }
+        self.clone().into_channel()
     }
 
     /// Converts this address into a message channel to the actor. Like an address, a message channel
     /// allows messages to be sent to an actor. Unlike an address, rather than allowing you to send
     /// any kind of message to one kind of actor, a message channel allows you to send one kind of
-    /// message to any kind of actor.
+    /// message to any kind of actor. This method does not clone the address, and as such is
+    /// slightly less expensive than [`Address::channel`](struct.Address.html#method.channel).
     pub fn into_channel<M: Message>(self) -> MessageChannel<M>
     where
         A: Handler<M>,
     {
-        self.channel()
+        MessageChannel {
+            address: Box::new(self),
+        }
+    }
+}
+
+impl<A, M> Into<MessageChannel<M>> for Address<A>
+    where A: Handler<M>,
+          M: Message,
+{
+    fn into(self) -> MessageChannel<M> {
+        self.into_channel()
     }
 }
 
@@ -220,7 +240,7 @@ impl<A: Actor> AddressExt<A> for Address<A> {
     fn do_send<M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
-        A: Handler<M> + Send,
+        A: Handler<M>,
     {
         // To read more about what an envelope is and why we use them, look under `envelope.rs`
         let envelope = NonReturningEnvelope::<A, M>::new(message);
@@ -232,8 +252,7 @@ impl<A: Actor> AddressExt<A> for Address<A> {
     fn send<M>(&self, message: M) -> MessageResponseFuture<M>
     where
         M: Message,
-        A: Handler<M> + Send,
-        M::Result: Send,
+        A: Handler<M>
     {
         let (envelope, rx) = ReturningEnvelope::<A, M>::new(message);
         let _ = self
@@ -246,7 +265,7 @@ impl<A: Actor> AddressExt<A> for Address<A> {
 impl<M, A> Sink<M> for Address<A>
 where
     M: Message,
-    A: Actor + Handler<M> + Send,
+    A: Handler<M>,
 {
     type Error = Disconnected;
 
@@ -313,29 +332,40 @@ pub struct WeakAddress<A: Actor> {
     pub(crate) ref_counter: Weak<()>,
 }
 
-impl<A: Actor + Send> WeakAddress<A> {
+impl<A: Actor> WeakAddress<A> {
     /// Gets a message channel to the actor. Like an address, a message channel allows messages
     /// to be sent to an actor. Unlike an address, rather than allowing you to send any kind of
     /// message to one kind of actor, a message channel allows you to send one kind of message to
-    /// any kind of actor.
+    /// any kind of actor.  This method involves a clone of the address, and as such is slightly more
+    /// expensive than [`WeakAddress::into_channel`](struct.WeakAddress.html#method.into_channel).
     pub fn channel<M: Message>(&self) -> WeakMessageChannel<M>
     where
         A: Handler<M>,
     {
-        WeakMessageChannel {
-            address: Box::new(self.clone()),
-        }
+        self.clone().into_channel()
     }
 
     /// Converts this address into a message channel to the actor. Like an address, a message channel
     /// allows messages to be sent to an actor. Unlike an address, rather than allowing you to send
     /// any kind of message to one kind of actor, a message channel allows you to send one kind of
-    /// message to any kind of actor.
+    /// message to any kind of actor. This method does not clone the address, and as such is
+    /// slightly less expensive than [`WeakAddress::channel`](struct.WeakAddress.html#method.channel).
     pub fn into_channel<M: Message>(self) -> WeakMessageChannel<M>
     where
         A: Handler<M>,
     {
-        self.channel()
+        WeakMessageChannel {
+            address: Box::new(self)
+        }
+    }
+}
+
+impl<A, M> Into<WeakMessageChannel<M>> for WeakAddress<A>
+    where A: Handler<M>,
+          M: Message,
+{
+    fn into(self) -> WeakMessageChannel<M> {
+        self.into_channel()
     }
 }
 
@@ -350,7 +380,7 @@ impl<A: Actor> AddressExt<A> for WeakAddress<A> {
     fn do_send<M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
-        A: Handler<M> + Send,
+        A: Handler<M>,
     {
         if self.is_connected() {
             // To read more about what an envelope is and why we use them, look under `envelope.rs`
@@ -366,8 +396,7 @@ impl<A: Actor> AddressExt<A> for WeakAddress<A> {
     fn send<M>(&self, message: M) -> MessageResponseFuture<M>
     where
         M: Message,
-        A: Handler<M> + Send,
-        M::Result: Send,
+        A: Handler<M>
     {
         if self.is_connected() {
             let (envelope, rx) = ReturningEnvelope::<A, M>::new(message);
@@ -384,7 +413,7 @@ impl<A: Actor> AddressExt<A> for WeakAddress<A> {
 impl<M, A> Sink<M> for WeakAddress<A>
 where
     M: Message,
-    A: Actor + Handler<M> + Send,
+    A: Handler<M>,
 {
     type Error = Disconnected;
 
