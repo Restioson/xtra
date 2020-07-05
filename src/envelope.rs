@@ -199,7 +199,7 @@ where
 /// This is used in `message_channel.rs`. All of its methods map to an equivalent method in
 /// `Address` or `AddressExt`
 pub(crate) trait AddressEnvelope<M: Message>:
-    Sink<M, Error = Disconnected> + Unpin + Send
+    Sink<M, Error = Disconnected> + Unpin + Send + Sync
 {
     fn is_connected(&self) -> bool;
     fn do_send(&self, message: M) -> Result<(), Disconnected>;
