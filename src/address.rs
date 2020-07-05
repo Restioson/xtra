@@ -13,10 +13,10 @@ use futures::{Future, Sink};
     feature = "with-smol-0_1"
 ))]
 use futures::{Stream, StreamExt};
-use std::pin::Pin;
-use std::sync::{Arc, Weak};
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
+use std::pin::Pin;
+use std::sync::{Arc, Weak};
 
 /// The future returned by a method such as [`AddressExt::send`](trait.AddressExt.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -138,12 +138,12 @@ pub trait AddressExt<A: Actor> {
     #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
     fn attach_stream<S, M, K>(self, mut stream: S)
-        where
-            K: Into<KeepRunning> + Send,
-            M: Message<Result = K>,
-            A: Handler<M>,
-            S: Stream<Item = M> + Send + Unpin + 'static,
-            Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
+    where
+        K: Into<KeepRunning> + Send,
+        M: Message<Result = K>,
+        A: Handler<M>,
+        S: Stream<Item = M> + Send + Unpin + 'static,
+        Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
         let fut = async move {
             while let Some(m) = stream.next().await {
@@ -224,8 +224,9 @@ impl<A: Actor> Address<A> {
 }
 
 impl<A, M> Into<MessageChannel<M>> for Address<A>
-    where A: Handler<M>,
-          M: Message,
+where
+    A: Handler<M>,
+    M: Message,
 {
     fn into(self) -> MessageChannel<M> {
         self.into_channel()
@@ -252,7 +253,7 @@ impl<A: Actor> AddressExt<A> for Address<A> {
     fn send<M>(&self, message: M) -> MessageResponseFuture<M>
     where
         M: Message,
-        A: Handler<M>
+        A: Handler<M>,
     {
         let (envelope, rx) = ReturningEnvelope::<A, M>::new(message);
         let _ = self
@@ -355,14 +356,15 @@ impl<A: Actor> WeakAddress<A> {
         A: Handler<M>,
     {
         WeakMessageChannel {
-            address: Box::new(self)
+            address: Box::new(self),
         }
     }
 }
 
 impl<A, M> Into<WeakMessageChannel<M>> for WeakAddress<A>
-    where A: Handler<M>,
-          M: Message,
+where
+    A: Handler<M>,
+    M: Message,
 {
     fn into(self) -> WeakMessageChannel<M> {
         self.into_channel()
@@ -396,7 +398,7 @@ impl<A: Actor> AddressExt<A> for WeakAddress<A> {
     fn send<M>(&self, message: M) -> MessageResponseFuture<M>
     where
         M: Message,
-        A: Handler<M>
+        A: Handler<M>,
     {
         if self.is_connected() {
             let (envelope, rx) = ReturningEnvelope::<A, M>::new(message);

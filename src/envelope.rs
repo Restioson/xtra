@@ -119,7 +119,6 @@ impl<A, M> MessageEnvelope for ReturningEnvelope<A, M>
 where
     A: Handler<M> + SyncHandler<M>,
     M: Message,
-
 {
     fn handle<'a>(
         self: Box<Self>,
