@@ -10,7 +10,7 @@ use futures::{Future, Sink};
     feature = "with-tokio-0_2",
     feature = "with-async_std-1",
     feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-0_1"
+    feature = "with-smol-0_3"
 ))]
 use futures::{Stream, StreamExt};
 use std::pin::Pin;
@@ -131,12 +131,12 @@ pub trait AddressExt<A: Actor> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_1"
+        feature = "with-smol-0_3"
     ))]
     #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_3")))]
     fn attach_stream<S, M, K>(self, mut stream: S)
         where
             K: Into<KeepRunning> + Send,
@@ -163,7 +163,7 @@ pub trait AddressExt<A: Actor> {
         #[cfg(feature = "with-wasm_bindgen-0_2")]
         wasm_bindgen_futures::spawn_local(fut);
 
-        #[cfg(feature = "with-smol-0_1")]
+        #[cfg(feature = "with-smol-0_3")]
         smol::Task::spawn(fut).detach();
     }
 }

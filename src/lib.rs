@@ -303,12 +303,12 @@ pub trait Actor: 'static + Send + Sized {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_1"
+        feature = "with-smol-0_3"
     ))]
     #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_3")))]
     fn spawn(self) -> Address<Self>
     where
         Self: Send,
@@ -324,7 +324,7 @@ pub trait Actor: 'static + Send + Sized {
         #[cfg(feature = "with-wasm_bindgen-0_2")]
         wasm_bindgen_futures::spawn_local(mgr.manage());
 
-        #[cfg(feature = "with-smol-0_1")]
+        #[cfg(feature = "with-smol-0_3")]
         smol::Task::spawn(mgr.manage()).detach();
 
         addr

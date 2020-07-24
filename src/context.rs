@@ -10,7 +10,7 @@ use std::sync::Arc;
     feature = "with-tokio-0_2",
     feature = "with-async_std-1",
     feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-0_1"
+    feature = "with-smol-0_3"
 ))]
 use {crate::AddressExt, std::time::Duration};
 
@@ -222,12 +222,12 @@ impl<A: Actor> Context<A> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_1"
+        feature = "with-smol-0_3"
     ))]
     #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_3")))]
     pub fn notify_interval<F, M>(&mut self, duration: Duration, constructor: F)
     where
         F: Send + 'static + Fn() -> M,
@@ -273,12 +273,12 @@ impl<A: Actor> Context<A> {
             })
         }
 
-        #[cfg(feature = "with-smol-0_1")]
+        #[cfg(feature = "with-smol-0_3")]
         {
             use smol::Timer;
             smol::Task::spawn(async move {
                 loop {
-                    Timer::after(duration.clone()).await;
+                    Timer::new(duration.clone()).await;
                     if let Err(_) = addr.do_send(constructor()) {
                         break;
                     }
@@ -295,12 +295,12 @@ impl<A: Actor> Context<A> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_1"
+        feature = "with-smol-0_3"
     ))]
     #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_3")))]
     pub fn notify_after<M>(&mut self, duration: Duration, notification: M)
     where
         M: Message,
@@ -332,11 +332,11 @@ impl<A: Actor> Context<A> {
             })
         }
 
-        #[cfg(feature = "with-smol-0_1")]
+        #[cfg(feature = "with-smol-0_3")]
         {
             use smol::Timer;
             smol::Task::spawn(async move {
-                Timer::after(duration.clone()).await;
+                Timer::new(duration.clone()).await;
                 let _ = addr.do_send(notification);
             })
             .detach();
