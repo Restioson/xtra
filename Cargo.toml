@@ -16,7 +16,7 @@ futures = { version = "^0.3", default-features = false, features = ["alloc", "st
 async-trait = "0.1"
 
 tokio = { version = "^0.2", features = ["rt-core", "time"], optional = true }
-smol = { version = "^0.1.11", optional = true }
+smol = { version = "^0.3.1", optional = true }
 async-std = { version = "^1", features = ["unstable"], optional = true}
 
 # Wasm-bindgen support
@@ -25,8 +25,8 @@ wasm-bindgen-futures = { version = "^0.4", optional = true, default-features = f
 futures-timer = { version = "^3", optional = true, default-features = false }
 
 [dev-dependencies]
-smol = { version = "^0.1" }
-smol-potat = { version = "^0.3" }
+smol = { version = "^0.3.1" }
+smol-potat = { version = "^0.4" }
 
 [features]
 default = []
@@ -34,7 +34,7 @@ nightly = []
 with-tokio-0_2 = ["tokio"]
 with-async_std-1 = ["async-std"]
 with-wasm_bindgen-0_2 = ["wasm-bindgen", "wasm-bindgen-futures", "futures-timer/wasm-bindgen"]
-with-smol-0_1 = ["smol"]
+with-smol-0_3 = ["smol"]
 
 [[example]]
 name = "basic_tokio"
@@ -49,7 +49,7 @@ required-features = ["with-async_std-1", "async-std/attributes"]
 [[example]]
 name = "basic_smol"
 path = "examples/basic_smol.rs"
-required-features = ["with-smol-0_1"]
+required-features = ["with-smol-0_3"]
 
 [[example]]
 name = "async_handler"
