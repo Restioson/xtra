@@ -104,17 +104,18 @@ pub trait Handler<M: Message>: Actor {
 /// # use smol::Timer;
 /// struct MyActor;
 ///
+/// #[async_trait::async_trait]
 /// impl Actor for MyActor {
-///     fn started(&mut self, ctx: &mut Context<Self>) {
+///     async fn started(&mut self, ctx: &mut Context<Self>) {
 ///         println!("Started!");
 ///     }
 ///
-///     fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
+///     async fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
 ///         println!("Decided not to keep running");
 ///         KeepRunning::No
 ///     }
 ///
-///     fn stopped(&mut self, ctx: &mut Context<Self>) {
+///     async fn stopped(&mut self, ctx: &mut Context<Self>) {
 ///         println!("Finally stopping.");
 ///     }
 /// }
@@ -125,8 +126,9 @@ pub trait Handler<M: Message>: Actor {
 ///     type Result = ();
 /// }
 ///
-/// impl SyncHandler<Goodbye> for MyActor {
-///     fn handle(&mut self, _: Goodbye, ctx: &mut Context<Self>) {
+/// #[async_trait::async_trait]
+/// impl Handler<Goodbye> for MyActor {
+///     async fn handle(&mut self, _: Goodbye, ctx: &mut Context<Self>) {
 ///         println!("Goodbye!");
 ///         ctx.stop();
 ///     }
@@ -161,8 +163,9 @@ pub trait Actor: 'static + Send + Sized {
     /// # use xtra::prelude::*;
     /// # use xtra::KeepRunning;
     /// # struct MyActor { is_running: bool };
+    /// # #[async_trait::async_trait]
     /// # impl Actor for MyActor {
-    /// fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
+    /// async fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
     ///     self.is_running.into() // bool can be converted to KeepRunning with Into
     /// }
     /// # }
@@ -200,8 +203,9 @@ pub trait Actor: 'static + Send + Sized {
     /// # impl Message for Msg {
     /// #    type Result = ();
     /// # }
-    /// # impl SyncHandler<Msg> for MyActor {
-    /// #     fn handle(&mut self, _: Msg, _ctx: &mut Context<Self>) {}
+    /// # #[async_trait::async_trait]
+    /// # impl Handler<Msg> for MyActor {
+    /// #     async fn handle(&mut self, _: Msg, _ctx: &mut Context<Self>) {}
     /// # }
     ///
     /// fn main() {

@@ -85,14 +85,16 @@ pub trait MessageChannelExt<M: Message> {
 /// impl Actor for Alice {}
 /// impl Actor for Bob {}
 ///
-/// impl SyncHandler<WhatsYourName> for Alice {
-///     fn handle(&mut self, _: WhatsYourName, _ctx: &mut Context<Self>) -> &'static str {
+/// #[async_trait::async_trait]
+/// impl Handler<WhatsYourName> for Alice {
+///     async fn handle(&mut self, _: WhatsYourName, _ctx: &mut Context<Self>) -> &'static str {
 ///         "Alice"
 ///     }
 /// }
 ///
-/// impl SyncHandler<WhatsYourName> for Bob {
-///     fn handle(&mut self, _: WhatsYourName, _ctx: &mut Context<Self>) -> &'static str {
+/// #[async_trait::async_trait]
+/// impl Handler<WhatsYourName> for Bob {
+///     async fn handle(&mut self, _: WhatsYourName, _ctx: &mut Context<Self>) -> &'static str {
 ///         "Bob"
 ///     }
 /// }

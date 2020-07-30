@@ -81,8 +81,9 @@ pub trait AddressExt<A: Actor> {
     ///     type Result = ();
     /// }
     ///
-    /// impl SyncHandler<Shutdown> for MyActor {
-    ///     fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
+    /// #[async_trait::async_trait]
+    /// impl Handler<Shutdown> for MyActor {
+    ///     async fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
     ///         ctx.stop();
     ///     }
     /// }
