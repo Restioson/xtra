@@ -1,6 +1,6 @@
 use crate::address::MessageResponseFuture;
 use crate::envelope::AddressEnvelope;
-use crate::{Disconnected, Message};
+use crate::{Disconnected, Message, KeepRunning};
 use futures::task::{Context, Poll};
 use futures::Sink;
 #[cfg(any(
@@ -54,6 +54,7 @@ pub trait MessageChannelExt<M: Message> {
     fn attach_stream<S>(self, stream: S)
     where
         S: Stream<Item = M> + Send + Unpin + 'static,
+        M::Result: Into<KeepRunning> + Send,
         Self: Sized + Send + Sink<M, Error = Disconnected> + 'static;
 }
 
@@ -150,6 +151,7 @@ impl<M: Message> MessageChannelExt<M> for MessageChannel<M> {
     fn attach_stream<S>(self, stream: S)
     where
         S: Stream<Item = M> + Send + Unpin + 'static,
+        M::Result: Into<KeepRunning> + Send,
         Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
         let fut = stream.map(|i| Ok(i)).forward(self).map(|_| ());
@@ -224,6 +226,7 @@ impl<M: Message> MessageChannelExt<M> for WeakMessageChannel<M> {
     fn attach_stream<S>(self, stream: S)
     where
         S: Stream<Item = M> + Send + Unpin + 'static,
+        M::Result: Into<KeepRunning> + Send,
         Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
         let fut = stream.map(|i| Ok(i)).forward(self).map(|_| ());
