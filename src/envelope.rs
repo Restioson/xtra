@@ -1,8 +1,6 @@
 use crate::address::MessageResponseFuture;
 use crate::*;
 use futures::channel::oneshot::{self, Receiver, Sender};
-#[cfg(feature = "nightly")]
-use futures::future;
 use futures::{Future, FutureExt, Sink};
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -69,7 +67,6 @@ impl<A: Actor, M: Message> ReturningEnvelope<A, M> {
     }
 }
 
-#[cfg(not(feature = "nightly"))]
 impl<A: Handler<M>, M: Message> MessageEnvelope for ReturningEnvelope<A, M> {
     type Actor = A;
 
@@ -90,50 +87,6 @@ impl<A: Handler<M>, M: Message> MessageEnvelope for ReturningEnvelope<A, M> {
     }
 }
 
-#[cfg(feature = "nightly")]
-impl<A: Handler<M>, M: Message> MessageEnvelope for ReturningEnvelope<A, M>
-where
-    for<'a> A::Responder<'a>: Future<Output = M::Result>,
-{
-    type Actor = A;
-
-    default fn handle<'a>(
-        self: Box<Self>,
-        act: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
-    ) -> Fut<'a> {
-        let Self {
-            message,
-            result_sender,
-            ..
-        } = *self;
-        Box::pin(act.handle(message, ctx).map(move |r| {
-            // We don't actually care if the receiver is listening
-            let _ = result_sender.send(r);
-        }))
-    }
-}
-
-#[cfg(feature = "nightly")]
-impl<A, M> MessageEnvelope for ReturningEnvelope<A, M>
-where
-    A: Handler<M> + SyncHandler<M>,
-    M: Message,
-{
-    fn handle<'a>(
-        self: Box<Self>,
-        act: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
-    ) -> Fut<'a> {
-        let message_result = SyncHandler::handle(act, self.message, ctx);
-
-        // We don't actually care if the receiver is listening
-        let _ = self.result_sender.send(message_result);
-
-        Box::pin(future::ready(()))
-    }
-}
-
 /// An envelope that does not return a result from a message. Constructed  by the `AddressExt::do_send`
 /// method.
 pub(crate) struct NonReturningEnvelope<A: Actor, M: Message> {
@@ -150,7 +103,6 @@ impl<A: Actor, M: Message> NonReturningEnvelope<A, M> {
     }
 }
 
-#[cfg(not(feature = "nightly"))]
 impl<A: Handler<M>, M: Message> MessageEnvelope for NonReturningEnvelope<A, M> {
     type Actor = A;
 
@@ -160,38 +112,6 @@ impl<A: Handler<M>, M: Message> MessageEnvelope for NonReturningEnvelope<A, M> {
         ctx: &'a mut Context<Self::Actor>,
     ) -> Fut<'a> {
         Box::pin(act.handle(self.message, ctx).map(|_| ()))
-    }
-}
-
-#[cfg(feature = "nightly")]
-impl<A: Handler<M>, M: Message> MessageEnvelope for NonReturningEnvelope<A, M>
-where
-    for<'a> A::Responder<'a>: Future<Output = M::Result>,
-{
-    type Actor = A;
-
-    default fn handle<'a>(
-        self: Box<Self>,
-        act: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
-    ) -> Fut<'a> {
-        Box::pin(act.handle(self.message, ctx).map(|_| ()))
-    }
-}
-
-#[cfg(feature = "nightly")]
-impl<A, M> MessageEnvelope for NonReturningEnvelope<A, M>
-where
-    A: Handler<M> + SyncHandler<M>,
-    M: Message,
-{
-    fn handle<'a>(
-        self: Box<Self>,
-        act: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
-    ) -> Fut<'a> {
-        SyncHandler::handle(act, self.message, ctx);
-        Box::pin(future::ready(()))
     }
 }
 

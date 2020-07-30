@@ -1,17 +1,17 @@
 use crate::address::MessageResponseFuture;
 use crate::envelope::AddressEnvelope;
-use crate::{Disconnected, Message, KeepRunning};
-use std::task::{Context, Poll};
+use crate::*;
 use futures::Sink;
 #[cfg(any(
     doc,
     feature = "with-tokio-0_2",
     feature = "with-async_std-1",
     feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-0_1"
+    feature = "with-smol-0_3"
 ))]
 use futures::{FutureExt, Stream, StreamExt};
 use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// General trait for any kind of channel of messages, be it strong or weak. This trait contains all
 /// functions of the channel.
@@ -45,12 +45,12 @@ pub trait MessageChannelExt<M: Message> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_1"
+        feature = "with-smol-0_3"
     ))]
     #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_3")))]
     fn attach_stream<S>(self, stream: S)
     where
         S: Stream<Item = M> + Send + Unpin + 'static,
@@ -97,14 +97,14 @@ pub trait MessageChannelExt<M: Message> {
 ///     }
 /// }
 ///
-/// #[smol_potat::main]
-/// async fn main() {
-///     let channels = [Alice.spawn().into_channel(), Bob.spawn().into_channel()];
-///     let name = ["Alice", "Bob"];
-///
-///     for (channel, name) in channels.iter().zip(&name) {
-///         assert_eq!(*name, channel.send(WhatsYourName).await.unwrap());
-///     }
+/// fn main() {
+///     smol::run(async {
+///         let channels = [Alice.spawn().into_channel(), Bob.spawn().into_channel()];
+///         let name = ["Alice", "Bob"];
+///         for (channel, name) in channels.iter().zip(&name) {
+///             assert_eq!(*name, channel.send(WhatsYourName).await.unwrap());
+///         }
+///     })
 /// }
 /// ```
 pub struct MessageChannel<M: Message> {
@@ -146,7 +146,7 @@ impl<M: Message> MessageChannelExt<M> for MessageChannel<M> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_1"
+        feature = "with-smol-0_3"
     ))]
     fn attach_stream<S>(self, stream: S)
     where
@@ -210,7 +210,7 @@ impl<M: Message> MessageChannelExt<M> for WeakMessageChannel<M> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_1"
+        feature = "with-smol-0_3"
     ))]
     fn attach_stream<S>(self, stream: S)
     where
@@ -219,7 +219,7 @@ impl<M: Message> MessageChannelExt<M> for WeakMessageChannel<M> {
         Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
         let fut = stream.map(|i| Ok(i)).forward(self).map(|_| ());
-        tokio::spawn(fut);
+        crate::spawn(fut);
     }
 }
 

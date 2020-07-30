@@ -17,8 +17,9 @@ impl Message for Print {
     type Result = ();
 }
 
-impl SyncHandler<Print> for Printer {
-    fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) {
+#[async_trait::async_trait]
+impl Handler<Print> for Printer {
+    async fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) {
         self.times += 1;
         println!("Printing {}. Printed {} times so far.", print.0, self.times);
     }

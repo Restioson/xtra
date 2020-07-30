@@ -1,34 +1,29 @@
 use wasm_bindgen::{prelude::*, JsValue};
 use xtra::prelude::*;
 
-struct Printer;
+struct Echoer;
 
-impl Printer {
-    fn new() -> Self {
-        Printer {}
-    }
-}
+impl Actor for Echoer {}
 
-impl Actor for Printer {}
-
-struct Print(String);
-impl Message for Print {
+struct Echo(String);
+impl Message for Echo {
     type Result = String;
 }
 
-impl SyncHandler<Print> for Printer {
-    fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) -> String {
-        print.0
+#[async_trait::async_trait]
+impl Handler<Echo> for Echoer {
+    async fn handle(&mut self, echo: Echo, _ctx: &mut Context<Self>) -> String {
+        echo.0
     }
 }
 
 #[wasm_bindgen]
 pub async fn start() -> Result<(), JsValue> {
-    let addr = Printer::new().spawn();
+    let addr = Echoer.spawn();
     let response = addr
-        .send(Print("hello world".to_string()))
+        .send(Echo("hello world".to_string()))
         .await
-        .expect("Printer should not be dropped");
+        .expect("Echoer should not be dropped");
 
     assert_eq!(response, "hello world");
 

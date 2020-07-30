@@ -33,12 +33,6 @@ pub struct ActorManager<A: Actor> {
     ctx: Context<A>,
 }
 
-impl<A: Actor> Drop for ActorManager<A> {
-    fn drop(&mut self) {
-        self.actor.stopped(&mut self.ctx);
-    }
-}
-
 impl<A: Actor> ActorManager<A> {
     /// Return the actor and its address in ready-to-run the actor by returning its address and
     /// its manager. The `ActorManager::manage` future has to be executed for the actor to actually
@@ -71,18 +65,18 @@ impl<A: Actor> ActorManager<A> {
     /// struct MyActor;
     /// impl Actor for MyActor {}
     ///
-    /// #[smol_potat::main]
-    /// async fn main() {
+    /// smol::run(async {
     ///     let (addr, mgr) = MyActor.create();
     ///     smol::Task::spawn(mgr.manage()).detach(); // Actually spawn the actor onto an executor
-    /// }
+    /// });
     /// ```
     pub async fn manage(mut self) {
-        self.actor.started(&mut self.ctx);
+        self.actor.started(&mut self.ctx).await;
 
         // Idk why anyone would do this, but we have to check that they didn't do ctx.stop() in the
         // started method, otherwise it would kinda be a bug
-        if !self.ctx.check_running(&mut self.actor) {
+        if !self.ctx.check_running(&mut self.actor).await {
+            self.actor.stopped(&mut self.ctx).await;
             return;
         }
 
@@ -91,7 +85,10 @@ impl<A: Actor> ActorManager<A> {
             match self.ctx.handle_message(msg, &mut self.actor).await {
                 ContinueManageLoop::Yes => {}
                 ContinueManageLoop::ProcessNotifications => break,
-                ContinueManageLoop::ExitImmediately => return,
+                ContinueManageLoop::ExitImmediately => {
+                    self.actor.stopped(&mut self.ctx).await;
+                    return;
+                },
             }
         }
 
@@ -107,5 +104,7 @@ impl<A: Actor> ActorManager<A> {
                 break;
             }
         }
+
+        self.actor.stopped(&mut self.ctx).await;
     }
 }

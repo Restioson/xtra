@@ -1,6 +1,3 @@
-use async_trait::async_trait;
-use smol::Timer;
-use std::time::Duration;
 use xtra::prelude::*;
 
 struct Initialized(Address<ActorA>);
@@ -18,7 +15,7 @@ struct ActorA {
 }
 impl Actor for ActorA {}
 
-#[async_trait]
+#[async_trait::async_trait]
 impl Handler<Hello> for ActorA {
     async fn handle(&mut self, _: Hello, ctx: &mut Context<Self>) {
         println!("ActorA: Hello");
@@ -31,7 +28,7 @@ impl Handler<Hello> for ActorA {
 struct ActorB;
 impl Actor for ActorB {}
 
-#[async_trait]
+#[async_trait::async_trait]
 impl Handler<Initialized> for ActorB {
     async fn handle(&mut self, m: Initialized, ctx: &mut Context<Self>) {
         println!("ActorB: Initialized");
@@ -40,19 +37,20 @@ impl Handler<Initialized> for ActorB {
     }
 }
 
-#[async_trait]
+#[async_trait::async_trait]
 impl Handler<Hello> for ActorB {
     async fn handle(&mut self, _: Hello, _: &mut Context<Self>) {
         println!("ActorB: Hello");
     }
 }
 
-#[smol_potat::main]
-async fn main() {
-    let actor_b = ActorB {}.spawn();
-    let actor_a = ActorA {
-        actor_b: actor_b.clone(),
-    }
-    .spawn();
-    actor_b.send(Initialized(actor_a.clone())).await.unwrap();
+fn main() {
+    smol::run(async {
+        let actor_b = ActorB.spawn();
+        let actor_a = ActorA {
+            actor_b: actor_b.clone(),
+        }
+        .spawn();
+        actor_b.send(Initialized(actor_a.clone())).await.unwrap();
+    })
 }

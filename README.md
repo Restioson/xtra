@@ -62,28 +62,23 @@ async fn main() {
 ```
 
 For a longer example, check out [Vertex](https://github.com/Restioson/vertex/tree/development), a chat application
-written with xtra nightly (on the server).
+written with xtra and spaad on the server.
 
 Too verbose? Check out the [spaad](https://crates.io/crates/spaad) sister-crate!
 
 ## Okay, sounds great! How do I use it?
 Check out the [docs](https://docs.rs/xtra) and the [examples](https://github.com/Restioson/xtra/blob/master/examples)
-to get started! Enabling the `with-tokio-0_2`, `with-async_std-1`, `with-smol-0_1`, or `with-wasm-bindgen-0_2` features
+to get started! Enabling the `with-tokio-0_2`, `with-async_std-1`, `with-smol-0_3`, or `with-wasm-bindgen-0_2` features
 is recommended in order to enable some  convenience methods (such as `Actor::spawn`). Which you enable will depend on
 which executor you want to use (check out their docs to learn more about each). If you have any questions, feel free to
 [open an issue](https://github.com/Restioson/xtra/issues/new) or message me on the [Rust discord](https://bit.ly/rust-community).
 
-## Nightly API
-
-There is also a different nightly API, which is **incompatible with the stable api**.. For an example, check out
-`examples/nightly.rs`. To switch to it, enable the `nightly` feature in the Cargo.toml. This API uses
-GATs and Type Alias Impl Trait to remove one boxing of a future, but according to my benchmarks, this impact has little 
-effect. Your mileage may vary. GATs are unstable and can cause undefined behaviour in safe rust, and the combination of
-GAT + TAIT can break rustdoc. Therefore, the tradeoff is a (possibly negligible) performance boost for less
-support and instability. Generally, the only situation I would recommend this to be used in is for code written for xtra
-0.2.
-
 ## Latest Breaking Changes
+- **The `SyncHandler` trait has been removed.** This simplifies the API and should not change the performance on stable.
+    - *How to upgrade:* change all implementations of the `SyncHandler` trait to the normal `Handler` trait.
+- **All `Actor` lifecycle messages are now async.** This allows to do more kinds of things in lifecycle methods,
+  while adding no restrictions.
+    - *How to upgrade:* add `async` to the function definition of all actor lifecycle methods.
 - `Actor` now requires `Send` to implement. Previously, the trait itself did not, but using it did require `Send`.
     - *How to upgrade:* you probably never had a non-`Send` actor in the first place.
 - The `{Weak}Address::attach_stream` method now requires that the actor implements `Handler<M>` where 

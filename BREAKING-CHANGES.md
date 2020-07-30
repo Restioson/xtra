@@ -2,6 +2,11 @@
 
 ## 0.5.0
 
+- **The `SyncHandler` trait has been removed.** This simplifies the API and should not change the performance on stable.
+    - *How to upgrade:* change all implementations of the `SyncHandler` trait to the normal `Handler` trait.
+- **All `Actor` lifecycle messages are now async.** This allows to do more kinds of things in lifecycle methods,
+  while adding no restrictions.
+    - *How to upgrade:* add `async` to the function definition of all actor lifecycle methods.
 - `Actor` now requires `Send` to implement. Previously, the trait itself did not, but using it did require `Send`.
     - *How to upgrade:* you probably never had a non-`Send` actor in the first place.
 - The `{Weak}Address::attach_stream` method now requires that the actor implements `Handler<M>` where 
@@ -13,7 +18,8 @@
 
 ## 0.4.0
 
-- The `stable` feature was removed. In order to enable the nightly API, enable the new `nightly` feature.
+- The `stable` feature was removed. ~~In order to enable the nightly API, enable the new `nightly` feature.~~ *Edit: as
+  of 0.5.0, the nightly API has been removed.*
 
 ## 0.3.0
 

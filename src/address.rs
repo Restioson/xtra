@@ -2,20 +2,20 @@ use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::ManagerMessage;
 use crate::*;
 use futures::channel::{mpsc::UnboundedSender, oneshot::Receiver};
-use std::task::{Context, Poll};
 use futures::{Future, Sink};
 #[cfg(any(
     doc,
     feature = "with-tokio-0_2",
     feature = "with-async_std-1",
     feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-0_1"
+    feature = "with-smol-0_3"
 ))]
 use futures::{Stream, StreamExt};
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
+use std::task::{Context, Poll};
 
 /// The future returned by a method such as [`AddressExt::send`](trait.AddressExt.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -87,14 +87,13 @@ pub trait AddressExt<A: Actor> {
     ///     }
     /// }
     ///
-    /// #[smol_potat::main]
-    /// async fn main() {
-    /// let addr = MyActor.spawn();
+    /// smol::run(async {
+    ///     let addr = MyActor.spawn();
     ///     assert!(addr.is_connected());
     ///     addr.send(Shutdown).await;
-    /// #   Timer::after(Duration::from_secs(1)).await; // Give it time to shut down
+    ///     Timer::new(Duration::from_secs(1)).await; // Give it time to shut down
     ///     assert!(!addr.is_connected());
-    /// }
+    /// })
     /// ```
     fn is_connected(&self) -> bool;
 
@@ -130,12 +129,12 @@ pub trait AddressExt<A: Actor> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_1"
+        feature = "with-smol-0_3"
     ))]
     #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_3")))]
     fn attach_stream<S, M, K>(self, mut stream: S)
     where
         K: Into<KeepRunning> + Send,
@@ -153,7 +152,7 @@ pub trait AddressExt<A: Actor> {
             }
         };
 
-        tokio::spawn(fut);
+        crate::spawn(fut);
     }
 }
 

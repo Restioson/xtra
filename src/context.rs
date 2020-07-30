@@ -10,7 +10,7 @@ use std::sync::Arc;
     feature = "with-tokio-0_2",
     feature = "with-async_std-1",
     feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-0_1"
+    feature = "with-smol-0_3"
 ))]
 use {crate::AddressExt, std::time::Duration};
 
@@ -68,11 +68,11 @@ impl<A: Actor> Context<A> {
     }
 
     /// Check if the Context is still set to running, returning whether to continue the manage loop
-    pub(crate) fn check_running(&mut self, actor: &mut A) -> bool {
+    pub(crate) async fn check_running(&mut self, actor: &mut A) -> bool {
         // Check if the context was stopped, and if so return, thereby dropping the
         // manager and calling `stopped` on the actor
         if !self.running {
-            let keep_running = actor.stopping(self);
+            let keep_running = actor.stopping(self).await;
 
             if keep_running == KeepRunning::Yes {
                 self.running = true;
@@ -88,7 +88,7 @@ impl<A: Actor> Context<A> {
     async fn handle_immediate_notification(&mut self, actor: &mut A) -> Option<bool> {
         if let Some(notification) = self.immediate_notifications.pop() {
             notification.handle(actor, self).await;
-            return Some(self.check_running(actor));
+            return Some(self.check_running(actor).await);
         }
         None
     }
@@ -114,7 +114,7 @@ impl<A: Actor> Context<A> {
             // A new message from an address or a notification has arrived, so handle it
             ManagerMessage::Message(msg) | ManagerMessage::LateNotification(msg) => {
                 msg.handle(actor, self).await;
-                if !self.check_running(actor) {
+                if !self.check_running(actor).await {
                     return ContinueManageLoop::ExitImmediately;
                 }
                 if !self.handle_immediate_notifications(actor).await {
@@ -222,12 +222,12 @@ impl<A: Actor> Context<A> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_1"
+        feature = "with-smol-0_3"
     ))]
     #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_3")))]
     pub fn notify_interval<F, M>(&mut self, duration: Duration, constructor: F)
     where
         F: Send + 'static + Fn() -> M,
@@ -273,12 +273,12 @@ impl<A: Actor> Context<A> {
             })
         }
 
-        #[cfg(feature = "with-smol-0_1")]
+        #[cfg(feature = "with-smol-0_3")]
         {
             use smol::Timer;
             smol::Task::spawn(async move {
                 loop {
-                    Timer::after(duration.clone()).await;
+                    Timer::new(duration.clone()).await;
                     if let Err(_) = addr.do_send(constructor()) {
                         break;
                     }
@@ -295,12 +295,12 @@ impl<A: Actor> Context<A> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_1"
+        feature = "with-smol-0_3"
     ))]
     #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_1")))]
+    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_3")))]
     pub fn notify_after<M>(&mut self, duration: Duration, notification: M)
     where
         M: Message,
@@ -332,11 +332,11 @@ impl<A: Actor> Context<A> {
             })
         }
 
-        #[cfg(feature = "with-smol-0_1")]
+        #[cfg(feature = "with-smol-0_3")]
         {
             use smol::Timer;
             smol::Task::spawn(async move {
-                Timer::after(duration.clone()).await;
+                Timer::new(duration.clone()).await;
                 let _ = addr.do_send(notification);
             })
             .detach();
