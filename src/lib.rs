@@ -33,6 +33,7 @@ pub mod prelude {
     pub use crate::{Actor, Context, Handler, Message, SyncHandler};
 }
 
+use std::future::Future;
 #[cfg(feature = "nightly")]
 use futures::future::{self, Ready};
 
@@ -145,6 +146,10 @@ pub trait Handler<M: Message>: Actor {
     /// ```not_a_test
     /// type Responder<'a>: Future<Output = M::Result> + Send
     /// ```
+    #[deprecated(
+        since = "0.5.0",
+        note = "The nightly API uses GATs which can cause unsoundness - use the stable API instead."
+    )]
     type Responder<'a>: Future<Output = M::Result> + Send;
 
     /// Handle a given message, returning a future eventually resolving to its result. The signature
@@ -314,19 +319,7 @@ pub trait Actor: 'static + Send + Sized {
         Self: Send,
     {
         let (addr, mgr) = ActorManager::start(self);
-
-        #[cfg(feature = "with-tokio-0_2")]
-        tokio::spawn(mgr.manage());
-
-        #[cfg(feature = "with-async_std-1")]
-        async_std::task::spawn(mgr.manage());
-
-        #[cfg(feature = "with-wasm_bindgen-0_2")]
-        wasm_bindgen_futures::spawn_local(mgr.manage());
-
-        #[cfg(feature = "with-smol-0_1")]
-        smol::Task::spawn(mgr.manage()).detach();
-
+        spawn(mgr.manage());
         addr
     }
 
@@ -386,4 +379,28 @@ impl From<()> for KeepRunning {
     fn from(_: ()) -> KeepRunning {
         KeepRunning::Yes
     }
+}
+
+/// An internal abstraction over the different runtimes - spawns a future.
+#[cfg(any(
+    doc,
+    feature = "with-tokio-0_2",
+    feature = "with-async_std-1",
+    feature = "with-wasm_bindgen-0_2",
+    feature = "with-smol-0_1"
+))]
+fn spawn<F>(f: F)
+    where F: Future<Output = ()> + Send + 'static
+{
+    #[cfg(feature = "with-tokio-0_2")]
+    tokio::spawn(f);
+
+    #[cfg(feature = "with-async_std-1")]
+    async_std::task::spawn(f);
+
+    #[cfg(feature = "with-wasm_bindgen-0_2")]
+    wasm_bindgen_futures::spawn_local(f);
+
+    #[cfg(feature = "with-smol-0_1")]
+    smol::Task::spawn(f).detach();
 }

@@ -1,7 +1,7 @@
 use crate::address::MessageResponseFuture;
 use crate::envelope::AddressEnvelope;
 use crate::{Disconnected, Message, KeepRunning};
-use futures::task::{Context, Poll};
+use std::task::{Context, Poll};
 use futures::Sink;
 #[cfg(any(
     doc,
@@ -155,18 +155,7 @@ impl<M: Message> MessageChannelExt<M> for MessageChannel<M> {
         Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
         let fut = stream.map(|i| Ok(i)).forward(self).map(|_| ());
-
-        #[cfg(feature = "with-async_std-1")]
-        async_std::task::spawn(fut);
-
-        #[cfg(feature = "with-tokio-0_2")]
-        tokio::spawn(fut);
-
-        #[cfg(feature = "with-wasm_bindgen-0_2")]
-        wasm_bindgen_futures::spawn_local(fut);
-
-        #[cfg(feature = "with-smol-0_1")]
-        smol::Task::spawn(fut).detach();
+        crate::spawn(fut);
     }
 }
 
@@ -230,18 +219,7 @@ impl<M: Message> MessageChannelExt<M> for WeakMessageChannel<M> {
         Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
         let fut = stream.map(|i| Ok(i)).forward(self).map(|_| ());
-
-        #[cfg(feature = "with-async_std-1")]
-        async_std::task::spawn(fut);
-
-        #[cfg(feature = "with-tokio-0_2")]
         tokio::spawn(fut);
-
-        #[cfg(feature = "with-wasm_bindgen-0_2")]
-        wasm_bindgen_futures::spawn_local(fut);
-
-        #[cfg(feature = "with-smol-0_1")]
-        smol::Task::spawn(fut).detach();
     }
 }
 

@@ -1,9 +1,8 @@
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::ManagerMessage;
 use crate::*;
-use futures::channel::mpsc::UnboundedSender;
-use futures::channel::oneshot::Receiver;
-use futures::task::{Context, Poll};
+use futures::channel::{mpsc::UnboundedSender, oneshot::Receiver};
+use std::task::{Context, Poll};
 use futures::{Future, Sink};
 #[cfg(any(
     doc,
@@ -40,7 +39,7 @@ enum MessageResponseFutureInner<M: Message> {
 impl<M: Message> Future for MessageResponseFuture<M> {
     type Output = Result<M::Result, Disconnected>;
 
-    fn poll(self: Pin<&mut Self>, ctx: &mut futures::task::Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         match &mut self.get_mut().0 {
             MessageResponseFutureInner::Disconnected => Poll::Ready(Err(Disconnected)),
             MessageResponseFutureInner::Result(rx) => {
@@ -154,17 +153,7 @@ pub trait AddressExt<A: Actor> {
             }
         };
 
-        #[cfg(feature = "with-async_std-1")]
-        async_std::task::spawn(fut);
-
-        #[cfg(feature = "with-tokio-0_2")]
         tokio::spawn(fut);
-
-        #[cfg(feature = "with-wasm_bindgen-0_2")]
-        wasm_bindgen_futures::spawn_local(fut);
-
-        #[cfg(feature = "with-smol-0_1")]
-        smol::Task::spawn(fut).detach();
     }
 }
 
