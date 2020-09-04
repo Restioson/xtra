@@ -36,8 +36,12 @@ impl<A: Actor> ActorManager<A> {
     /// Return the actor and its address in ready-to-run the actor by returning its address and
     /// its manager. The `ActorManager::manage` future has to be executed for the actor to actually
     /// start.
-    pub(crate) fn start(actor: A) -> (Address<A>, ActorManager<A>) {
-        let (sender, receiver) = flume::unbounded();
+    pub(crate) fn start(actor: A, message_cap: Option<usize>) -> (Address<A>, ActorManager<A>) {
+        let (sender, receiver) = match message_cap {
+            None => flume::unbounded(),
+            Some(cap) => flume::bounded(cap),
+        };
+
         let ref_counter = Strong(Arc::new(()));
         let addr = Address { sender, ref_counter };
         let ctx = Context::new(addr.clone(), receiver);
@@ -57,7 +61,7 @@ impl<A: Actor> ActorManager<A> {
     /// impl Actor for MyActor {}
     ///
     /// smol::block_on(async {
-    ///     let (addr, mgr) = MyActor.create();
+    ///     let (addr, mgr) = MyActor.create(None);
     ///     smol::spawn(mgr.manage()).detach(); // Actually spawn the actor onto an executor
     /// });
     /// ```

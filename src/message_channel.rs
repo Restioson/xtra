@@ -58,8 +58,8 @@ use futures::{FutureExt, Stream, StreamExt, Sink};
 /// fn main() {
 ///     smol::block_on(async {
 ///         let channels: [Box<dyn MessageChannel<WhatsYourName>>; 2] = [
-///             Box::new(Alice.spawn()).upcast(),
-///             Box::new(Bob.spawn()).upcast()
+///             Box::new(Alice.spawn(None)).upcast(),
+///             Box::new(Bob.spawn(None)).upcast()
 ///         ];
 ///         let name = ["Alice", "Bob"];
 ///         for (channel, name) in channels.iter().zip(&name) {

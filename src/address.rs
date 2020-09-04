@@ -181,7 +181,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
     /// }
     ///
     /// smol::block_on(async {
-    ///     let addr = MyActor.spawn();
+    ///     let addr = MyActor.spawn(None);
     ///     assert!(addr.is_connected());
     ///     addr.send(Shutdown).await;
     ///     Timer::after(Duration::from_secs(1)).await; // Give it time to shut down

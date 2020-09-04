@@ -74,7 +74,7 @@ pub trait Message: Send + 'static {
 ///
 /// fn main() {
 ///     smol::block_on(async {
-///         let addr = MyActor.spawn();
+///         let addr = MyActor.spawn(None);
 ///         assert_eq!(addr.send(Msg).await, Ok(20));
 ///     })
 /// }
@@ -137,7 +137,7 @@ pub trait Handler<M: Message>: Actor {
 ///
 /// // Will print "Started!", "Goodbye!", "Decided not to keep running", and then "Finally stopping."
 /// smol::block_on(async {
-///     let addr = MyActor.spawn();
+///     let addr = MyActor.spawn(None);
 ///     addr.send(Goodbye).await;
 ///
 ///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
@@ -184,7 +184,8 @@ pub trait Actor: 'static + Send + Sized {
     #[allow(unused_variables)]
     async fn stopped(&mut self, ctx: &mut Context<Self>) {}
 
-    /// Spawns the actor onto the global runtime executor (i.e, `tokio` or `async_std`'s executors).
+    /// Spawns the actor onto the global runtime executor (i.e, `tokio` or `async_std`'s executors),
+    /// given the cap for the actor's mailbox. If `None` is passed, it will be of unbounded size.
     ///
     /// # Example
     ///
@@ -212,7 +213,7 @@ pub trait Actor: 'static + Send + Sized {
     ///
     /// fn main() {
     ///     smol::block_on(async {
-    ///         let addr: Address<MyActor> = MyActor.spawn(); // Will print "Started!"
+    ///         let addr: Address<MyActor> = MyActor.spawn(None); // Will print "Started!"
     ///         addr.do_send(Msg).unwrap();
     ///
     ///         Timer::after(Duration::from_secs(1)).await; // Give it time to run
@@ -230,18 +231,19 @@ pub trait Actor: 'static + Send + Sized {
     #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_4")))]
-    fn spawn(self) -> Address<Self>
+    fn spawn(self, message_cap: Option<usize>) -> Address<Self>
     where
         Self: Send,
     {
-        let (addr, mgr) = ActorManager::start(self);
+        let (addr, mgr) = ActorManager::start(self, message_cap);
         spawn(mgr.manage());
         addr
     }
 
-    /// Returns the actor's address and manager in a ready-to-start state. To spawn the actor, the
-    /// [`ActorManager::manage`](struct.ActorManager.html#method.manage) method must be called and
-    /// the future it returns spawned onto an executor.
+    /// Returns the actor's address and manager in a ready-to-start state, given the cap for the
+    /// actor's mailbox. If `None` is passed, it will be of unbounded size. To spawn the actor,
+    /// the [`ActorManager::manage`](struct.ActorManager.html#method.manage) method must be called
+    /// and the future it returns spawned onto an executor.
     /// # Example
     ///
     /// ```rust
@@ -251,13 +253,13 @@ pub trait Actor: 'static + Send + Sized {
     /// # struct MyActor;
     /// # impl Actor for MyActor {}
     /// smol::block_on(async {
-    ///     let (addr, mgr) = MyActor.create();
+    ///     let (addr, mgr) = MyActor.create(None);
     ///     smol::spawn(mgr.manage()).detach(); // Actually spawn the actor onto an executor
     ///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
     /// })
     /// ```
-    fn create(self) -> (Address<Self>, ActorManager<Self>) {
-        ActorManager::start(self)
+    fn create(self, message_cap: Option<usize>) -> (Address<Self>, ActorManager<Self>) {
+        ActorManager::start(self, message_cap)
     }
 }
 

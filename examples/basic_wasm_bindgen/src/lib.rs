@@ -19,7 +19,7 @@ impl Handler<Echo> for Echoer {
 
 #[wasm_bindgen]
 pub async fn start() -> Result<(), JsValue> {
-    let addr = Echoer.spawn();
+    let addr = Echoer.spawn(None);
     let response = addr
         .send(Echo("hello world".to_string()))
         .await

@@ -34,6 +34,9 @@
     - *How to upgrade:* Simply call `Address::downgrade`, dropping the strong address afterwards if needed.
 - Some types were moved out of the root crate and into modules.
     - *How to upgrade:* search for the type's name in the documentation and refer to it by its new path.
+- `Actor::spawn` and `Actor::create` now take an`Option<usize>` for the mailbox size.
+    - *How to upgrade:* choose a suitable size of mailbox for each spawn call, or pass `None` to give them unbounded
+      mailboxes.
 
 ## 0.4.0
 

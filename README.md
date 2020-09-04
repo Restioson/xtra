@@ -51,7 +51,7 @@ impl Handler<Print> for Printer {
 
 #[tokio::main]
 async fn main() {
-    let addr = Printer::new().spawn();
+    let addr = Printer::new().spawn(None);
     loop {
         // Likewise, in the real world the `.do_send` method should be used here as it is about 2x as fast
         addr.send(Print("hello".to_string()))

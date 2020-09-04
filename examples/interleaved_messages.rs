@@ -46,11 +46,11 @@ impl Handler<Hello> for ActorB {
 
 fn main() {
     smol::block_on(async {
-        let actor_b = ActorB.spawn();
+        let actor_b = ActorB.spawn(None);
         let actor_a = ActorA {
             actor_b: actor_b.clone(),
         }
-        .spawn();
+        .spawn(None);
         actor_b.send(Initialized(actor_a.clone())).await.unwrap();
     })
 }
