@@ -68,7 +68,7 @@ Too verbose? Check out the [spaad](https://crates.io/crates/spaad) sister-crate!
 
 ## Okay, sounds great! How do I use it?
 Check out the [docs](https://docs.rs/xtra) and the [examples](https://github.com/Restioson/xtra/blob/master/examples)
-to get started! Enabling the `with-tokio-0_2`, `with-async_std-1`, `with-smol-0_3`, or `with-wasm-bindgen-0_2` features
+to get started! Enabling the `with-tokio-0_2`, `with-async_std-1`, `with-smol-0_4`, or `with-wasm-bindgen-0_2` features
 is recommended in order to enable some  convenience methods (such as `Actor::spawn`). Which you enable will depend on
 which executor you want to use (check out their docs to learn more about each). If you have any questions, feel free to
 [open an issue](https://github.com/Restioson/xtra/issues/new) or message me on the [Rust discord](https://bit.ly/rust-community).

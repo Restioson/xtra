@@ -1,6 +1,6 @@
 [package]
 name = "xtra"
-version = "0.5.0-beta.4"
+version = "0.5.0-beta.5"
 description = "A tiny actor framework"
 authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
@@ -14,9 +14,11 @@ categories = ["asynchronous", "concurrency"]
 [dependencies]
 futures = { version = "0.3.5", default-features = false, features = ["alloc", "std"] }
 async-trait = "0.1.36"
+flume = { path = "../flume" }
+pollster = "0.2"
 
 tokio = { version = "0.2", features = ["rt-core", "time"], optional = true }
-smol = { version = "0.3", optional = true }
+smol = { version = "0.4", optional = true }
 async-std = { version = "1", features = ["unstable"], optional = true}
 
 # Wasm-bindgen support
@@ -25,14 +27,14 @@ wasm-bindgen-futures = { version = "0.4", optional = true, default-features = fa
 futures-timer = { version = "3", optional = true, default-features = false }
 
 [dev-dependencies]
-smol = { version = "0.3" }
+smol = { version = "0.4" }
 
 [features]
 default = []
 with-tokio-0_2 = ["tokio"]
 with-async_std-1 = ["async-std"]
 with-wasm_bindgen-0_2 = ["wasm-bindgen", "wasm-bindgen-futures", "futures-timer/wasm-bindgen"]
-with-smol-0_3 = ["smol"]
+with-smol-0_4 = ["smol"]
 
 [[example]]
 name = "basic_tokio"
@@ -47,7 +49,7 @@ required-features = ["with-async_std-1", "async-std/attributes"]
 [[example]]
 name = "basic_smol"
 path = "examples/basic_smol.rs"
-required-features = ["with-smol-0_3"]
+required-features = ["with-smol-0_4"]
 
 [[example]]
 name = "async_handler"
@@ -57,7 +59,7 @@ required-features = ["with-tokio-0_2", "tokio/full"]
 [[example]]
 name = "interleaved_messages"
 path = "examples/interleaved_messages.rs"
-required-features = ["with-smol-0_3"]
+required-features = ["with-smol-0_4"]
 
 [[example]]
 name = "crude_bench"

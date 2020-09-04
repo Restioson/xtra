@@ -6,7 +6,8 @@
     - *How to upgrade:* change all implementations of the `SyncHandler` trait to the normal `Handler` trait.
 - **All `Actor` lifecycle messages are now async.** This allows to do more kinds of things in lifecycle methods,
   while adding no restrictions.
-    - *How to upgrade:* add `async` to the function definition of all actor lifecycle methods.
+    - *How to upgrade:* add `async` to the function definition of all actor lifecycle methods, add `#[async_trait::async_trait]`
+      to the `impl Actor` block.
 - `Actor` now requires `Send` to implement. Previously, the trait itself did not, but using it did require `Send`.
     - *How to upgrade:* you probably never had a non-`Send` actor in the first place.
 - The `{Weak}{Address|MessageChannel}::attach_stream` methods now require that the actor implements `Handler<M>` where 
@@ -15,6 +16,22 @@
   implement `Into<KeepRunning>`.
     - *How to upgrade:* implement `Into<KeepRunning>` for all message types used in `attach_stream`. To mimic previous
       behaviour, return `KeepRunning::Yes` in the implementation.
+- `Address` and `WeakAddress` lost their `Sink` implementations. They can now be turned into `Sink`s by calling
+  `.into_sink()`.
+    - *How to upgrade:* convert any addresses to be used as sinks into sinks with `.into_sink()`, cloning where necessary.
+- `{Address|MessageChannel}Ext` were removed in favour of inherent implementations,
+    - *How to upgrade:* in most cases, this will not have broken anything. If it is directly imported, remove the import.
+      If you need to be generic over weak and strong addresses, be generic over `Address<A, Rc>` where `Rc: RefCounter` for
+      addresses and use `MessageChannel<M>` trait objects.
+- `{Weak}MessageChannel` became traits rather than concrete types. In order to use them, simply cast an address to
+  the correct trait object (e.g `&addr as &dyn MessageChannel<M>` or `Box::new(addr)`). The `into_channel` and `channel`
+  methods were also removed.
+    - *How to upgrade:* replace `{into_}channel` calls with casts to trait objects, and replace references to the old
+      types with trait objects, boxed if necessary. If you were using the `Sink` implementations of these types, first
+      create an `AddressSink` through `.into_sink()`, and then cast it to a `MessageSink` trait object.
+- `Address::into_downgraded` was removed. This did nothing different to `downgrade`, except dropping the address after 
+  the call.
+    - *How to upgrade:* Simply call `Address::downgrade`, dropping the strong address afterwards if needed.
 
 ## 0.4.0
 

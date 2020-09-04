@@ -1,8 +1,7 @@
 use crate::envelope::MessageEnvelope;
-use crate::{Actor, Address, Context, WeakAddress};
-use futures::channel::mpsc;
-use futures::StreamExt;
+use crate::{Actor, Address, Context};
 use std::sync::Arc;
+use crate::address::Strong;
 
 /// A message that can be sent by an [`Address`](struct.Address.html) to the [`ActorManager`](struct.ActorManager.html)
 pub(crate) enum ManagerMessage<A: Actor> {
@@ -38,20 +37,12 @@ impl<A: Actor> ActorManager<A> {
     /// its manager. The `ActorManager::manage` future has to be executed for the actor to actually
     /// start.
     pub(crate) fn start(actor: A) -> (Address<A>, ActorManager<A>) {
-        let (sender, receiver) = mpsc::unbounded();
-        let ref_counter = Arc::new(());
-        let addr = WeakAddress {
-            sender: sender.clone(),
-            ref_counter: Arc::downgrade(&ref_counter),
-        };
-        let ctx = Context::new(addr, receiver, ref_counter.clone());
+        let (sender, receiver) = flume::unbounded();
+        let ref_counter = Strong(Arc::new(()));
+        let addr = Address { sender, ref_counter };
+        let ctx = Context::new(addr.clone(), receiver);
 
         let mgr = ActorManager { actor, ctx };
-
-        let addr = Address {
-            sender,
-            ref_counter,
-        };
 
         (addr, mgr)
     }
@@ -65,9 +56,9 @@ impl<A: Actor> ActorManager<A> {
     /// struct MyActor;
     /// impl Actor for MyActor {}
     ///
-    /// smol::run(async {
+    /// smol::block_on(async {
     ///     let (addr, mgr) = MyActor.create();
-    ///     smol::Task::spawn(mgr.manage()).detach(); // Actually spawn the actor onto an executor
+    ///     smol::spawn(mgr.manage()).detach(); // Actually spawn the actor onto an executor
     /// });
     /// ```
     pub async fn manage(mut self) {
@@ -81,7 +72,7 @@ impl<A: Actor> ActorManager<A> {
         }
 
         // Listen for any messages for the ActorManager
-        while let Some(msg) = self.ctx.receiver.next().await {
+        while let Ok(msg) = self.ctx.receiver.recv_async().await {
             match self.ctx.handle_message(msg, &mut self.actor).await {
                 ContinueManageLoop::Yes => {}
                 ContinueManageLoop::ProcessNotifications => break,
@@ -98,7 +89,7 @@ impl<A: Actor> ActorManager<A> {
         // sent from the context must be fully send by now due to it being marked as stopped (so
         // that no other addresses can be created and sending concurrently), we can make the inference
         // that if `next_message` returns `Err`, there are no more late notifications to handle.
-        while let Ok(Some(msg)) = self.ctx.receiver.try_next() {
+        while let Ok(msg) = self.ctx.receiver.try_recv() {
             let res = self.ctx.handle_message(msg, &mut self.actor).await;
             if res == ContinueManageLoop::ExitImmediately {
                 break;

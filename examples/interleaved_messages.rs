@@ -45,7 +45,7 @@ impl Handler<Hello> for ActorB {
 }
 
 fn main() {
-    smol::run(async {
+    smol::block_on(async {
         let actor_b = ActorB.spawn();
         let actor_a = ActorA {
             actor_b: actor_b.clone(),

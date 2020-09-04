@@ -1,15 +1,15 @@
-//! Xtra is a tiny, fast, and safe actor system.
+//! xtra is a tiny, fast, and safe actor system.
 
-#![cfg_attr(doc, feature(doc_cfg, external_doc))]
+#![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
 #![deny(missing_docs, unsafe_code)]
 
-mod message_channel;
-pub use message_channel::{MessageChannel, MessageChannelExt, WeakMessageChannel};
+pub mod message_channel;
+pub mod sink;
 
 mod envelope;
 
-mod address;
-pub use address::{Address, AddressExt, Disconnected, MessageResponseFuture, WeakAddress};
+pub mod address;
+pub use address::{Address, Disconnected, MessageResponseFuture, WeakAddress};
 
 mod context;
 pub use context::Context;
@@ -17,10 +17,11 @@ pub use context::Context;
 mod manager;
 pub use manager::ActorManager;
 
-/// Commonly used types from `xtra`
+
+/// Commonly used types from xtra
 pub mod prelude {
-    pub use crate::address::{Address, AddressExt};
-    pub use crate::message_channel::{MessageChannel, MessageChannelExt};
+    pub use crate::address::Address;
+    pub use crate::message_channel::{StrongMessageChannel, WeakMessageChannel, MessageChannel};
     pub use crate::{Actor, Context, Handler, Message};
 }
 
@@ -72,7 +73,7 @@ pub trait Message: Send + 'static {
 /// }
 ///
 /// fn main() {
-///     smol::run(async {
+///     smol::block_on(async {
 ///         let addr = MyActor.spawn();
 ///         assert_eq!(addr.send(Msg).await, Ok(20));
 ///     })
@@ -135,11 +136,11 @@ pub trait Handler<M: Message>: Actor {
 /// }
 ///
 /// // Will print "Started!", "Goodbye!", "Decided not to keep running", and then "Finally stopping."
-/// smol::run(async {
+/// smol::block_on(async {
 ///     let addr = MyActor.spawn();
 ///     addr.send(Goodbye).await;
 ///
-///     Timer::new(Duration::from_secs(1)).await; // Give it time to run
+///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
 /// })
 ///
 /// ```
@@ -193,8 +194,9 @@ pub trait Actor: 'static + Send + Sized {
     /// # use smol::Timer;
     /// struct MyActor;
     ///
+    /// #[async_trait::async_trait]
     /// impl Actor for MyActor {
-    ///     fn started(&mut self, ctx: &mut Context<Self>) {
+    ///     async fn started(&mut self, ctx: &mut Context<Self>) {
     ///         println!("Started!");
     ///     }
     /// }
@@ -209,11 +211,11 @@ pub trait Actor: 'static + Send + Sized {
     /// # }
     ///
     /// fn main() {
-    ///     smol::run(async {
+    ///     smol::block_on(async {
     ///         let addr: Address<MyActor> = MyActor.spawn(); // Will print "Started!"
     ///         addr.do_send(Msg).unwrap();
     ///
-    ///         Timer::new(Duration::from_secs(1)).await; // Give it time to run
+    ///         Timer::after(Duration::from_secs(1)).await; // Give it time to run
     ///     })
     /// }
     /// ```
@@ -222,12 +224,12 @@ pub trait Actor: 'static + Send + Sized {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_3"
+        feature = "with-smol-0_4"
     ))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_3")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_4")))]
     fn spawn(self) -> Address<Self>
     where
         Self: Send,
@@ -248,10 +250,10 @@ pub trait Actor: 'static + Send + Sized {
     /// # use smol::Timer;
     /// # struct MyActor;
     /// # impl Actor for MyActor {}
-    /// smol::run(async {
+    /// smol::block_on(async {
     ///     let (addr, mgr) = MyActor.create();
-    ///     smol::Task::spawn(mgr.manage()).detach(); // Actually spawn the actor onto an executor
-    ///     Timer::new(Duration::from_secs(1)).await; // Give it time to run
+    ///     smol::spawn(mgr.manage()).detach(); // Actually spawn the actor onto an executor
+    ///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
     /// })
     /// ```
     fn create(self) -> (Address<Self>, ActorManager<Self>) {
@@ -299,7 +301,7 @@ impl From<()> for KeepRunning {
     feature = "with-tokio-0_2",
     feature = "with-async_std-1",
     feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-0_3"
+    feature = "with-smol-0_4"
 ))]
 fn spawn<F>(f: F)
 where
@@ -314,6 +316,6 @@ where
     #[cfg(feature = "with-wasm_bindgen-0_2")]
     wasm_bindgen_futures::spawn_local(f);
 
-    #[cfg(feature = "with-smol-0_3")]
-    smol::Task::spawn(f).detach();
+    #[cfg(feature = "with-smol-0_4")]
+    smol::spawn(f).detach();
 }

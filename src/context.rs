@@ -1,18 +1,17 @@
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{ContinueManageLoop, ManagerMessage};
-use crate::{Actor, Address, Handler, KeepRunning, Message, WeakAddress};
-use futures::channel::mpsc::UnboundedReceiver;
+use crate::{Actor, Address, Handler, KeepRunning, Message};
 use futures::future::{self, Either, Future};
-use futures::StreamExt;
-use std::sync::Arc;
 #[cfg(any(
     doc,
     feature = "with-tokio-0_2",
     feature = "with-async_std-1",
     feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-0_3"
+    feature = "with-smol-0_4"
 ))]
-use {crate::AddressExt, std::time::Duration};
+use std::time::Duration;
+use flume::Receiver;
+use crate::address::RefCounter;
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -20,28 +19,24 @@ pub struct Context<A: Actor> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
     /// for it to call the `stopping` method on the actor
     pub(crate) running: bool,
-    /// The address kept by the context to allow for the `Context::address` method to work.
-    address: WeakAddress<A>,
+    /// The address kept by the context to allow for the `Context::address` method to work, and to
+    /// tell how many strong addresses exist to the actor.
+    address: Address<A>,
     /// Notifications that must be stored for immediate processing.
     pub(crate) immediate_notifications: Vec<Box<dyn MessageEnvelope<Actor = A>>>,
-    pub(crate) receiver: UnboundedReceiver<ManagerMessage<A>>,
-    /// The reference counter of the actor. This tells us how many external strong addresses
-    /// (and weak addresses, but we don't care about those) exist to the actor.
-    ref_counter: Arc<()>,
+    pub(crate) receiver: Receiver<ManagerMessage<A>>,
 }
 
 impl<A: Actor> Context<A> {
     pub(crate) fn new(
-        address: WeakAddress<A>,
-        receiver: UnboundedReceiver<ManagerMessage<A>>,
-        ref_counter: Arc<()>,
+        address: Address<A>,
+        receiver: Receiver<ManagerMessage<A>>,
     ) -> Self {
         Context {
             running: true,
             address,
             immediate_notifications: Vec::new(),
             receiver,
-            ref_counter,
         }
     }
 
@@ -56,12 +51,7 @@ impl<A: Actor> Context<A> {
     /// Get an address to the current actor if the actor is still running.
     pub fn address(&self) -> Option<Address<A>> {
         if self.running {
-            let strong = Address {
-                sender: self.address.sender.clone(),
-                ref_counter: self.address.ref_counter.upgrade().unwrap(),
-            };
-
-            Some(strong)
+            Some(self.address.clone())
         } else {
             None
         }
@@ -126,7 +116,7 @@ impl<A: Actor> Context<A> {
             // stopping the actor
             ManagerMessage::LastAddress => {
                 // strong_count() == 1 manager holds a strong arc to the refcount
-                if Arc::strong_count(&self.ref_counter) == 1 {
+                if self.address.ref_counter.strong_count() == 1 {
                     self.stop();
                     return ContinueManageLoop::ProcessNotifications;
                 }
@@ -144,11 +134,11 @@ impl<A: Actor> Context<A> {
             return;
         }
 
-        match self.receiver.next().await {
-            Some(msg) => {
+        match self.receiver.recv_async().await {
+            Ok(msg) => {
                 self.handle_message(msg, act).await;
             }
-            None => self.stop(),
+            Err(_) => self.stop(),
         }
     }
 
@@ -156,9 +146,9 @@ impl<A: Actor> Context<A> {
     ///
     /// # Example
     ///
-    /// ```
-    #[cfg_attr(doc, doc(include = "../examples/interleaved_messages.rs"))]
-    /// ```
+    #[cfg_attr(docsrs, doc("```"))]
+    #[cfg_attr(docsrs, doc(include = "../examples/interleaved_messages.rs"))]
+    #[cfg_attr(docsrs, doc("```"))]
     pub async fn handle_while<F, R>(&mut self, act: &mut A, mut fut: F) -> R
     where
         F: Future<Output = R> + Unpin,
@@ -167,21 +157,20 @@ impl<A: Actor> Context<A> {
             self.stop();
         }
 
-        let mut next_msg = self.receiver.next();
         loop {
-            match future::select(fut, next_msg).await {
+            let recv = self.receiver.recv_async();
+            let (msg, unfinished) = match future::select(fut, recv).await {
                 Either::Left((res, _)) => break res,
-                Either::Right((manager_message, unfinished_fut)) => {
-                    match manager_message {
-                        Some(msg) => {
-                            self.handle_message(msg, act).await;
-                        }
-                        None => self.stop(),
-                    }
-                    next_msg = self.receiver.next();
-                    fut = unfinished_fut;
-                }
+                Either::Right(tuple) => tuple,
+            };
+
+            match msg {
+                Ok(msg) => {
+                    self.handle_message(msg, act).await;
+                },
+                Err(_) => self.stop(),
             }
+            fut = unfinished;
         }
     }
 
@@ -211,7 +200,7 @@ impl<A: Actor> Context<A> {
         let _ = self
             .address
             .sender
-            .unbounded_send(ManagerMessage::LateNotification(Box::new(envelope)));
+            .send(ManagerMessage::LateNotification(Box::new(envelope)));
     }
 
     /// Notify the actor with a synchronously handled message every interval until it is stopped
@@ -222,12 +211,12 @@ impl<A: Actor> Context<A> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_3"
+        feature = "with-smol-0_4"
     ))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_3")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_4")))]
     pub fn notify_interval<F, M>(&mut self, duration: Duration, constructor: F)
     where
         F: Send + 'static + Fn() -> M,
@@ -273,12 +262,12 @@ impl<A: Actor> Context<A> {
             })
         }
 
-        #[cfg(feature = "with-smol-0_3")]
+        #[cfg(feature = "with-smol-0_4")]
         {
             use smol::Timer;
-            smol::Task::spawn(async move {
+            smol::spawn(async move {
                 loop {
-                    Timer::new(duration.clone()).await;
+                    Timer::after(duration.clone()).await;
                     if let Err(_) = addr.do_send(constructor()) {
                         break;
                     }
@@ -295,12 +284,12 @@ impl<A: Actor> Context<A> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_3"
+        feature = "with-smol-0_4"
     ))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(doc, doc(cfg(feature = "with-smol-0_3")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_4")))]
     pub fn notify_after<M>(&mut self, duration: Duration, notification: M)
     where
         M: Message,
@@ -332,11 +321,11 @@ impl<A: Actor> Context<A> {
             })
         }
 
-        #[cfg(feature = "with-smol-0_3")]
+        #[cfg(feature = "with-smol-0_4")]
         {
             use smol::Timer;
-            smol::Task::spawn(async move {
-                Timer::new(duration.clone()).await;
+            smol::spawn(async move {
+                Timer::after(duration.clone()).await;
                 let _ = addr.do_send(notification);
             })
             .detach();

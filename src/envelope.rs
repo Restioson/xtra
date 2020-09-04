@@ -1,7 +1,6 @@
-use crate::address::MessageResponseFuture;
 use crate::*;
 use futures::channel::oneshot::{self, Receiver, Sender};
-use futures::{Future, FutureExt, Sink};
+use futures::{Future, FutureExt};
 use std::marker::PhantomData;
 use std::pin::Pin;
 
@@ -112,63 +111,5 @@ impl<A: Handler<M>, M: Message> MessageEnvelope for NonReturningEnvelope<A, M> {
         ctx: &'a mut Context<Self::Actor>,
     ) -> Fut<'a> {
         Box::pin(act.handle(self.message, ctx).map(|_| ()))
-    }
-}
-
-/// Similar to `MessageEnvelope`, but used to erase the type of the actor instead of the channel.
-/// This is used in `message_channel.rs`. All of its methods map to an equivalent method in
-/// `Address` or `AddressExt`
-pub(crate) trait AddressEnvelope<M: Message>:
-    Sink<M, Error = Disconnected> + Unpin + Send + Sync
-{
-    fn is_connected(&self) -> bool;
-    fn do_send(&self, message: M) -> Result<(), Disconnected>;
-    fn send(&self, message: M) -> MessageResponseFuture<M>;
-
-    /// It is an error for this method to be called on an already weak address
-    fn downgrade(&self) -> Box<dyn AddressEnvelope<M>>;
-}
-
-impl<A, M> AddressEnvelope<M> for Address<A>
-where
-    A: Handler<M>,
-    M: Message,
-{
-    fn is_connected(&self) -> bool {
-        AddressExt::is_connected(self)
-    }
-
-    fn do_send(&self, message: M) -> Result<(), Disconnected> {
-        AddressExt::do_send(self, message)
-    }
-
-    fn send(&self, message: M) -> MessageResponseFuture<M> {
-        AddressExt::send(self, message)
-    }
-
-    fn downgrade(&self) -> Box<dyn AddressEnvelope<M>> {
-        Box::new(Address::downgrade(self))
-    }
-}
-
-impl<A, M> AddressEnvelope<M> for WeakAddress<A>
-where
-    A: Handler<M>,
-    M: Message,
-{
-    fn is_connected(&self) -> bool {
-        AddressExt::is_connected(self)
-    }
-
-    fn do_send(&self, message: M) -> Result<(), Disconnected> {
-        AddressExt::do_send(self, message)
-    }
-
-    fn send(&self, message: M) -> MessageResponseFuture<M> {
-        AddressExt::send(self, message)
-    }
-
-    fn downgrade(&self) -> Box<dyn AddressEnvelope<M>> {
-        unimplemented!()
     }
 }

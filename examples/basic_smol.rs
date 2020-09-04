@@ -26,7 +26,7 @@ impl Handler<Print> for Printer {
 }
 
 fn main() {
-    smol::run(async {
+    smol::block_on(async {
         let addr = Printer::new().spawn();
         loop {
             addr.send(Print("hello".to_string()))
