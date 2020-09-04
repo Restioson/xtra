@@ -5,8 +5,8 @@ For better ergonomics with xtra, try the [spaad](https://crates.io/crates/spaad)
 
 ## Features
 - Safe: there is no unsafe code in xtra.
-- Tiny: xtra is only ~1.1kloc.
-- Lightweight: it only depends on `futures` and `async_trait` by default.
+- Tiny: xtra is less than 1k loc.
+- Lightweight: it only depends on `futures`, `async_trait`, `pollster`, and `flume` by default. 
 - Asynchronous and synchronous message handlers.
 - Simple asynchronous message handling interface which allows `async`/`await` syntax even when borrowing `self`.
 - Does not depend on its own runtime and can be run with any futures executor ([Tokio](https://tokio.rs/),
@@ -72,6 +72,18 @@ to get started! Enabling the `with-tokio-0_2`, `with-async_std-1`, `with-smol-0_
 is recommended in order to enable some  convenience methods (such as `Actor::spawn`). Which you enable will depend on
 which executor you want to use (check out their docs to learn more about each). If you have any questions, feel free to
 [open an issue](https://github.com/Restioson/xtra/issues/new) or message me on the [Rust discord](https://bit.ly/rust-community).
+
+## Eventual Fairness
+
+In order to enable eventual fairness for actor message delivery, declare a dependency on flume and enable the dependency
+as follows:
+
+```toml
+# In [dependencies]
+flume = { version = "0.8", features = ["eventual-fairness"], default-features = false }
+```
+
+This is disabled by default, as it brings in extra dependencies such as `rand`.
 
 ## Latest Breaking Changes
 To see the breaking changes for each version, see [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md).
