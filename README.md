@@ -74,18 +74,5 @@ which executor you want to use (check out their docs to learn more about each). 
 [open an issue](https://github.com/Restioson/xtra/issues/new) or message me on the [Rust discord](https://bit.ly/rust-community).
 
 ## Latest Breaking Changes
-- **The `SyncHandler` trait has been removed.** This simplifies the API and should not change the performance on stable.
-    - *How to upgrade:* change all implementations of the `SyncHandler` trait to the normal `Handler` trait.
-- **All `Actor` lifecycle messages are now async.** This allows to do more kinds of things in lifecycle methods,
-  while adding no restrictions.
-    - *How to upgrade:* add `async` to the function definition of all actor lifecycle methods.
-- `Actor` now requires `Send` to implement. Previously, the trait itself did not, but using it did require `Send`.
-    - *How to upgrade:* you probably never had a non-`Send` actor in the first place.
-- The `{Weak}Address::attach_stream` method now requires that the actor implements `Handler<M>` where 
-  `M: Into<KeepRunning> + Send`. This is automatically implemented for `()`, returning `KeepRunning::Yes`. This allows
-  the user more control over the future spawned by `attach_stream`, but is breaking if the message returned did not
-  implement `Into<KeepRunning>`/
-    - *How to upgrade:* implement `Into<KeepRunning>` for all message types used in `attach_stream`. To mimic previous
-      behaviour, return `KeepRunning::Yes` in the implementation.
-
-See the full list of breaking changes by version [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md)
+To see the breaking changes for each version, see [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md).
+The latest version is 0.5.
