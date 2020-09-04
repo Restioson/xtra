@@ -9,7 +9,7 @@ pub mod sink;
 mod envelope;
 
 pub mod address;
-pub use address::{Address, Disconnected, MessageResponseFuture, WeakAddress};
+pub use address::{Address, Disconnected, WeakAddress};
 
 mod context;
 pub use context::Context;

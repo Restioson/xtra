@@ -109,7 +109,7 @@ async fn main() {
     /* Time channel do_send */
 
     let addr = Counter { count: 0 }.spawn();
-    let chan = addr.channel();
+    let chan = &addr as &dyn MessageChannel<Increment>;
 
     let start = Instant::now();
     for _ in 0..COUNT {

@@ -32,6 +32,8 @@
 - `Address::into_downgraded` was removed. This did nothing different to `downgrade`, except dropping the address after 
   the call.
     - *How to upgrade:* Simply call `Address::downgrade`, dropping the strong address afterwards if needed.
+- Some types were moved out of the root crate and into modules.
+    - *How to upgrade:* search for the type's name in the documentation and refer to it by its new path.
 
 ## 0.4.0
 
