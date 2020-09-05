@@ -34,7 +34,7 @@ pub(crate) trait MessageEnvelope: Send {
     ///     Fut(Fut<'a>),
     ///     Noop,
     /// }
-    /// ```
+    /// ```featur
     ///
     /// But this is actually about 10% *slower* for `do_send`. I don't know why. Maybe it's something
     /// to do with branch (mis)prediction or compiler optimisation. If you think that you can get

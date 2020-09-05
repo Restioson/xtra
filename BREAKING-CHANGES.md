@@ -37,6 +37,8 @@
 - `Actor::spawn` and `Actor::create` now take an`Option<usize>` for the mailbox size.
     - *How to upgrade:* choose a suitable size of mailbox for each spawn call, or pass `None` to give them unbounded
       mailboxes.
+- Many context methods now return `Result<..., ActorShutdown>` to represent failures due to the actor having been shut
+  down.
 
 ## 0.4.0
 

@@ -1,6 +1,6 @@
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{ContinueManageLoop, ManagerMessage};
-use crate::{Actor, Address, Handler, KeepRunning, Message};
+use crate::{Actor, Address, Handler, KeepRunning, Message, ActorManager};
 use futures::future::{self, Either, Future};
 #[cfg(any(
     doc,
@@ -10,8 +10,8 @@ use futures::future::{self, Either, Future};
     feature = "with-smol-0_4"
 ))]
 use std::time::Duration;
-use flume::Receiver;
-use crate::address::RefCounter;
+use flume::{Receiver, Sender};
+use crate::address::{RefCounter, Weak};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -19,9 +19,10 @@ pub struct Context<A: Actor> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
     /// for it to call the `stopping` method on the actor
     pub(crate) running: bool,
-    /// The address kept by the context to allow for the `Context::address` method to work, and to
-    /// tell how many strong addresses exist to the actor.
-    address: Address<A>,
+    /// Channel sender kept by the context to allow for the `Context::address` method to work
+    sender: Sender<ManagerMessage<A>>,
+    /// Kept by the context to allow for it to tcheck how many strong addresses exist to the actor
+    ref_counter: Weak,
     /// Notifications that must be stored for immediate processing.
     pub(crate) immediate_notifications: Vec<Box<dyn MessageEnvelope<Actor = A>>>,
     pub(crate) receiver: Receiver<ManagerMessage<A>>,
@@ -29,15 +30,31 @@ pub struct Context<A: Actor> {
 
 impl<A: Actor> Context<A> {
     pub(crate) fn new(
-        address: Address<A>,
+        sender: Sender<ManagerMessage<A>>,
+        ref_counter: Weak,
         receiver: Receiver<ManagerMessage<A>>,
     ) -> Self {
         Context {
             running: true,
-            address,
+            sender,
+            ref_counter,
             immediate_notifications: Vec::new(),
             receiver,
         }
+    }
+
+    // TODO spawn_actor
+
+    /// Creates another actor of the same type listening to the same address as this actor is.
+    /// They will operate in a message-stealing fashion, with no message handled by two actors.
+    /// See [`Actor::create_multiple`](trait.Actor.html#method.create_multiple) for more info.
+    pub fn create_actor(&mut self, actor: A) -> ActorManager<A> {
+        ActorManager::start(
+            actor,
+            self.sender.clone(),
+            self.receiver.clone(),
+            self.ref_counter.clone()
+        )
     }
 
     /// Stop the actor as soon as it has finished processing current message. This will mean that the
@@ -49,11 +66,15 @@ impl<A: Actor> Context<A> {
     }
 
     /// Get an address to the current actor if the actor is still running.
-    pub fn address(&self) -> Option<Address<A>> {
+    // TODO check this still works when we want it to
+    pub fn address(&self) -> Result<Address<A>, ActorShutdown> {
         if self.running {
-            Some(self.address.clone())
+            Ok(Address {
+                sender: self.sender.clone(),
+                ref_counter: self.ref_counter.upgrade().ok_or(ActorShutdown)?,
+            })
         } else {
-            None
+            Err(ActorShutdown)
         }
     }
 
@@ -115,8 +136,7 @@ impl<A: Actor> Context<A> {
             // strong address to the actor, so we need to check if that is still the case, if so
             // stopping the actor
             ManagerMessage::LastAddress => {
-                // strong_count() == 1 manager holds a strong arc to the refcount
-                if self.address.ref_counter.strong_count() == 1 {
+                if self.ref_counter.strong_count() == 0 {
                     self.stop();
                     return ContinueManageLoop::ProcessNotifications;
                 }
@@ -198,7 +218,6 @@ impl<A: Actor> Context<A> {
     {
         let envelope = NonReturningEnvelope::<A, M>::new(msg);
         let _ = self
-            .address
             .sender
             .send(ManagerMessage::LateNotification(Box::new(envelope)));
     }
@@ -217,13 +236,17 @@ impl<A: Actor> Context<A> {
     #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_4")))]
-    pub fn notify_interval<F, M>(&mut self, duration: Duration, constructor: F)
+    pub fn notify_interval<F, M>(
+        &mut self,
+        duration: Duration,
+        constructor: F
+    ) -> Result<(), ActorShutdown>
     where
         F: Send + 'static + Fn() -> M,
         M: Message,
         A: Handler<M>,
     {
-        let addr = self.address.clone();
+        let addr = self.address()?;
 
         #[cfg(feature = "with-tokio-0_2")]
         tokio::spawn(async move {
@@ -275,6 +298,8 @@ impl<A: Actor> Context<A> {
             })
             .detach();
         }
+
+        Ok(())
     }
 
     /// Notify the actor with a synchronously handled message after a certain duration has elapsed.
@@ -290,12 +315,12 @@ impl<A: Actor> Context<A> {
     #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_4")))]
-    pub fn notify_after<M>(&mut self, duration: Duration, notification: M)
+    pub fn notify_after<M>(&mut self, duration: Duration, notification: M) -> Result<(), ActorShutdown>
     where
         M: Message,
         A: Handler<M>,
     {
-        let addr = self.address.clone();
+        let addr = self.address()?;
 
         #[cfg(feature = "with-tokio-0_2")]
         tokio::spawn(async move {
@@ -330,5 +355,10 @@ impl<A: Actor> Context<A> {
             })
             .detach();
         }
+
+        Ok(())
     }
 }
+
+/// The operation failed because the actor is being shut down
+pub struct ActorShutdown;

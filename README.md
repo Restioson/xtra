@@ -73,18 +73,6 @@ is recommended in order to enable some  convenience methods (such as `Actor::spa
 which executor you want to use (check out their docs to learn more about each). If you have any questions, feel free to
 [open an issue](https://github.com/Restioson/xtra/issues/new) or message me on the [Rust discord](https://bit.ly/rust-community).
 
-## Eventual Fairness
-
-In order to enable eventual fairness for actor message delivery, declare a dependency on flume and enable the dependency
-as follows:
-
-```toml
-# In [dependencies]
-flume = { version = "0.8", features = ["eventual-fairness"], default-features = false }
-```
-
-This is disabled by default, as it brings in extra dependencies such as `rand`.
-
 ## Latest Breaking Changes
 To see the breaking changes for each version, see [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md).
 The latest version is 0.5.

@@ -1,7 +1,8 @@
 use crate::envelope::MessageEnvelope;
 use crate::{Actor, Address, Context};
 use std::sync::Arc;
-use crate::address::Strong;
+use crate::address::{Strong, Weak};
+use flume::{Sender, Receiver};
 
 /// A message that can be sent by an [`Address`](struct.Address.html) to the [`ActorManager`](struct.ActorManager.html)
 pub(crate) enum ManagerMessage<A: Actor> {
@@ -36,18 +37,56 @@ impl<A: Actor> ActorManager<A> {
     /// Return the actor and its address in ready-to-run the actor by returning its address and
     /// its manager. The `ActorManager::manage` future has to be executed for the actor to actually
     /// start.
-    pub(crate) fn start(actor: A, message_cap: Option<usize>) -> (Address<A>, ActorManager<A>) {
+    pub(crate) fn start(
+        actor: A,
+        sender: Sender<ManagerMessage<A>>,
+        receiver: Receiver<ManagerMessage<A>>,
+        ref_counter: Weak,
+    ) -> ActorManager<A> {
+        let ctx = Context::new(sender.clone(), ref_counter, receiver);
+        let mgr = ActorManager { actor, ctx };
+        mgr
+    }
+
+    pub(crate) fn start_multiple(
+        mut create_actor: impl FnMut(usize) -> A,
+        message_cap: Option<usize>,
+        n: usize
+    ) -> (Address<A>, Vec<ActorManager<A>>) {
         let (sender, receiver) = match message_cap {
             None => flume::unbounded(),
             Some(cap) => flume::bounded(cap),
         };
-
         let ref_counter = Strong(Arc::new(()));
-        let addr = Address { sender, ref_counter };
-        let ctx = Context::new(addr.clone(), receiver);
+        let addr = Address {
+            sender: sender.clone(),
+            ref_counter: ref_counter.clone()
+        };
 
-        let mgr = ActorManager { actor, ctx };
+        let managers = (0..n).map(|n| {
+            ActorManager::start(
+                create_actor(n),
+                sender.clone(),
+                receiver.clone(),
+                ref_counter.downgrade()
+            )
+        })
+            .collect();
 
+        (addr, managers)
+    }
+
+    pub(crate) fn start_one(actor: A, message_cap: Option<usize>) -> (Address<A>, ActorManager<A>) {
+        let (sender, receiver) = match message_cap {
+            None => flume::unbounded(),
+            Some(cap) => flume::bounded(cap),
+        };
+        let ref_counter = Strong(Arc::new(()));
+        let addr = Address {
+            sender: sender.clone(),
+            ref_counter: ref_counter.clone()
+        };
+        let mgr = ActorManager::start(actor, sender, receiver, ref_counter.downgrade());
         (addr, mgr)
     }
 

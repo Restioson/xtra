@@ -26,13 +26,15 @@ wasm-bindgen-futures = { version = "0.4", optional = true, default-features = fa
 futures-timer = { version = "3", optional = true, default-features = false }
 
 [dependencies.flume]
-git = "https://github.com/Restioson/flume/"
-branch = "async-edits"
+#git = "https://github.com/Restioson/flume/"
+#branch = "async-edits"
+path = "../flume"
 default-features = false
 features = ["async"]
 
 [dev-dependencies]
-smol = { version = "0.4" }
+smol = "0.4"
+rand = "0.7"
 
 [features]
 default = []
@@ -64,6 +66,11 @@ required-features = ["with-tokio-0_2", "tokio/full"]
 [[example]]
 name = "interleaved_messages"
 path = "examples/interleaved_messages.rs"
+required-features = ["with-smol-0_4"]
+
+[[example]]
+name = "message_stealing"
+path = "examples/message_stealing.rs"
 required-features = ["with-smol-0_4"]
 
 [[example]]

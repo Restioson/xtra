@@ -12,7 +12,7 @@ pub mod address;
 pub use address::{Address, Disconnected, WeakAddress};
 
 mod context;
-pub use context::Context;
+pub use context::{Context, ActorShutdown};
 
 mod manager;
 pub use manager::ActorManager;
@@ -235,7 +235,7 @@ pub trait Actor: 'static + Send + Sized {
     where
         Self: Send,
     {
-        let (addr, mgr) = ActorManager::start(self, message_cap);
+        let (addr, mgr) = ActorManager::start_one(self, message_cap);
         spawn(mgr.manage());
         addr
     }
@@ -259,7 +259,52 @@ pub trait Actor: 'static + Send + Sized {
     /// })
     /// ```
     fn create(self, message_cap: Option<usize>) -> (Address<Self>, ActorManager<Self>) {
-        ActorManager::start(self, message_cap)
+        ActorManager::start_one(self, message_cap)
+    }
+
+    /// Spawns *n* actors onto the global runtime executor (i.e, `tokio` or `async_std`'s executors),
+    /// given the cap for the actor's mailbox. If `None` is passed, it will be of unbounded size.
+    /// Each actor has its own state, but they will share a common address and mailbox, operating in
+    /// a message-stealing fashion - no message is handled by more than one actor. For CPU-bound
+    /// or very high load actors, this can allow for parallelization without having to keep many
+    /// addresses.
+    // TODO rework spawn
+    #[cfg(any(
+        doc,
+        feature = "with-tokio-0_2",
+        feature = "with-async_std-1",
+        feature = "with-wasm_bindgen-0_2",
+        feature = "with-smol-0_4"
+    ))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_4")))]
+    fn spawn_many<F: FnMut(usize) -> Self>(
+        create_actor: F,
+        message_cap: Option<usize>,
+        n: usize
+    ) -> Address<Self> {
+        let (address, managers) = ActorManager::start_multiple(create_actor, message_cap, n);
+
+        for manager in managers {
+            spawn(manager.manage())
+        }
+
+        address
+    }
+
+    /// Creates *n* actors in a ready-to-spawn state, given the cap for the actor's mailbox.
+    /// If `None` is passed, it will be of unbounded size. Each actor has its own state, but they
+    /// will share a common address and mailbox, operating in a message-stealing fashion - no
+    /// message is handled by more than one actor. For CPU-bound or very high load actors, this can
+    /// allow for parallelization without having to keep many addresses.
+    fn create_many<F: FnMut(usize) -> Self>(
+        create_actor: F,
+        message_cap: Option<usize>,
+        n: usize
+    ) -> (Address<Self>, Vec<ActorManager<Self>>) {
+        ActorManager::start_multiple(create_actor, message_cap, n)
     }
 }
 

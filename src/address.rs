@@ -39,6 +39,12 @@ impl Strong {
 #[derive(Clone)]
 pub struct Weak(pub(crate) ArcWeak<()>);
 
+impl Weak {
+    pub(crate) fn upgrade(&self) -> Option<Strong> {
+        ArcWeak::upgrade(&self.0).map(Strong)
+    }
+}
+
 /// This trait represents the strength of an address's reference counting. It is an internal trait.
 /// There are two implementations of this trait: [`Weak`](struct.Weak.html) and
 /// [`Strong`](struct.Weak.html). These can be provided as the second type argument to
@@ -189,9 +195,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
     /// })
     /// ```
     pub fn is_connected(&self) -> bool {
-        // Check that there are external strong addresses and the actor isn't stopped.
-        // strong_count() == 2 because Context holds a strong arc to the refcount
-        self.ref_counter.strong_count() > 1 && !self.sender.is_disconnected()
+        self.ref_counter.strong_count() > 0 && !self.sender.is_disconnected()
     }
 
     /// Sends a [`Message`](trait.Message.html) to the actor, and does not wait for a response.
