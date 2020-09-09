@@ -2,14 +2,8 @@ use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{ContinueManageLoop, ManagerMessage};
 use crate::{Actor, Address, Handler, KeepRunning, Message};
 use futures::future::{self, Either, Future};
-#[cfg(any(
-    doc,
-    feature = "with-tokio-0_2",
-    feature = "with-async_std-1",
-    feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-1"
-))]
-use std::time::Duration;
+#[cfg(feature = "timing")]
+use {futures_timer::Delay, std::time::Duration};
 use flume::{Receiver, Sender};
 use crate::refcount::{RefCounter, Weak, Strong};
 use std::sync::Arc;
@@ -254,6 +248,7 @@ impl<A: Actor> Context<A> {
     /// queue are processed. This is almost equivalent to calling send on
     /// [`Context::address()`](struct.Context.html#method.address), but will never fail to send
     /// the message.
+    #[cfg(feature = "timing")]
     pub fn notify_later<M>(&mut self, msg: M)
     where
         M: Message,
@@ -268,22 +263,12 @@ impl<A: Actor> Context<A> {
     /// Notify the actor with a synchronously handled message every interval until it is stopped
     /// (either directly with [`Context::stop`](struct.Context.html#method.stop), or for a lack of
     /// strong [`Address`es](struct.Address.html)). This does not take priority over other messages.
-    #[cfg(any(
-        doc,
-        feature = "with-tokio-0_2",
-        feature = "with-async_std-1",
-        feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-1"
-    ))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-1")))]
+    #[cfg(feature = "timing")]
     pub fn notify_interval<F, M>(
         &mut self,
         duration: Duration,
         constructor: F
-    ) -> Result<(), ActorShutdown>
+    ) -> Result<impl Future<Output = ()>, ActorShutdown>
     where
         F: Send + 'static + Fn() -> M,
         M: Message,
@@ -291,115 +276,31 @@ impl<A: Actor> Context<A> {
     {
         let addr = self.address()?;
 
-        #[cfg(feature = "with-tokio-0_2")]
-        tokio::spawn(async move {
-            let mut timer = tokio::time::interval(duration);
-            loop {
-                timer.tick().await;
-                if let Err(_) = addr.do_send(constructor()) {
-                    break;
-                }
+        let fut = async move {
+            Delay::new(duration).await;
+            while addr.do_send(constructor()).is_ok() {
+                Delay::new(duration).await
             }
-        });
+        };
 
-        #[cfg(feature = "with-async_std-1")]
-        {
-            use async_std::prelude::FutureExt;
-            async_std::task::spawn(async move {
-                loop {
-                    futures::future::ready(()).delay(duration.clone()).await;
-                    if let Err(_) = addr.do_send(constructor()) {
-                        break;
-                    }
-                }
-            });
-        }
-
-        #[cfg(feature = "with-wasm_bindgen-0_2")]
-        {
-            use futures_timer::Delay;
-            wasm_bindgen_futures::spawn_local(async move {
-                loop {
-                    Delay::new(duration.clone()).await;
-                    if let Err(_) = addr.do_send(constructor()) {
-                        break;
-                    }
-                }
-            })
-        }
-
-        #[cfg(feature = "with-smol-1")]
-        {
-            use smol::Timer;
-            smol::spawn(async move {
-                loop {
-                    Timer::after(duration.clone()).await;
-                    if let Err(_) = addr.do_send(constructor()) {
-                        break;
-                    }
-                }
-            })
-            .detach();
-        }
-
-        Ok(())
+        Ok(fut)
     }
 
     /// Notify the actor with a synchronously handled message after a certain duration has elapsed.
     /// This does not take priority over other messages.
-    #[cfg(any(
-        doc,
-        feature = "with-tokio-0_2",
-        feature = "with-async_std-1",
-        feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-1"
-    ))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-1")))]
-    pub fn notify_after<M>(&mut self, duration: Duration, notification: M) -> Result<(), ActorShutdown>
-    where
-        M: Message,
-        A: Handler<M>,
+    pub fn notify_after<M>(&mut self, duration: Duration, notification: M)
+        -> Result<impl Future<Output = ()>, ActorShutdown>
+            where
+                M: Message,
+                A: Handler<M>,
     {
         let addr = self.address()?;
-
-        #[cfg(feature = "with-tokio-0_2")]
-        tokio::spawn(async move {
-            tokio::time::delay_for(duration).await;
+        let fut = async move {
+            Delay::new(duration.clone()).await;
             let _ = addr.do_send(notification);
-        });
+        };
 
-        #[cfg(feature = "with-async_std-1")]
-        {
-            use async_std::prelude::FutureExt;
-            async_std::task::spawn(async move {
-                futures::future::ready(()).delay(duration.clone()).await;
-                let _ = addr.do_send(notification);
-            });
-        }
-
-        #[cfg(feature = "with-wasm_bindgen-0_2")]
-        {
-            use futures_timer::Delay;
-            wasm_bindgen_futures::spawn_local(async move {
-                Delay::new(duration.clone()).await;
-                let _ = addr.do_send(notification);
-            })
-        }
-
-        #[cfg(feature = "with-smol-1")]
-        {
-            use smol::Timer;
-            smol::spawn(async move {
-                Timer::after(duration.clone()).await;
-                let _ = addr.do_send(notification);
-            })
-            .detach();
-        }
-
-        Ok(())
+        Ok(fut)
     }
 }
 

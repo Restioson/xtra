@@ -6,13 +6,6 @@ use crate::manager::ManagerMessage;
 use crate::*;
 use futures::channel::oneshot::Receiver;
 use futures::Future;
-#[cfg(any(
-    doc,
-    feature = "with-tokio-0_2",
-    feature = "with-async_std-1",
-    feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-1"
-))]
 use futures::{Stream, StreamExt, Sink};
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
@@ -221,17 +214,6 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
     /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
     /// method should be called on [`Address`](struct.Address.html). Otherwise, it should be called
     /// on [`WeakAddress`](struct.WeakAddress.html).
-    #[cfg(any(
-        doc,
-        feature = "with-tokio-0_2",
-        feature = "with-async_std-1",
-        feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-1"
-    ))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_3")))]
     pub async fn attach_stream<S, M, K>(self, stream: S)
         where
             K: Into<KeepRunning> + Send,

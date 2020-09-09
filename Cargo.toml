@@ -31,10 +31,11 @@ smol = "1"
 rand = "0.7"
 
 [features]
-default = []
+default = ["timing"]
+timing = ["futures-timer"]
 with-tokio-0_2 = ["tokio"]
 with-async_std-1 = ["async-std"]
-with-wasm_bindgen-0_2 = ["wasm-bindgen", "wasm-bindgen-futures", "futures-timer/wasm-bindgen"]
+with-wasm_bindgen-0_2 = ["wasm-bindgen", "wasm-bindgen-futures"]
 with-smol-1 = ["smol"]
 
 [[example]]
