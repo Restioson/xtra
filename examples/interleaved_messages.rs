@@ -1,4 +1,5 @@
 use xtra::prelude::*;
+use xtra::spawn::Smol;
 
 struct Initialized(Address<ActorA>);
 impl Message for Initialized {
@@ -46,11 +47,12 @@ impl Handler<Hello> for ActorB {
 
 fn main() {
     smol::block_on(async {
-        let actor_b = ActorB.spawn(None);
+        let actor_b = ActorB.create(None).spawn(Smol::Global);
         let actor_a = ActorA {
             actor_b: actor_b.clone(),
         }
-        .spawn(None);
+            .create(None)
+            .spawn(Smol::Global);
         actor_b.send(Initialized(actor_a.clone())).await.unwrap();
     })
 }

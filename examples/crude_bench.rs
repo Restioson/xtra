@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 use xtra::prelude::*;
+use xtra::spawn::Tokio;
 
 struct Counter {
     count: usize,
@@ -90,7 +91,7 @@ async fn main() {
 
     /* Time do_send */
 
-    let addr = Counter { count: 0 }.spawn(None);
+    let addr = Counter { count: 0 }.create(None).spawn(Tokio::Global);
 
     let start = Instant::now();
     for _ in 0..COUNT {
@@ -108,7 +109,7 @@ async fn main() {
 
     /* Time channel do_send */
 
-    let addr = Counter { count: 0 }.spawn(None);
+    let addr = Counter { count: 0 }.create(None).spawn(Tokio::Global);
     let chan = &addr as &dyn MessageChannel<Increment>;
 
     let start = Instant::now();
@@ -127,7 +128,7 @@ async fn main() {
 
     /* Time send avg time of processing */
 
-    let addr = Counter { count: 0 }.spawn(None);
+    let addr = Counter { count: 0 }.create(None).spawn(Tokio::Global);
 
     let start = Instant::now();
     for _ in 0..COUNT {

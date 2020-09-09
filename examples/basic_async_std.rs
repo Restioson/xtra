@@ -1,4 +1,5 @@
 use xtra::prelude::*;
+use xtra::spawn::AsyncStd;
 
 struct Printer {
     times: usize,
@@ -27,7 +28,7 @@ impl Handler<Print> for Printer {
 
 #[async_std::main]
 async fn main() {
-    let addr = Printer::new().spawn(None);
+    let addr = Printer::new().create(None).spawn(AsyncStd);
     loop {
         addr.send(Print("hello".to_string()))
             .await

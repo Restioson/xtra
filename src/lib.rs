@@ -1,7 +1,7 @@
 //! xtra is a tiny, fast, and safe actor system.
 
 #![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
-#![deny(missing_docs, unsafe_code)]
+#![deny(unsafe_code)] // TODO(doc): reapply missing_docs
 
 pub mod message_channel;
 pub mod sink;
@@ -15,6 +15,8 @@ mod context;
 pub use context::{Context, ActorShutdown};
 
 mod manager;
+pub mod spawn;
+
 pub use manager::ActorManager;
 
 
@@ -57,6 +59,7 @@ pub trait Message: Send + 'static {
 ///
 /// ```
 /// # use xtra::prelude::*;
+/// # use xtra::spawn::Smol;
 /// # struct MyActor;
 /// # impl Actor for MyActor {}
 /// struct Msg;
@@ -73,8 +76,8 @@ pub trait Message: Send + 'static {
 /// }
 ///
 /// fn main() {
-///     smol::block_on(async {
-///         let addr = MyActor.spawn(None);
+/// smol::block_on(async {
+///         let addr = MyActor.create(None).spawn(Smol::Global);
 ///         assert_eq!(addr.send(Msg).await, Ok(20));
 ///     })
 /// }
@@ -101,6 +104,7 @@ pub trait Handler<M: Message>: Actor {
 ///
 /// ```rust
 /// # use xtra::{KeepRunning, prelude::*};
+/// # use xtra::spawn::Smol;
 /// # use std::time::Duration;
 /// # use smol::Timer;
 /// struct MyActor;
@@ -137,7 +141,7 @@ pub trait Handler<M: Message>: Actor {
 ///
 /// // Will print "Started!", "Goodbye!", "Decided not to keep running", and then "Finally stopping."
 /// smol::block_on(async {
-///     let addr = MyActor.spawn(None);
+///     let addr = MyActor.create(None).spawn(Smol::Global);
 ///     addr.send(Goodbye).await;
 ///
 ///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
@@ -184,62 +188,6 @@ pub trait Actor: 'static + Send + Sized {
     #[allow(unused_variables)]
     async fn stopped(&mut self, ctx: &mut Context<Self>) {}
 
-    /// Spawns the actor onto the global runtime executor (i.e, `tokio` or `async_std`'s executors),
-    /// given the cap for the actor's mailbox. If `None` is passed, it will be of unbounded size.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use xtra::{KeepRunning, prelude::*};
-    /// # use std::time::Duration;
-    /// # use smol::Timer;
-    /// struct MyActor;
-    ///
-    /// #[async_trait::async_trait]
-    /// impl Actor for MyActor {
-    ///     async fn started(&mut self, ctx: &mut Context<Self>) {
-    ///         println!("Started!");
-    ///     }
-    /// }
-    ///
-    /// # struct Msg;
-    /// # impl Message for Msg {
-    /// #    type Result = ();
-    /// # }
-    /// # #[async_trait::async_trait]
-    /// # impl Handler<Msg> for MyActor {
-    /// #     async fn handle(&mut self, _: Msg, _ctx: &mut Context<Self>) {}
-    /// # }
-    ///
-    /// fn main() {
-    ///     smol::block_on(async {
-    ///         let addr: Address<MyActor> = MyActor.spawn(None); // Will print "Started!"
-    ///         addr.do_send(Msg).unwrap();
-    ///
-    ///         Timer::after(Duration::from_secs(1)).await; // Give it time to run
-    ///     })
-    /// }
-    /// ```
-    #[cfg(any(
-        doc,
-        feature = "with-tokio-0_2",
-        feature = "with-async_std-1",
-        feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-1"
-    ))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-1")))]
-    fn spawn(self, message_cap: Option<usize>) -> Address<Self>
-    where
-        Self: Send,
-    {
-        let (addr, mgr) = ActorManager::start_one(self, message_cap);
-        spawn(mgr.manage());
-        addr
-    }
-
     /// Returns the actor's address and manager in a ready-to-start state, given the cap for the
     /// actor's mailbox. If `None` is passed, it will be of unbounded size. To spawn the actor,
     /// the [`ActorManager::manage`](struct.ActorManager.html#method.manage) method must be called
@@ -253,58 +201,14 @@ pub trait Actor: 'static + Send + Sized {
     /// # struct MyActor;
     /// # impl Actor for MyActor {}
     /// smol::block_on(async {
-    ///     let (addr, mgr) = MyActor.create(None);
-    ///     smol::spawn(mgr.manage()).detach(); // Actually spawn the actor onto an executor
+    ///     let (addr, fut) = MyActor.create(None).manage();
+    ///     smol::spawn(fut).detach(); // Actually spawn the actor onto an executor
     ///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
     /// })
     /// ```
-    fn create(self, message_cap: Option<usize>) -> (Address<Self>, ActorManager<Self>) {
-        ActorManager::start_one(self, message_cap)
-    }
-
-    /// Spawns *n* actors onto the global runtime executor (i.e, `tokio` or `async_std`'s executors),
-    /// given the cap for the actor's mailbox. If `None` is passed, it will be of unbounded size.
-    /// Each actor has its own state, but they will share a common address and mailbox, operating in
-    /// a message-stealing fashion - no message is handled by more than one actor. For CPU-bound
-    /// or very high load actors, this can allow for parallelization without having to keep many
-    /// addresses.
-    // TODO rework spawn
-    #[cfg(any(
-        doc,
-        feature = "with-tokio-0_2",
-        feature = "with-async_std-1",
-        feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-1"
-    ))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-1")))]
-    fn spawn_many<F: FnMut(usize) -> Self>(
-        create_actor: F,
-        message_cap: Option<usize>,
-        n: usize
-    ) -> Address<Self> {
-        let (address, managers) = ActorManager::start_multiple(create_actor, message_cap, n);
-
-        for manager in managers {
-            spawn(manager.manage())
-        }
-
-        address
-    }
-
-    /// Creates *n* actors in a ready-to-spawn state, given the cap for the actor's mailbox.
-    /// If `None` is passed, it will be of unbounded size. Each actor has its own state, but they
-    /// will share a common address and mailbox, operating in a message-stealing fashion - no
-    /// message is handled by more than one actor. For CPU-bound or very high load actors, this can
-    /// allow for parallelization without having to keep many addresses.
-    fn create_many<F: FnMut(usize) -> Self>(
-        create_actor: F,
-        message_cap: Option<usize>,
-        n: usize
-    ) -> (Address<Self>, Vec<ActorManager<Self>>) {
-        ActorManager::start_multiple(create_actor, message_cap, n)
+    fn create(self, message_cap: Option<usize>) -> ActorManager<Self> {
+        let (address, ctx) = Context::new(message_cap);
+        ActorManager { address, actor: self, ctx }
     }
 }
 
@@ -340,29 +244,4 @@ impl From<()> for KeepRunning {
     fn from(_: ()) -> KeepRunning {
         KeepRunning::Yes
     }
-}
-
-/// An internal abstraction over the different runtimes - spawns a future.
-#[cfg(any(
-    doc,
-    feature = "with-tokio-0_2",
-    feature = "with-async_std-1",
-    feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-1"
-))]
-fn spawn<F>(f: F)
-where
-    F: std::future::Future<Output = ()> + Send + 'static,
-{
-    #[cfg(feature = "with-tokio-0_2")]
-    tokio::spawn(f);
-
-    #[cfg(feature = "with-async_std-1")]
-    async_std::task::spawn(f);
-
-    #[cfg(feature = "with-wasm_bindgen-0_2")]
-    wasm_bindgen_futures::spawn_local(f);
-
-    #[cfg(feature = "with-smol-1")]
-    smol::spawn(f).detach();
 }

@@ -169,6 +169,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
     ///
     /// ```rust
     /// # use xtra::prelude::*;
+    /// # use xtra::spawn::Smol;
     /// # use std::time::Duration;
     /// # struct MyActor;
     /// # impl Actor for MyActor {}
@@ -187,7 +188,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
     /// }
     ///
     /// smol::block_on(async {
-    ///     let addr = MyActor.spawn(None);
+    ///     let addr = MyActor.create(None).spawn(Smol::Global);
     ///     assert!(addr.is_connected());
     ///     addr.send(Shutdown).await;
     ///     Timer::after(Duration::from_secs(1)).await; // Give it time to shut down
@@ -258,24 +259,21 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
     #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_3")))]
-    pub fn attach_stream<S, M, K>(self, mut stream: S)
+    pub async fn attach_stream<S, M, K>(self, stream: S)
         where
             K: Into<KeepRunning> + Send,
             M: Message<Result = K>,
             A: Handler<M>,
-            S: Stream<Item = M> + Send + Unpin + 'static,
+            S: Stream<Item = M> + Send,
             Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
-        let fut = async move {
-            while let Some(m) = stream.next().await {
-                let res = self.send(m); // Bound to make it Sync
-                if !matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
-                    break;
-                }
+        futures::pin_mut!(stream);
+        while let Some(m) = stream.next().await {
+            let res = self.send(m); // Bound to make it Sync
+            if !matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
+                break;
             }
-        };
-
-        crate::spawn(fut);
+        }
     }
 
     /// Converts this address into a [futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html).

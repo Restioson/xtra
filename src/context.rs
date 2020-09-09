@@ -1,6 +1,6 @@
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{ContinueManageLoop, ManagerMessage};
-use crate::{Actor, Address, Handler, KeepRunning, Message, ActorManager};
+use crate::{Actor, Address, Handler, KeepRunning, Message};
 use futures::future::{self, Either, Future};
 #[cfg(any(
     doc,
@@ -11,25 +11,44 @@ use futures::future::{self, Either, Future};
 ))]
 use std::time::Duration;
 use flume::{Receiver, Sender};
-use crate::address::{RefCounter, Weak};
+use crate::address::{RefCounter, Weak, Strong};
+use std::sync::Arc;
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
 pub struct Context<A: Actor> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
     /// for it to call the `stopping` method on the actor
-    pub(crate) running: bool,
+    running: bool,
     /// Channel sender kept by the context to allow for the `Context::address` method to work
     sender: Sender<ManagerMessage<A>>,
-    /// Kept by the context to allow for it to tcheck how many strong addresses exist to the actor
+    /// Kept by the context to allow for it to check how many strong addresses exist to the actor
     ref_counter: Weak,
     /// Notifications that must be stored for immediate processing.
-    pub(crate) immediate_notifications: Vec<Box<dyn MessageEnvelope<Actor = A>>>,
-    pub(crate) receiver: Receiver<ManagerMessage<A>>,
+    immediate_notifications: Vec<Box<dyn MessageEnvelope<Actor = A>>>,
+    receiver: Receiver<ManagerMessage<A>>,
 }
 
 impl<A: Actor> Context<A> {
-    pub(crate) fn new(
+    pub fn new(message_cap: Option<usize>) -> (Address<A>, Self) {
+        let (sender, receiver) = match message_cap {
+            None => flume::unbounded(),
+            Some(cap) => flume::bounded(cap),
+        };
+
+        let strong = Strong(Arc::new(()));
+        let weak = strong.downgrade();
+
+        let addr = Address {
+            sender: sender.clone(),
+            ref_counter: strong,
+        };
+
+        let context = Context::from_parts(sender, weak, receiver);
+        (addr, context)
+    }
+
+    pub(crate) fn from_parts(
         sender: Sender<ManagerMessage<A>>,
         ref_counter: Weak,
         receiver: Receiver<ManagerMessage<A>>,
@@ -43,18 +62,16 @@ impl<A: Actor> Context<A> {
         }
     }
 
-    // TODO spawn_actor
-
-    /// Creates another actor of the same type listening to the same address as this actor is.
+    /// Attaches another actor of the same type listening to the same address as this actor is.
     /// They will operate in a message-stealing fashion, with no message handled by two actors.
     /// See [`Actor::create_multiple`](trait.Actor.html#method.create_multiple) for more info.
-    pub fn create_actor(&mut self, actor: A) -> ActorManager<A> {
-        ActorManager::start(
-            actor,
+    pub fn attach(&mut self, actor: A) -> impl Future<Output = ()> {
+        let ctx = Context::from_parts(
             self.sender.clone(),
-            self.receiver.clone(),
-            self.ref_counter.clone()
-        )
+            self.ref_counter.clone(),
+            self.receiver.clone()
+        );
+        ctx.run(actor)
     }
 
     /// Stop the actor as soon as it has finished processing current message. This will mean that the
@@ -79,7 +96,7 @@ impl<A: Actor> Context<A> {
     }
 
     /// Check if the Context is still set to running, returning whether to continue the manage loop
-    pub(crate) async fn check_running(&mut self, actor: &mut A) -> bool {
+    async fn check_running(&mut self, actor: &mut A) -> bool {
         // Check if the context was stopped, and if so return, thereby dropping the
         // manager and calling `stopped` on the actor
         if !self.running {
@@ -115,8 +132,34 @@ impl<A: Actor> Context<A> {
         true
     }
 
-    /// Handle a message, returning whether to exit from the manage loop or not
-    pub(crate) async fn handle_message(
+    pub async fn run(mut self, mut actor: A) {
+        actor.started(&mut self).await;
+
+        // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
+        // in the started method, otherwise it would kinda be a bug
+        if !self.check_running(&mut actor).await {
+            actor.stopped(&mut self).await;
+            return;
+        }
+
+        // Listen for any messages for the ActorManager
+        while let Ok(msg) = self.receiver.recv_async().await {
+            match self.tick(msg, &mut actor).await {
+                ContinueManageLoop::Yes => {}
+                ContinueManageLoop::ProcessNotifications => break,
+                ContinueManageLoop::ExitImmediately => {
+                    actor.stopped(&mut self).await;
+                    return;
+                },
+            }
+        }
+
+        actor.stopped(&mut self).await;
+    }
+
+    /// Handle a message and immediate notifications, returning whether to exit from the manage loop
+    /// or not
+    async fn tick(
         &mut self,
         msg: ManagerMessage<A>,
         actor: &mut A,
@@ -156,7 +199,7 @@ impl<A: Actor> Context<A> {
 
         match self.receiver.recv_async().await {
             Ok(msg) => {
-                self.handle_message(msg, act).await;
+                self.tick(msg, act).await;
             }
             Err(_) => self.stop(),
         }
@@ -186,7 +229,7 @@ impl<A: Actor> Context<A> {
 
             match msg {
                 Ok(msg) => {
-                    self.handle_message(msg, act).await;
+                    self.tick(msg, act).await;
                 },
                 Err(_) => self.stop(),
             }

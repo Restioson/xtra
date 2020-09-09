@@ -1,8 +1,7 @@
 use crate::envelope::MessageEnvelope;
 use crate::{Actor, Address, Context};
-use std::sync::Arc;
-use crate::address::{Strong, Weak};
-use flume::{Sender, Receiver};
+use futures::Future;
+use crate::spawn::ActorSpawner;
 
 /// A message that can be sent by an [`Address`](struct.Address.html) to the [`ActorManager`](struct.ActorManager.html)
 pub(crate) enum ManagerMessage<A: Actor> {
@@ -29,68 +28,20 @@ pub(crate) enum ContinueManageLoop {
 /// A manager for the actor which handles incoming messages and stores the context. Its managing
 /// loop can be started with [`ActorManager::manage`](struct.ActorManager.html#method.manage).
 pub struct ActorManager<A: Actor> {
-    actor: A,
-    ctx: Context<A>,
+    pub(crate) address: Address<A>,
+    pub(crate) actor: A,
+    pub(crate) ctx: Context<A>,
 }
 
 impl<A: Actor> ActorManager<A> {
-    /// Return the actor and its address in ready-to-run the actor by returning its address and
-    /// its manager. The `ActorManager::manage` future has to be executed for the actor to actually
-    /// start.
-    pub(crate) fn start(
-        actor: A,
-        sender: Sender<ManagerMessage<A>>,
-        receiver: Receiver<ManagerMessage<A>>,
-        ref_counter: Weak,
-    ) -> ActorManager<A> {
-        let ctx = Context::new(sender.clone(), ref_counter, receiver);
-        let mgr = ActorManager { actor, ctx };
-        mgr
+    pub fn spawn<S: ActorSpawner>(self, spawner: S) -> Address<A> {
+        let (addr, fut) = self.manage();
+        spawner.spawn(fut);
+        addr
     }
 
-    pub(crate) fn start_multiple(
-        mut create_actor: impl FnMut(usize) -> A,
-        message_cap: Option<usize>,
-        n: usize
-    ) -> (Address<A>, Vec<ActorManager<A>>) {
-        let (sender, receiver) = match message_cap {
-            None => flume::unbounded(),
-            Some(cap) => flume::bounded(cap),
-        };
-        let ref_counter = Strong(Arc::new(()));
-        let addr = Address {
-            sender: sender.clone(),
-            ref_counter: ref_counter.clone()
-        };
-
-        let managers = (0..n).map(|n| {
-            ActorManager::start(
-                create_actor(n),
-                sender.clone(),
-                receiver.clone(),
-                ref_counter.downgrade()
-            )
-        })
-            .collect();
-
-        (addr, managers)
-    }
-
-    pub(crate) fn start_one(actor: A, message_cap: Option<usize>) -> (Address<A>, ActorManager<A>) {
-        let (sender, receiver) = match message_cap {
-            None => flume::unbounded(),
-            Some(cap) => flume::bounded(cap),
-        };
-        let ref_counter = Strong(Arc::new(()));
-        let addr = Address {
-            sender: sender.clone(),
-            ref_counter: ref_counter.clone()
-        };
-        let mgr = ActorManager::start(actor, sender, receiver, ref_counter.downgrade());
-        (addr, mgr)
-    }
-
-    /// Starts the manager loop. This will start the actor and allow it to respond to messages.
+    /// Starts the manager loop, returning the actor's address and its manage future. This will
+    /// start the actor and allow it to respond to messages.
     ///
     /// # Example
     ///
@@ -100,45 +51,11 @@ impl<A: Actor> ActorManager<A> {
     /// impl Actor for MyActor {}
     ///
     /// smol::block_on(async {
-    ///     let (addr, mgr) = MyActor.create(None);
-    ///     smol::spawn(mgr.manage()).detach(); // Actually spawn the actor onto an executor
+    ///     let (addr, fut) = MyActor.create(None).manage();
+    ///     smol::spawn(fut).detach(); // Actually spawn the actor onto an executor
     /// });
     /// ```
-    pub async fn manage(mut self) {
-        self.actor.started(&mut self.ctx).await;
-
-        // Idk why anyone would do this, but we have to check that they didn't do ctx.stop() in the
-        // started method, otherwise it would kinda be a bug
-        if !self.ctx.check_running(&mut self.actor).await {
-            self.actor.stopped(&mut self.ctx).await;
-            return;
-        }
-
-        // Listen for any messages for the ActorManager
-        while let Ok(msg) = self.ctx.receiver.recv_async().await {
-            match self.ctx.handle_message(msg, &mut self.actor).await {
-                ContinueManageLoop::Yes => {}
-                ContinueManageLoop::ProcessNotifications => break,
-                ContinueManageLoop::ExitImmediately => {
-                    self.actor.stopped(&mut self.ctx).await;
-                    return;
-                },
-            }
-        }
-
-        // Handle any last late notifications that were sent after the last strong address was dropped
-        // We can't .await, because that would mean that we are awaiting forever! So, instead, we do
-        // `next_message` and check if the result is `Ok`. Because we know that any late notifications
-        // sent from the context must be fully send by now due to it being marked as stopped (so
-        // that no other addresses can be created and sending concurrently), we can make the inference
-        // that if `next_message` returns `Err`, there are no more late notifications to handle.
-        while let Ok(msg) = self.ctx.receiver.try_recv() {
-            let res = self.ctx.handle_message(msg, &mut self.actor).await;
-            if res == ContinueManageLoop::ExitImmediately {
-                break;
-            }
-        }
-
-        self.actor.stopped(&mut self.ctx).await;
+    pub fn manage(self) -> (Address<A>, impl Future<Output = ()>) {
+        (self.address, self.ctx.run(self.actor))
     }
 }

@@ -4,14 +4,9 @@
 
 use crate::address::{MessageResponseFuture, Strong, RefCounter};
 use crate::*;
-#[cfg(any(
-    doc,
-    feature = "with-tokio-0_2",
-    feature = "with-async_std-1",
-    feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-1"
-))]
-use futures::{FutureExt, Stream, StreamExt, Sink};
+use futures::Sink;
+use futures::future::BoxFuture;
+use futures::stream::BoxStream;
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../struct.Address.html), but associated with
@@ -28,6 +23,7 @@ use futures::{FutureExt, Stream, StreamExt, Sink};
 /// ```rust
 /// # use xtra::prelude::*;
 /// # use smol::Timer;
+/// # use xtra::spawn::Smol;
 /// # use std::time::Duration;
 /// struct WhatsYourName;
 ///
@@ -56,10 +52,10 @@ use futures::{FutureExt, Stream, StreamExt, Sink};
 /// }
 ///
 /// fn main() {
-///     smol::block_on(async {
+/// smol::block_on(async {
 ///         let channels: [Box<dyn MessageChannel<WhatsYourName>>; 2] = [
-///             Box::new(Alice.spawn(None)).upcast(),
-///             Box::new(Bob.spawn(None)).upcast()
+///             Box::new(Alice.create(None).spawn(Smol::Global)).upcast(),
+///             Box::new(Bob.create(None).spawn(Smol::Global)).upcast()
 ///         ];
 ///         let name = ["Alice", "Bob"];
 ///         for (channel, name) in channels.iter().zip(&name) {
@@ -93,26 +89,10 @@ pub trait MessageChannel<M: Message>: Unpin + Send + Sync {
     /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
     /// method should be called on [`MessageChannel`](struct.MessageChannel.html). Otherwise, it should be called
     /// on [`WeakMessageChannel`](struct.WeakMessageChannel.html).
-    #[cfg(any(
-        doc,
-        feature = "with-tokio-0_2",
-        feature = "with-async_std-1",
-        feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-1"
-    ))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-1")))]
-    fn attach_stream<S>(self, stream: S)
+    fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
         where
-            S: Stream<Item = M> + Send + Unpin + 'static,
             M::Result: Into<KeepRunning> + Send,
-            Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
-    {
-        let fut = stream.map(|i| Ok(i)).forward(self).map(|_| ());
-        crate::spawn(fut);
-    }
+            Self: Sized + Send + Sink<M, Error = Disconnected> + 'static;
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
@@ -166,6 +146,14 @@ impl<A, M: Message, Rc: RefCounter> MessageChannel<M> for Address<A, Rc>
 
     fn send(&self, message: M) -> MessageResponseFuture<M> {
         self.send(message)
+    }
+
+    fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
+        where
+            M::Result: Into<KeepRunning> + Send,
+            Self: Sized + Send + Sink<M, Error=Disconnected> + 'static
+    {
+        Box::pin(self.attach_stream(stream))
     }
 }
 

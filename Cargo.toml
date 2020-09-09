@@ -53,11 +53,6 @@ path = "examples/basic_smol.rs"
 required-features = ["with-smol-1"]
 
 [[example]]
-name = "async_handler"
-path = "examples/async_handler.rs"
-required-features = ["with-tokio-0_2", "tokio/full"]
-
-[[example]]
 name = "interleaved_messages"
 path = "examples/interleaved_messages.rs"
 required-features = ["with-smol-1"]

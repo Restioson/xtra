@@ -37,7 +37,10 @@ impl Handler<Print> for Printer {
 }
 
 fn main() {
-    let addr = Printer::spawn_many(Printer::new, Some(32), 4);
+    let (addr, mut ctx) = Context::new(Some(32));
+    for n in 0..4 {
+        smol::spawn(ctx.attach(Printer::new(n)));
+    }
 
     loop {
         addr.do_send(Print("hello".to_string()))
