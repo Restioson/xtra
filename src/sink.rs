@@ -3,7 +3,7 @@
 
 use std::pin::Pin;
 use crate::{Message, Actor, Handler, Disconnected};
-use crate::address::{RefCounter, Strong, Weak};
+use crate::refcount::{RefCounter, Strong, Weak};
 use crate::manager::ManagerMessage;
 use futures::{Sink, task::{Context, Poll}, SinkExt};
 use flume::r#async::SendSink;

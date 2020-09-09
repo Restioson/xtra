@@ -11,7 +11,7 @@ use futures::future::{self, Either, Future};
 ))]
 use std::time::Duration;
 use flume::{Receiver, Sender};
-use crate::address::{RefCounter, Weak, Strong};
+use crate::refcount::{RefCounter, Weak, Strong};
 use std::sync::Arc;
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside

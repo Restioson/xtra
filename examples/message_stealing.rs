@@ -2,8 +2,6 @@
 //! switch only after it has received many messages.
 
 use xtra::prelude::*;
-use std::time::Duration;
-use rand::Rng;
 
 struct Printer {
     times: usize,
@@ -39,7 +37,7 @@ impl Handler<Print> for Printer {
 fn main() {
     let (addr, mut ctx) = Context::new(Some(32));
     for n in 0..4 {
-        smol::spawn(ctx.attach(Printer::new(n)));
+        smol::spawn(ctx.attach(Printer::new(n))).detach();
     }
 
     loop {

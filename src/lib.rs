@@ -16,9 +16,9 @@ pub use context::{Context, ActorShutdown};
 
 mod manager;
 pub mod spawn;
+pub mod refcount;
 
 pub use manager::ActorManager;
-
 
 /// Commonly used types from xtra
 pub mod prelude {
