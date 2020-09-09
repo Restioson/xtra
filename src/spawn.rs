@@ -19,7 +19,7 @@ mod smol_impl {
 
     pub enum Smol<'a> {
         Global,
-        Handle(&'a ::smol::Executor)
+        Handle(&'a smol::Executor)
     }
 
     impl<'a> ActorSpawner for Smol<'a> {

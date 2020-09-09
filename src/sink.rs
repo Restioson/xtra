@@ -18,6 +18,15 @@ pub struct AddressSink<A: Actor, Rc: RefCounter = Strong> {
     pub(crate) ref_counter: Rc
 }
 
+impl<A: Actor, Rc: RefCounter> Clone for AddressSink<A, Rc> {
+    fn clone(&self) -> Self {
+        AddressSink {
+            sink: self.sink.clone(),
+            ref_counter: self.ref_counter.clone(),
+        }
+    }
+}
+
 /// This variety of `AddressSink` will not prevent the actor from being dropped.
 pub type WeakAddressSink<A> = AddressSink<A, Weak>;
 
@@ -77,6 +86,7 @@ impl<A: Actor, Rc: RefCounter, M: Message> Sink<M> for AddressSink<A, Rc>
 pub trait MessageSink<M: Message>: Sink<M, Error = Disconnected> + Unpin {
     /// Returns whether the actor referred to by this message sink is running and accepting messages.
     fn is_connected(&self) -> bool;
+    fn clone_message_sink(&self) -> Box<dyn MessageSink<M>>;
 }
 
 /// A `WeakMessageSink` is a [`MessageSink](trait.MessageSink.html) which does not inhibit the actor
@@ -89,6 +99,8 @@ pub trait WeakMessageSink<M: Message>: MessageSink<M> {
     /// Upcasts this weak message sink into a reference to the generic
     /// [`MessageSink`](trait.MessageSink.html) trait object
     fn upcast_ref(&self) -> &dyn MessageSink<M>;
+
+    fn clone_message_sink(&self) -> Box<dyn WeakMessageSink<M>>;
 }
 
 /// A `StrongMessageSink` is a [`MessageSink](trait.MessageSink.html) which does inhibit the actor
@@ -106,6 +118,8 @@ pub trait StrongMessageSink<M: Message>: MessageSink<M> {
     /// Upcasts this strong message sink into a reference to the generic
     /// [`MessageSink`](trait.MessageSink.html) trait object
     fn upcast_ref(&self) -> &dyn MessageSink<M>;
+
+    fn clone_message_sink(&self) -> Box<dyn StrongMessageSink<M>>;
 }
 
 impl<A: Actor, M: Message, Rc: RefCounter> MessageSink<M> for AddressSink<A, Rc>
@@ -113,6 +127,10 @@ impl<A: Actor, M: Message, Rc: RefCounter> MessageSink<M> for AddressSink<A, Rc>
 
     fn is_connected(&self) -> bool {
         self.ref_counter.strong_count() > 0 && !self.sink.is_disconnected()
+    }
+
+    fn clone_message_sink(&self) -> Box<dyn MessageSink<M>> {
+        Box::new(self.clone())
     }
 }
 
@@ -130,6 +148,10 @@ impl<A: Actor, M: Message> StrongMessageSink<M> for AddressSink<A, Strong>
     fn upcast_ref(&self) -> &dyn MessageSink<M, Error = Disconnected> {
         self
     }
+
+    fn clone_message_sink(&self) -> Box<dyn StrongMessageSink<M>> {
+        Box::new(self.clone())
+    }
 }
 
 impl<A: Actor, M: Message> WeakMessageSink<M> for AddressSink<A, Weak>
@@ -141,5 +163,9 @@ impl<A: Actor, M: Message> WeakMessageSink<M> for AddressSink<A, Weak>
 
     fn upcast_ref(&self) -> &dyn MessageSink<M, Error = Disconnected> {
         self
+    }
+
+    fn clone_message_sink(&self) -> Box<dyn WeakMessageSink<M>> {
+        Box::new(self.clone())
     }
 }

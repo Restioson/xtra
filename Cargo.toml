@@ -70,3 +70,6 @@ required-features = ["with-tokio-0_2", "tokio/full"]
 
 [workspace]
 members = ["examples/basic_wasm_bindgen"]
+
+[package.metadata.docs.rs]
+features = ["with-tokio-0_2", "with-async_std-1", "with-smol-1", "with-wasm_bindgen-0_2"]
