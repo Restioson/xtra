@@ -11,7 +11,7 @@ use futures::Future;
     feature = "with-tokio-0_2",
     feature = "with-async_std-1",
     feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-0_4"
+    feature = "with-smol-1"
 ))]
 use futures::{Stream, StreamExt, Sink};
 use std::error::Error;
@@ -252,7 +252,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_4"
+        feature = "with-smol-1"
     ))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]

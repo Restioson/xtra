@@ -15,9 +15,10 @@ categories = ["asynchronous", "concurrency"]
 futures = { version = "0.3.5", default-features = false, features = ["alloc", "std"] }
 async-trait = "0.1.36"
 pollster = "0.2"
+flume = { version = "0.9", default-features = false, features = ["async"] }
 
 tokio = { version = "0.2", features = ["rt-core", "time"], optional = true }
-smol = { version = "0.4", optional = true }
+smol = { version = "1", optional = true }
 async-std = { version = "1", features = ["unstable"], optional = true}
 
 # Wasm-bindgen support
@@ -25,15 +26,8 @@ wasm-bindgen = { version = "0.2", optional = true, default-features = false }
 wasm-bindgen-futures = { version = "0.4", optional = true, default-features = false }
 futures-timer = { version = "3", optional = true, default-features = false }
 
-[dependencies.flume]
-#git = "https://github.com/Restioson/flume/"
-#branch = "async-edits"
-path = "../flume"
-default-features = false
-features = ["async"]
-
 [dev-dependencies]
-smol = "0.4"
+smol = "1"
 rand = "0.7"
 
 [features]
@@ -41,7 +35,7 @@ default = []
 with-tokio-0_2 = ["tokio"]
 with-async_std-1 = ["async-std"]
 with-wasm_bindgen-0_2 = ["wasm-bindgen", "wasm-bindgen-futures", "futures-timer/wasm-bindgen"]
-with-smol-0_4 = ["smol"]
+with-smol-1 = ["smol"]
 
 [[example]]
 name = "basic_tokio"
@@ -56,7 +50,7 @@ required-features = ["with-async_std-1", "async-std/attributes"]
 [[example]]
 name = "basic_smol"
 path = "examples/basic_smol.rs"
-required-features = ["with-smol-0_4"]
+required-features = ["with-smol-1"]
 
 [[example]]
 name = "async_handler"
@@ -66,12 +60,12 @@ required-features = ["with-tokio-0_2", "tokio/full"]
 [[example]]
 name = "interleaved_messages"
 path = "examples/interleaved_messages.rs"
-required-features = ["with-smol-0_4"]
+required-features = ["with-smol-1"]
 
 [[example]]
 name = "message_stealing"
 path = "examples/message_stealing.rs"
-required-features = ["with-smol-0_4"]
+required-features = ["with-smol-1"]
 
 [[example]]
 name = "crude_bench"

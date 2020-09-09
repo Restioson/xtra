@@ -7,7 +7,7 @@ use futures::future::{self, Either, Future};
     feature = "with-tokio-0_2",
     feature = "with-async_std-1",
     feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-0_4"
+    feature = "with-smol-1"
 ))]
 use std::time::Duration;
 use flume::{Receiver, Sender};
@@ -230,12 +230,12 @@ impl<A: Actor> Context<A> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_4"
+        feature = "with-smol-1"
     ))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_4")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-1")))]
     pub fn notify_interval<F, M>(
         &mut self,
         duration: Duration,
@@ -285,7 +285,7 @@ impl<A: Actor> Context<A> {
             })
         }
 
-        #[cfg(feature = "with-smol-0_4")]
+        #[cfg(feature = "with-smol-1")]
         {
             use smol::Timer;
             smol::spawn(async move {
@@ -309,12 +309,12 @@ impl<A: Actor> Context<A> {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_4"
+        feature = "with-smol-1"
     ))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_4")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-1")))]
     pub fn notify_after<M>(&mut self, duration: Duration, notification: M) -> Result<(), ActorShutdown>
     where
         M: Message,
@@ -346,7 +346,7 @@ impl<A: Actor> Context<A> {
             })
         }
 
-        #[cfg(feature = "with-smol-0_4")]
+        #[cfg(feature = "with-smol-1")]
         {
             use smol::Timer;
             smol::spawn(async move {

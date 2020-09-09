@@ -9,7 +9,7 @@ use crate::*;
     feature = "with-tokio-0_2",
     feature = "with-async_std-1",
     feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-0_4"
+    feature = "with-smol-1"
 ))]
 use futures::{FutureExt, Stream, StreamExt, Sink};
 
@@ -98,12 +98,12 @@ pub trait MessageChannel<M: Message>: Unpin + Send + Sync {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_4"
+        feature = "with-smol-1"
     ))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_4")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-1")))]
     fn attach_stream<S>(self, stream: S)
         where
             S: Stream<Item = M> + Send + Unpin + 'static,

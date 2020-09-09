@@ -1,4 +1,7 @@
- use xtra::prelude::*;
+//! Set the SMOL_THREADS environment variable to have more threads, else each receiving task will
+//! switch only after it has received many messages.
+
+use xtra::prelude::*;
 use std::time::Duration;
 use rand::Rng;
 
@@ -30,24 +33,11 @@ impl Handler<Print> for Printer {
             self.id,
             self.times
         );
-
-        let millis = rand::thread_rng().gen_range(0, 100);
-        smol::Timer::after(Duration::from_millis(millis)).await;
     }
 }
 
 fn main() {
     let addr = Printer::spawn_many(Printer::new, Some(32), 4);
-
-    for _ in 0..3 {
-        let addr = addr.clone();
-        std::thread::spawn(move || {
-            loop {
-                addr.do_send(Print("hello".to_string()))
-                    .expect("Printer should not be dropped");
-            }
-        });
-    }
 
     loop {
         addr.do_send(Print("hello".to_string()))

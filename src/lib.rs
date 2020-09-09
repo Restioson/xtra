@@ -225,12 +225,12 @@ pub trait Actor: 'static + Send + Sized {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_4"
+        feature = "with-smol-1"
     ))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_4")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-1")))]
     fn spawn(self, message_cap: Option<usize>) -> Address<Self>
     where
         Self: Send,
@@ -274,12 +274,12 @@ pub trait Actor: 'static + Send + Sized {
         feature = "with-tokio-0_2",
         feature = "with-async_std-1",
         feature = "with-wasm_bindgen-0_2",
-        feature = "with-smol-0_4"
+        feature = "with-smol-1"
     ))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-tokio-0_2")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-async_std-1")))]
     #[cfg_attr(docsrs, doc(cfg(feature = "with-wasm_bindgen-0_2")))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-0_4")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "with-smol-1")))]
     fn spawn_many<F: FnMut(usize) -> Self>(
         create_actor: F,
         message_cap: Option<usize>,
@@ -348,7 +348,7 @@ impl From<()> for KeepRunning {
     feature = "with-tokio-0_2",
     feature = "with-async_std-1",
     feature = "with-wasm_bindgen-0_2",
-    feature = "with-smol-0_4"
+    feature = "with-smol-1"
 ))]
 fn spawn<F>(f: F)
 where
@@ -363,6 +363,6 @@ where
     #[cfg(feature = "with-wasm_bindgen-0_2")]
     wasm_bindgen_futures::spawn_local(f);
 
-    #[cfg(feature = "with-smol-0_4")]
+    #[cfg(feature = "with-smol-1")]
     smol::spawn(f).detach();
 }
