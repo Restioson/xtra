@@ -2,12 +2,14 @@
 //! [`MessageChannel`](`../struct.MessageChannel.html`).
 
 use std::pin::Pin;
+use std::task::{Context, Poll};
 use crate::{Message, Actor, Handler, Disconnected};
 use crate::refcount::{RefCounter, Strong, Weak};
 use crate::manager::ManagerMessage;
-use futures::{Sink, task::{Context, Poll}, SinkExt};
+use futures_sink::Sink;
 use flume::r#async::SendSink;
 use crate::envelope::NonReturningEnvelope;
+use futures_util::SinkExt;
 
 /// An `AddressSink` is the [futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
 /// returned by [`Address::into_sink`](`../struct.Address.html#method.into_sink`). Similarly to with

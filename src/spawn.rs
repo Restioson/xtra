@@ -1,4 +1,4 @@
-use futures::Future;
+use std::future::Future;
 
 pub trait ActorSpawner {
     fn spawn<F: Future<Output = ()> + Send + 'static>(&self, fut: F);

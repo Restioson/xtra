@@ -4,9 +4,10 @@
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::ManagerMessage;
 use crate::*;
-use futures::channel::oneshot::Receiver;
-use futures::Future;
-use futures::{Stream, StreamExt, Sink};
+use catty::Receiver;
+use std::future::Future;
+use futures_sink::Sink;
+use futures_core::Stream;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::pin::Pin;
@@ -14,6 +15,7 @@ use std::task::{Context, Poll};
 use flume::Sender;
 use crate::sink::AddressSink;
 use crate::refcount::{RefCounter, Strong, Weak, Either};
+use futures_util::StreamExt;
 
 /// The future returned by a method such as [`Address::send`](struct.Address.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -222,7 +224,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
             S: Stream<Item = M> + Send,
             Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
-        futures::pin_mut!(stream);
+        futures_util::pin_mut!(stream);
         while let Some(m) = stream.next().await {
             let res = self.send(m); // Bound to make it Sync
             if !matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {

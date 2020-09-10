@@ -1,6 +1,6 @@
+use std::future::Future;
 use crate::envelope::MessageEnvelope;
 use crate::{Actor, Address, Context};
-use futures::Future;
 use crate::spawn::ActorSpawner;
 
 /// A message that can be sent by an [`Address`](struct.Address.html) to the [`ActorManager`](struct.ActorManager.html)

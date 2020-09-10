@@ -1,12 +1,13 @@
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{ContinueManageLoop, ManagerMessage};
 use crate::{Actor, Address, Handler, KeepRunning, Message};
-use futures::future::{self, Either, Future};
+use futures_util::future::Either;
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
 use flume::{Receiver, Sender};
 use crate::refcount::{RefCounter, Weak, Strong};
 use std::sync::Arc;
+use std::future::Future;
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -216,7 +217,7 @@ impl<A: Actor> Context<A> {
 
         loop {
             let recv = self.receiver.recv_async();
-            let (msg, unfinished) = match future::select(fut, recv).await {
+            let (msg, unfinished) = match futures_util::future::select(fut, recv).await {
                 Either::Left((res, _)) => break res,
                 Either::Right(tuple) => tuple,
             };
@@ -248,7 +249,6 @@ impl<A: Actor> Context<A> {
     /// queue are processed. This is almost equivalent to calling send on
     /// [`Context::address()`](struct.Context.html#method.address), but will never fail to send
     /// the message.
-    #[cfg(feature = "timing")]
     pub fn notify_later<M>(&mut self, msg: M)
     where
         M: Message,

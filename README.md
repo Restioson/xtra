@@ -6,7 +6,7 @@ For better ergonomics with xtra, try the [spaad](https://crates.io/crates/spaad)
 ## Features
 - Safe: there is no unsafe code in xtra.
 - Tiny: xtra is less than 1k loc.
-- Lightweight: it only depends on `futures`, `async_trait`, `pollster`, and `flume` by default. 
+- Lightweight: xtra has few dependencies, most of which are lightweight (except `futures`).
 - Asynchronous and synchronous message handlers.
 - Simple asynchronous message handling interface which allows `async`/`await` syntax even when borrowing `self`.
 - Does not depend on its own runtime and can be run with any futures executor ([Tokio](https://tokio.rs/),

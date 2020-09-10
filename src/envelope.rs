@@ -1,6 +1,7 @@
 use crate::*;
-use futures::channel::oneshot::{self, Receiver, Sender};
-use futures::{Future, FutureExt};
+use catty::{Receiver, Sender};
+use std::future::Future;
+use futures_util::FutureExt;
 use std::marker::PhantomData;
 use std::pin::Pin;
 
@@ -55,7 +56,7 @@ pub(crate) struct ReturningEnvelope<A: Actor, M: Message> {
 
 impl<A: Actor, M: Message> ReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> (Self, Receiver<M::Result>) {
-        let (tx, rx) = oneshot::channel();
+        let (tx, rx) = catty::oneshot();
         let envelope = ReturningEnvelope {
             message,
             result_sender: tx,
