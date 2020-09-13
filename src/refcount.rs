@@ -23,9 +23,12 @@ impl Weak {
     }
 }
 
+/// A reference counter that can be dynamically either strong or weak.
 #[derive(Clone)]
 pub enum Either {
+    /// A strong reference counter.
     Strong(Strong),
+    /// A weak reference counter.
     Weak(Weak),
 }
 

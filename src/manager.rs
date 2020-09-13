@@ -1,7 +1,7 @@
 use std::future::Future;
 use crate::envelope::{BroadcastMessageEnvelope, MessageEnvelope};
 use crate::{Actor, Address, Context};
-use crate::spawn::ActorSpawner;
+use crate::spawn::Spawner;
 
 /// A message that can be sent by an Address to the manage loop
 pub(crate) enum AddressMessage<A: Actor> {
@@ -46,7 +46,8 @@ pub struct ActorManager<A: Actor> {
 }
 
 impl<A: Actor> ActorManager<A> {
-    pub fn spawn<S: ActorSpawner>(self, spawner: S) -> Address<A> {
+    /// Spawn the actor's main loop on the given runtime. This will allow it to handle messages.
+    pub fn spawn<S: Spawner>(self, spawner: &mut S) -> Address<A> {
         let (addr, fut) = self.run();
         spawner.spawn(fut);
         addr

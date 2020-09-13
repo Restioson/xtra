@@ -2,11 +2,37 @@
 //! any actor that can handle it. It is like [`Address`](../struct.Address.html), but associated with
 //! the message type rather than the actor type.
 
-use crate::address::{MessageResponseFuture};
 use crate::refcount::{RefCounter, Strong};
 use crate::*;
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
+use catty::Receiver;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Poll, Context};
+use crate::envelope::ReturningEnvelope;
+use crate::manager::AddressMessage;
+use crate::sink::{MessageSink, StrongMessageSink, WeakMessageSink, AddressSink};
+
+/// The future returned [`MessageChannel::send`](trait.MessageChannel.html#method.send).
+/// It resolves to `Result<M::Result, Disconnected>`.
+pub struct SendFuture<M: Message>(SendFutureInner<M>);
+
+enum SendFutureInner<M: Message> {
+    Disconnected,
+    Result(Receiver<M::Result>),
+}
+
+impl<M: Message> Future for SendFuture<M> {
+    type Output = Result<M::Result, Disconnected>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
+        match &mut self.get_mut().0 {
+            SendFutureInner::Disconnected => Poll::Ready(Err(Disconnected)),
+            SendFutureInner::Result(rx) => address::poll_rx(rx, ctx),
+        }
+    }
+}
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../struct.Address.html), but associated with
@@ -75,9 +101,11 @@ pub trait MessageChannel<M: Message>: Unpin + Send + Sync {
     /// before it was handled.
     fn do_send(&self, message: M) -> Result<(), Disconnected>;
 
-    /// Sends a [`Message`](trait.Message.html) to the actor, and waits for a response. If this
-    /// returns `Err(Disconnected)`, then the actor is stopped and not accepting messages.
-    fn send(&self, message: M) -> MessageResponseFuture<M>;
+    /// Sends a [`Message`](../trait.Message.html) to the actor, and waits for a response. If this
+    /// returns `Err(Disconnected)`, then the actor is stopped and not accepting messages. This,
+    /// unlike [`Address::send`](../struct.Address.html#method.send) will block if the actor's mailbox
+    /// is full. If this is undesired, consider using a[`MessageSink`](../sink/trait.MessageSink.html).
+    fn send(&self, message: M) -> SendFuture<M>;
 
     /// Attaches a stream to this channel such that all messages produced by it are forwarded to the
     /// actor. This could, for instance, be used to forward messages from a socket to the actor
@@ -93,7 +121,11 @@ pub trait MessageChannel<M: Message>: Unpin + Send + Sync {
         where
             M::Result: Into<KeepRunning> + Send;
 
+    /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn MessageChannel<M>>;
+
+    /// Use this message channel as a sink and asynchronously send messages through it.
+    fn sink(&self) -> Box<dyn MessageSink<M>>;
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
@@ -116,7 +148,11 @@ pub trait StrongMessageChannel<M: Message>: MessageChannel<M> {
     /// [`MessageChannel`](trait.MessageChannel.html) trait object
     fn upcast_ref(&self) -> &dyn MessageChannel<M>;
 
+    /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn StrongMessageChannel<M>>;
+
+    /// Use this message channel as a sink and asynchronously send messages through it.
+    fn sink(&self) -> Box<dyn StrongMessageSink<M>>;
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
@@ -135,7 +171,11 @@ pub trait WeakMessageChannel<M: Message>: MessageChannel<M> {
     /// [`MessageChannel`](trait.MessageChannel.html) trait object
     fn upcast_ref(&self) -> &dyn MessageChannel<M>;
 
+    /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn WeakMessageChannel<M>>;
+
+    /// Use this message channel as a sink and asynchronously send messages through it.
+    fn sink(&self) -> Box<dyn WeakMessageSink<M>>;
 }
 
 impl<A, M: Message, Rc: RefCounter> MessageChannel<M> for Address<A, Rc>
@@ -149,8 +189,16 @@ impl<A, M: Message, Rc: RefCounter> MessageChannel<M> for Address<A, Rc>
         self.do_send(message)
     }
 
-    fn send(&self, message: M) -> MessageResponseFuture<M> {
-        self.send(message)
+    fn send(&self, message: M) -> SendFuture<M> {
+        if self.is_connected() {
+            let (envelope, rx) = ReturningEnvelope::<A, M>::new(message);
+            let _ = self
+                .sender
+                .send_async(AddressMessage::Message(Box::new(envelope)));
+            SendFuture(SendFutureInner::Result(rx))
+        } else {
+            SendFuture(SendFutureInner::Disconnected)
+        }
     }
 
     fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
@@ -162,6 +210,13 @@ impl<A, M: Message, Rc: RefCounter> MessageChannel<M> for Address<A, Rc>
 
     fn clone_channel(&self) -> Box<dyn MessageChannel<M>> {
         Box::new(self.clone())
+    }
+
+    fn sink(&self) -> Box<dyn MessageSink<M>> {
+        Box::new(AddressSink {
+            sink: self.sender.clone().into_sink(),
+            ref_counter: self.ref_counter.clone(),
+        })
     }
 }
 
@@ -187,6 +242,13 @@ impl<A, M: Message> StrongMessageChannel<M> for Address<A, Strong>
     fn clone_channel(&self) -> Box<dyn StrongMessageChannel<M>> {
         Box::new(self.clone())
     }
+
+    fn sink(&self) -> Box<dyn StrongMessageSink<M>> {
+        Box::new(AddressSink {
+            sink: self.sender.clone().into_sink(),
+            ref_counter: self.ref_counter.clone(),
+        })
+    }
 }
 
 impl<A, M: Message> WeakMessageChannel<M> for WeakAddress<A> where A: Handler<M> {
@@ -204,5 +266,12 @@ impl<A, M: Message> WeakMessageChannel<M> for WeakAddress<A> where A: Handler<M>
 
     fn clone_channel(&self) -> Box<dyn WeakMessageChannel<M>> {
         Box::new(self.clone())
+    }
+
+    fn sink(&self) -> Box<dyn WeakMessageSink<M>> {
+        Box::new(AddressSink {
+            sink: self.sender.clone().into_sink(),
+            ref_counter: self.ref_counter.clone(),
+        })
     }
 }

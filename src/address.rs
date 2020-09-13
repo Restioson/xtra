@@ -14,39 +14,70 @@ use std::task::{Context, Poll};
 use flume::Sender;
 use crate::sink::AddressSink;
 use crate::refcount::{RefCounter, Strong, Weak, Either};
-use futures_util::StreamExt;
+use futures_util::{StreamExt, FutureExt};
+use flume::r#async::SendFuture as ChannelSendFuture;
+use std::mem;
 
-/// The future returned by a method such as [`Address::send`](struct.Address.html#method.send).
+/// The future returned [`Address::send`](struct.Address.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
 // This simply wraps the enum in order to hide the implementation details of the inner future
 // while still leaving outer future nameable.
-pub struct MessageResponseFuture<M: Message>(MessageResponseFutureInner<M>);
+pub struct SendFuture<'a, A: Actor, M: Message>(SendFutureInner<'a, A, M>);
 
-impl<M: Message> MessageResponseFuture<M> {
-    fn result(res: Receiver<M::Result>) -> Self {
-        MessageResponseFuture(MessageResponseFutureInner::Result(res))
-    }
-
-    fn disconnected() -> Self {
-        MessageResponseFuture(MessageResponseFutureInner::Disconnected)
-    }
-}
-
-enum MessageResponseFutureInner<M: Message> {
+enum SendFutureInner<'a, A: Actor, M: Message> {
     Disconnected,
-    Result(Receiver<M::Result>),
+    Sending(ChannelSendFuture<'a, AddressMessage<A>>, Receiver<M::Result>),
+    Receiving(Receiver<M::Result>),
 }
 
-impl<M: Message> Future for MessageResponseFuture<M> {
+impl<A: Actor, M: Message> Default for SendFutureInner<'_, A, M> {
+    fn default() -> Self {
+        SendFutureInner::Disconnected
+    }
+}
+
+pub(crate) fn poll_rx<T>(rx: &mut Receiver<T>, ctx: &mut Context) -> Poll<Result<T, Disconnected>> {
+    rx.poll_unpin(ctx).map(|r| r.map_err(|_| Disconnected))
+}
+
+impl<A: Actor, M: Message> Future for SendFuture<'_, A, M> {
     type Output = Result<M::Result, Disconnected>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-        match &mut self.get_mut().0 {
-            MessageResponseFutureInner::Disconnected => Poll::Ready(Err(Disconnected)),
-            MessageResponseFutureInner::Result(rx) => {
-                let rx = Pin::new(rx);
-                rx.poll(ctx).map(|res| res.map_err(|_| Disconnected))
+        let this = self.get_mut();
+        let (poll, new) = match mem::take(&mut this.0) {
+            old @ SendFutureInner::Disconnected => (Poll::Ready(Err(Disconnected)), old),
+            SendFutureInner::Sending(mut tx, mut rx) => {
+                if tx.poll_unpin(ctx).is_ready() {
+                    (poll_rx(&mut rx, ctx), SendFutureInner::Receiving(rx))
+                } else {
+                    (Poll::Pending, SendFutureInner::Sending(tx, rx))
+                }
             }
+            SendFutureInner::Receiving(mut rx) => (poll_rx(&mut rx, ctx), SendFutureInner::Receiving(rx)),
+        };
+
+        this.0 = new;
+        poll
+    }
+}
+
+/// The future returned from [`Address::do_send_async`](struct.Address.html#method.do_send_async).
+/// It resolves to `Result<(), Disconnected>`.
+pub struct DoSendFuture<'a, A: Actor>(DoSendFutureInner<'a, A>);
+
+enum DoSendFutureInner<'a, A: Actor> {
+    Disconnected,
+    Send(ChannelSendFuture<'a, AddressMessage<A>>),
+}
+
+impl<A: Actor> Future for DoSendFuture<'_, A> {
+    type Output = Result<(), Disconnected>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
+        match &mut self.get_mut().0 {
+            DoSendFutureInner::Disconnected => Poll::Ready(Err(Disconnected)),
+            DoSendFutureInner::Send(tx) => tx.poll_unpin(ctx).map(|res| res.map_err(|_| Disconnected))
         }
     }
 }
@@ -99,6 +130,7 @@ impl<A: Actor> Address<A, Strong> {
 
 /// Functions which apply only to addresses which can either be strong or weak.
 impl<A: Actor> Address<A, Either> {
+    /// Converts this address into a weak address.
     pub fn downgrade(&self) -> WeakAddress<A> {
         WeakAddress {
             sender: self.sender.clone(),
@@ -143,6 +175,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
         self.ref_counter.strong_count() > 0 && !self.sender.is_disconnected()
     }
 
+    /// Convert this address into a generic address which can be weak or strong.
     pub fn as_either(&self) -> Address<A, Either> {
         Address {
             ref_counter: self.ref_counter.clone().into_either(),
@@ -151,10 +184,10 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
     }
 
     /// Sends a [`Message`](trait.Message.html) to the actor, and does not wait for a response.
-    /// If this returns `Err(Disconnected)`, then the actor is stopped and not accepting messages.
-    /// If this returns `Ok(())`, the will be delivered, but may not be handled in the event that the
-    /// actor stops itself (by calling [`Context::stop`](struct.Context.html#method.stop))
-    /// before it was handled.
+    /// If the actor's mailbox is full, it will block. If this returns `Err(Disconnected)`, then the
+    /// actor is stopped and not accepting messages. If this returns `Ok(())`, the will be delivered,
+    /// but may not be handled in the event that the actor stops itself (by calling
+    /// [`Context::stop`](struct.Context.html#method.stop))before it was handled.
     pub fn do_send<M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
@@ -171,37 +204,41 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
         }
     }
 
-    pub async fn send_async<M>(&self, message: M) -> MessageResponseFuture<M>
+    /// Sends a [`Message`](trait.Message.html) to the actor, and does not wait for a response.
+    /// If the actor's mailbox is full, it will asynchronously wait. If this returns
+    /// `Err(Disconnected)`, then the actor is stopped and not accepting messages. If this returns
+    /// `Ok(())`, the will be delivered, but may not be handled in the event that the actor stops
+    /// itself (by calling [`Context::stop`](struct.Context.html#method.stop)) before it was handled.
+    pub fn do_send_async<M>(&self, message: M) -> DoSendFuture<'_, A>
         where M: Message,
               A: Handler<M>
     {
         if self.is_connected() {
-            let (envelope, rx) = ReturningEnvelope::<A, M>::new(message);
-            let _ = self
+            let envelope = NonReturningEnvelope::<A, M>::new(message);
+            let fut = self
                 .sender
-                .send_async(AddressMessage::Message(Box::new(envelope)))
-                .await;
-            MessageResponseFuture::result(rx)
+                .send_async(AddressMessage::Message(Box::new(envelope)));
+            DoSendFuture(DoSendFutureInner::Send(fut))
         } else {
-            MessageResponseFuture::disconnected()
+            DoSendFuture(DoSendFutureInner::Disconnected)
         }
     }
 
     /// Sends a [`Message`](trait.Message.html) to the actor, and waits for a response. If this
     /// returns `Err(Disconnected)`, then the actor is stopped and not accepting messages.
-    pub fn send<M>(&self, message: M) -> MessageResponseFuture<M>
+    pub fn send<M>(&self, message: M) -> SendFuture<'_, A, M>
     where
         M: Message,
         A: Handler<M>,
     {
         if self.is_connected() {
             let (envelope, rx) = ReturningEnvelope::<A, M>::new(message);
-            let _ = self
+            let tx = self
                 .sender
-                .send(AddressMessage::Message(Box::new(envelope)));
-            MessageResponseFuture::result(rx)
+                .send_async(AddressMessage::Message(Box::new(envelope)));
+            SendFuture(SendFutureInner::Sending(tx, rx))
         } else {
-            MessageResponseFuture::disconnected()
+            SendFuture(SendFutureInner::Disconnected)
         }
     }
 

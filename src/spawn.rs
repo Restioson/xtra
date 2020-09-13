@@ -1,7 +1,10 @@
 use std::future::Future;
 
-pub trait ActorSpawner {
-    fn spawn<F: Future<Output = ()> + Send + 'static>(&self, fut: F);
+/// An `Spawner` represents anything that can spawn a future to be run in the background. This is
+/// used to spawn actors.
+pub trait Spawner {
+    /// Spawn the given future.
+    fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F);
 }
 
 #[cfg(feature = "with-smol-1")]
@@ -17,13 +20,16 @@ pub use smol_impl::*;
 mod smol_impl {
     use super::*;
 
+    /// The smol runtime.
     pub enum Smol<'a> {
+        /// The global executor.
         Global,
+        /// A specific smol executor.
         Handle(&'a smol::Executor)
     }
 
-    impl<'a> ActorSpawner for Smol<'a> {
-        fn spawn<F: Future<Output = ()> + Send + 'static>(&self, fut: F) {
+    impl<'a> Spawner for Smol<'a> {
+        fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
             let task = match self {
                 Smol::Global => smol::spawn(fut),
                 Smol::Handle(e) => e.spawn(fut),
@@ -37,10 +43,11 @@ mod smol_impl {
 mod async_std_impl {
     use super::*;
 
+    /// The async std runtime.
     pub struct AsyncStd;
 
-    impl ActorSpawner for AsyncStd {
-        fn spawn<F: Future<Output = ()> + Send + 'static>(&self, fut: F) {
+    impl Spawner for AsyncStd {
+        fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
             async_std::task::spawn(fut);
         }
     }
@@ -50,13 +57,16 @@ mod async_std_impl {
 mod tokio_impl {
     use super::*;
 
+    /// The Tokio runtime.
     pub enum Tokio<'a> {
+        /// The global executor.
         Global,
+        /// A handle to a specific executor.
         Handle(&'a tokio::runtime::Handle)
     }
 
-    impl<'a> ActorSpawner for Tokio<'a> {
-        fn spawn<F: Future<Output = ()> + Send + 'static>(&self, fut: F) {
+    impl<'a> Spawner for Tokio<'a> {
+        fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
             match self {
                 Tokio::Global => tokio::spawn(fut),
                 Tokio::Handle(handle) => handle.spawn(fut)
@@ -71,8 +81,8 @@ mod wasm_bindgen_impl {
 
     pub struct WasmBindgen;
 
-    impl ActorSpawner for WasmBindgen {
-        fn spawn<F: Future<Output = ()> + Send + 'static>(&self, fut: F) {
+    impl Spawner for WasmBindgen {
+        fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
             wasm_bindgen_futures::spawn_local(fut)
         }
     }

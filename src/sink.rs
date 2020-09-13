@@ -88,6 +88,8 @@ impl<A: Actor, Rc: RefCounter, M: Message> Sink<M> for AddressSink<A, Rc>
 pub trait MessageSink<M: Message>: Sink<M, Error = Disconnected> + Unpin {
     /// Returns whether the actor referred to by this message sink is running and accepting messages.
     fn is_connected(&self) -> bool;
+
+    /// Clones this message sink as a boxed trait object.
     fn clone_message_sink(&self) -> Box<dyn MessageSink<M>>;
 }
 
@@ -102,6 +104,7 @@ pub trait WeakMessageSink<M: Message>: MessageSink<M> {
     /// [`MessageSink`](trait.MessageSink.html) trait object
     fn upcast_ref(&self) -> &dyn MessageSink<M>;
 
+    /// Clones this message sink as a boxed trait object.
     fn clone_message_sink(&self) -> Box<dyn WeakMessageSink<M>>;
 }
 
@@ -121,6 +124,7 @@ pub trait StrongMessageSink<M: Message>: MessageSink<M> {
     /// [`MessageSink`](trait.MessageSink.html) trait object
     fn upcast_ref(&self) -> &dyn MessageSink<M>;
 
+    /// Clones this message sink as a boxed trait object.
     fn clone_message_sink(&self) -> Box<dyn StrongMessageSink<M>>;
 }
 

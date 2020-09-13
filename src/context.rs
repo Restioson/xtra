@@ -37,6 +37,29 @@ enum RunningState {
 }
 
 impl<A: Actor> Context<A> {
+    /// Creates a new actor context with a given mailbox capacity, returning an address to the actor
+    /// and the context. This can be used as a builder to add more actors to an address before
+    /// any have started.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use xtra::{Context, Actor};
+    /// #
+    /// # struct MyActor;
+    /// #
+    /// # impl MyActor {
+    /// #     fn new(_: usize) -> Self {
+    /// #         MyActor
+    /// #     }
+    /// # }
+    /// # impl Actor for MyActor {}
+    /// let (addr, mut ctx) = Context::new(Some(32));
+    /// for n in 0..3 {
+    ///     smol::spawn(ctx.attach(MyActor::new(n))).detach();
+    /// }
+    /// ctx.run(MyActor::new(4)).await;
+    /// ```
     pub fn new(message_cap: Option<usize>) -> (Address<A>, Self) {
         let (sender, receiver) = match message_cap {
             None => flume::unbounded(),
@@ -64,7 +87,7 @@ impl<A: Actor> Context<A> {
         (addr, context)
     }
 
-    /// Attaches another actor of the same type listening to the same address as this actor is.
+    /// Attaches an actor of the same type listening to the same address as this actor is.
     /// They will operate in a message-stealing fashion, with no message handled by two actors.
     /// See [`Actor::create_multiple`](trait.Actor.html#method.create_multiple) for more info.
     pub fn attach(&mut self, actor: A) -> impl Future<Output = ()> {
@@ -150,6 +173,7 @@ impl<A: Actor> Context<A> {
         true
     }
 
+    /// Run the given actor's main loop, handling incoming messages to its mailbox.
     pub async fn run(mut self, mut actor: A) {
         actor.started(&mut self).await;
 
