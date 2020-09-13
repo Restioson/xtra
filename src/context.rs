@@ -8,6 +8,8 @@ use flume::{Receiver, Sender};
 use crate::refcount::{RefCounter, Weak, Strong};
 use std::sync::Arc;
 use std::future::Future;
+use std::fmt::{Display, Formatter};
+use std::fmt;
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -175,8 +177,6 @@ impl<A: Actor> Context<A> {
 
         loop {
             let next = future::select(broadcast_recv, addr_recv).await;
-
-            println!("{}", broadcast_rx.try_recv().unwrap().is_some());
 
             let msg = match next {
                 Either::Left((res, other)) => {
@@ -364,4 +364,11 @@ impl<A: Actor> Context<A> {
 }
 
 /// The operation failed because the actor is being shut down
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct ActorShutdown;
+
+impl Display for ActorShutdown {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("Actor is shutting down")
+    }
+}
