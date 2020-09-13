@@ -6,7 +6,6 @@ use crate::manager::AddressMessage;
 use crate::*;
 use catty::Receiver;
 use std::future::Future;
-use futures_sink::Sink;
 use futures_core::Stream;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
@@ -222,12 +221,11 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
             M: Message<Result = K>,
             A: Handler<M>,
             S: Stream<Item = M> + Send,
-            Self: Sized + Send + Sink<M, Error = Disconnected> + 'static,
     {
         futures_util::pin_mut!(stream);
         while let Some(m) = stream.next().await {
-            let res = self.send(m); // Bound to make it Sync
-            if !matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
+            let res = self.send(m).await; // Bound to make it Sync
+            if !matches!(res.map(Into::into), Ok(KeepRunning::Yes)) {
                 break;
             }
         }

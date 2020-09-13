@@ -18,8 +18,8 @@ futures-util = { version = "0.3.5", default-features = false }
 async-trait = "0.1.36"
 pollster = "0.2"
 catty = "0.1.2"
-#barrage = "0.1.0"
-barrage = { path = "../barrage" }
+barrage = "0.1.0"
+
 flume = { version = "0.9", default-features = false, features = ["async"] }
 
 tokio = { version = "0.2", features = ["rt-core", "time"], optional = true }
