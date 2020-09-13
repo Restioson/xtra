@@ -89,7 +89,6 @@ impl<A: Actor> Context<A> {
 
     /// Attaches an actor of the same type listening to the same address as this actor is.
     /// They will operate in a message-stealing fashion, with no message handled by two actors.
-    /// See [`Actor::create_multiple`](trait.Actor.html#method.create_multiple) for more info.
     pub fn attach(&mut self, actor: A) -> impl Future<Output = ()> {
         let ctx = Context {
             running: RunningState::Running,
@@ -105,8 +104,6 @@ impl<A: Actor> Context<A> {
 
     /// Stop the actor as soon as it has finished processing current message. This will mean that the
     /// [`Actor::stopping`](trait.Actor.html#method.stopping) method will be called.
-    /// If that returns [`KeepRunning::No`](enum.KeepRunning.html#variant.No), any subsequent attempts
-    /// to send messages to this actor will return the [`Disconnected`](struct.Disconnected.html) error.
     pub fn stop(&mut self) {
         self.running = RunningState::Stopping;
     }
@@ -342,7 +339,7 @@ impl<A: Actor> Context<A> {
 
     /// Notify the actor with a synchronously handled message every interval until it is stopped
     /// (either directly with [`Context::stop`](struct.Context.html#method.stop), or for a lack of
-    /// strong [`Address`es](struct.Address.html)). This does not take priority over other messages.
+    /// strong [`Address`es](address/struct.Address.html)). This does not take priority over other messages.
     #[cfg(feature = "timing")]
     pub fn notify_interval<F, M>(
         &mut self,

@@ -27,7 +27,8 @@ pub use manager::ActorManager;
 pub mod prelude {
     pub use crate::address::Address;
     pub use crate::message_channel::{StrongMessageChannel, WeakMessageChannel, MessageChannel};
-    pub use crate::{Actor, Context, Handler, Message};
+    #[doc(no_inline)]
+    pub use crate::{Context, Actor, Handler, Message};
 }
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
@@ -46,7 +47,7 @@ pub mod prelude {
 /// }
 /// ```
 pub trait Message: Send + 'static {
-    /// The return type of the message. It will be returned when the [`Address::send`](struct.Address.html#method.send)
+    /// The return type of the message. It will be returned when the [`Address::send`](address/struct.Address.html#method.send)
     /// method is called.
     type Result: Send;
 }
@@ -54,7 +55,7 @@ pub trait Message: Send + 'static {
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
 /// asynchronously, and the logic to handle the message.
 ///
-/// This is an [`async_trait`](https://github.com/dtolnay/async-trait/), so implementations should
+/// This is an [`async_trait`](https://docs.rs/async-trait), so implementations should
 /// be annotated `#[async_trait]`.
 ///
 /// # Example
@@ -88,18 +89,18 @@ pub trait Message: Send + 'static {
 pub trait Handler<M: Message>: Actor {
     /// Handle a given message, returning its result.
     ///
-    /// This is an [`async_trait`](https://github.com/dtolnay/async-trait/).
+    /// This is an [`async_trait`](https://docs.rs/async-trait).
     /// See the trait documentation to see an example of how this method can be declared.
     async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result;
 }
 
 /// An actor which can handle [`Message`s](trait.Message.html) one at a time. Actors can only be
-/// communicated with by sending [`Message`s](trait.Message.html) through their [`Address`es](struct.Address.html).
+/// communicated with by sending [`Message`s](trait.Message.html) through their [`Address`es](address/struct.Address.html).
 /// They can modify their private state, respond to messages, and spawn other actors. They can also
 /// stop themselves through their [`Context`](struct.Context.html) by calling [`Context::stop`](struct.Context.html#method.stop).
 /// This will result in any attempt to send messages to the actor in future failing.
 ///
-/// This is an [`async_trait`](https://github.com/dtolnay/async-trait/), so implementations should
+/// This is an [`async_trait`](https://docs.rs/async-trait), so implementations should
 /// be annotated `#[async_trait]`.
 ///
 /// # Example
@@ -159,9 +160,16 @@ pub trait Actor: 'static + Send + Sized {
 
     /// Called when the actor calls the [`Context::stop`](struct.Context.html#method.stop). This method
     /// can prevent the actor from stopping by returning [`KeepRunning::Yes`](enum.KeepRunning.html#variant.Yes).
+    /// If this method returns [`KeepRunning::StopSelf`](enum.KeepRunning.html#variant.StopSelf),
+    /// this actor will be stopped. If it returns
+    /// [`KeepRunning::StopAll`](enum.KeepRunning.html#variant.StopAll), then all actors on the same
+    /// address as this actor will be stopped. This can take a little bit of time to propagate.
     ///
-    /// **Note:** this method will *only* be called when `Context::stop` is called. Other, general
-    /// destructor behaviour should be encapsulated in the [`Actor::stopped`](trait.Actor.html#method.stopped)
+    /// **Note:** this method will *only* be called when [`Context::stop`](struct.Context.html#method.stop)
+    /// is called from this actor. If the last strong address to the actor is dropped, or
+    /// [`Context::stop`](struct.Context.html#method.stop) is called from another actor on the same
+    /// address, this will *not* be called. Therefore, Other, general destructor behaviour should be
+    /// encapsulated in the [`Actor::stopped`](trait.Actor.html#method.stopped)
     /// method.
     ///
     /// # Example
@@ -182,16 +190,19 @@ pub trait Actor: 'static + Send + Sized {
     }
 
     /// Called when the actor is in the process of stopping. This could be because
-    /// [`KeepRunning::No`](enum.KeepRunning.html#variant.No) was returned from the
+    /// [`KeepRunning::StopAll`](enum.KeepRunning.html#variant.StopAll) or
+    /// [`KeepRunning::StopSelf`](enum.KeepRunning.html#variant.StopSelf) was returned from the
     /// [`Actor::stopping`](trait.Actor.html#method.stopping) method, or because there are no more
-    /// strong addresses ([`Address`](struct.Address.html), as opposed to [`WeakAddress`](struct.WeakAddress.html).
-    /// This should be used for any final cleanup before the actor is dropped.
+    /// strong addresses ([`Address`](address/struct.Address.html), as opposed to
+    /// [`WeakAddress`](address/type.WeakAddress.html). This should be used for any final cleanup before
+    /// the actor is dropped.
     #[allow(unused_variables)]
     async fn stopped(&mut self) {}
 
     /// Returns the actor's address and manager in a ready-to-start state, given the cap for the
     /// actor's mailbox. If `None` is passed, it will be of unbounded size. To spawn the actor,
-    /// the [`ActorManager::manage`](struct.ActorManager.html#method.manage) method must be called
+    /// the [`ActorManager::spawn`](struct.ActorManager.html#method.spawn) must be called, or
+    /// the [`ActorManager::run`](struct.ActorManager.html#method.run) method must be called
     /// and the future it returns spawned onto an executor.
     /// # Example
     ///

@@ -1,5 +1,5 @@
-//! Module for the sink equivalents to [`Address`](`../struct.Address.html`) and
-//! [`MessageChannel`](`../struct.MessageChannel.html`).
+//! Module for the sink equivalents to [`Address`](../address/struct.Address.html) and
+//! [`MessageChannel`](../message_channel/trait.MessageChannel.html).
 
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -12,7 +12,7 @@ use crate::envelope::NonReturningEnvelope;
 use futures_util::SinkExt;
 
 /// An `AddressSink` is the [futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
-/// returned by [`Address::into_sink`](`../struct.Address.html#method.into_sink`). Similarly to with
+/// returned by [`Address::into_sink`](../address/struct.Address.html#method.into_sink). Similarly to with
 /// addresses, the strong variety of `AddressSink` will prevent the actor from being dropped, whereas
 /// the [weak variety](struct.AddressSink.html) will not.
 pub struct AddressSink<A: Actor, Rc: RefCounter = Strong> {
@@ -84,7 +84,8 @@ impl<A: Actor, Rc: RefCounter, M: Message> Sink<M> for AddressSink<A, Rc>
     }
 }
 
-/// A `MessageSink` is similar to a [`MessageChannel`](../trait.MessageSink.html), but it is a sink.
+/// A `MessageSink` is similar to a [`MessageChannel`](../message_channel/trait.MessageChannel.html),
+/// but it is a sink and operates asynchronously.
 pub trait MessageSink<M: Message>: Sink<M, Error = Disconnected> + Unpin {
     /// Returns whether the actor referred to by this message sink is running and accepting messages.
     fn is_connected(&self) -> bool;
@@ -93,7 +94,7 @@ pub trait MessageSink<M: Message>: Sink<M, Error = Disconnected> + Unpin {
     fn clone_message_sink(&self) -> Box<dyn MessageSink<M>>;
 }
 
-/// A `WeakMessageSink` is a [`MessageSink](trait.MessageSink.html) which does not inhibit the actor
+/// A `WeakMessageSink` is a [`MessageSink`](trait.MessageSink.html) which does not inhibit the actor
 /// from being dropped while it exists.
 pub trait WeakMessageSink<M: Message>: MessageSink<M> {
     /// Upcasts this weak message sink into a boxed generic
@@ -108,7 +109,7 @@ pub trait WeakMessageSink<M: Message>: MessageSink<M> {
     fn clone_message_sink(&self) -> Box<dyn WeakMessageSink<M>>;
 }
 
-/// A `StrongMessageSink` is a [`MessageSink](trait.MessageSink.html) which does inhibit the actor
+/// A `StrongMessageSink` is a [`MessageSink`](trait.MessageSink.html) which does inhibit the actor
 /// from being dropped while it exists.
 pub trait StrongMessageSink<M: Message>: MessageSink<M> {
     /// Create a weak message sink. Unlike with the strong variety of message sink (this kind),

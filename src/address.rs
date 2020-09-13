@@ -83,8 +83,8 @@ impl<A: Actor> Future for DoSendFuture<'_, A> {
 }
 
 /// The actor is no longer running and disconnected from the sending address. For why this could
-/// occur, see the [`Actor::stopping`](trait.Actor.html#method.stopping) and
-/// [`Actor::stopped`](trait.Actor.html#method.stopped) methods.
+/// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and
+/// [`Actor::stopped`](../trait.Actor.html#method.stopped) methods.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Disconnected;
 
@@ -96,20 +96,21 @@ impl Display for Disconnected {
 
 impl Error for Disconnected {}
 
-/// An `Address` is a reference to an actor through which [`Message`s](trait.Message.html) can be
+/// An `Address` is a reference to an actor through which [`Message`s](../trait.Message.html) can be
 /// sent. It can be cloned to create more addresses to the same actor.
-/// By default (i.e without specifying the second type parameter, `Rc`, to be [weak](struct.Weak.html)),
-/// `Address`es are strong. Therefore, when all `Address`es are dropped, the actor will be stopped.
-/// In other words, any existing `Address`es will inhibit the dropping of an actor. If this is
-/// undesirable, then a [`WeakAddress`](type.WeakAddress.html) should be used instead. An address
-/// is created by calling the [`Actor::create`](trait.Actor.html#method.create) or
-/// [`Actor::spawn`](trait.Actor.html#method.spawn) methods.
+/// By default (i.e without specifying the second type parameter, `Rc`, to be
+/// [weak](../refcount/struct.Weak.html)), `Address`es are strong. Therefore, when all `Address`es
+/// are dropped, the actor will be stopped. In other words, any existing `Address`es will inhibit
+/// the dropping of an actor. If this is undesirable, then a [`WeakAddress`](type.WeakAddress.html)
+/// should be used instead. An address is created by calling the
+/// [`Actor::create`](../trait.Actor.html#method.create) or
+/// [`Context::run`](../struct.Context.html#method.run) methods, or by cloning another `Address`.
 pub struct Address<A: Actor, Rc: RefCounter = Strong> {
     pub(crate) sender: Sender<AddressMessage<A>>,
     pub(crate) ref_counter: Rc,
 }
 
-/// A `WeakAddress` is a reference to an actor through which [`Message`s](trait.Message.html) can be
+/// A `WeakAddress` is a reference to an actor through which [`Message`s](../trait.Message.html) can be
 /// sent. It can be cloned. Unlike [`Address`](struct.Address.html), a `WeakAddress` will not inhibit
 /// the dropping of an actor. It is created by the [`Address::downgrade`](struct.Address.html#method.downgrade)
 /// method.
@@ -183,11 +184,11 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
         }
     }
 
-    /// Sends a [`Message`](trait.Message.html) to the actor, and does not wait for a response.
+    /// Send a [`Message`](../trait.Message.html) to the actor without waiting for a response.
     /// If the actor's mailbox is full, it will block. If this returns `Err(Disconnected)`, then the
     /// actor is stopped and not accepting messages. If this returns `Ok(())`, the will be delivered,
     /// but may not be handled in the event that the actor stops itself (by calling
-    /// [`Context::stop`](struct.Context.html#method.stop))before it was handled.
+    /// [`Context::stop`](../struct.Context.html#method.stop)) before it was handled.
     pub fn do_send<M>(&self, message: M) -> Result<(), Disconnected>
     where
         M: Message,
@@ -204,11 +205,11 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
         }
     }
 
-    /// Sends a [`Message`](trait.Message.html) to the actor, and does not wait for a response.
+    /// Send a [`Message`](../trait.Message.html) to the actor without waiting for a response.
     /// If the actor's mailbox is full, it will asynchronously wait. If this returns
     /// `Err(Disconnected)`, then the actor is stopped and not accepting messages. If this returns
     /// `Ok(())`, the will be delivered, but may not be handled in the event that the actor stops
-    /// itself (by calling [`Context::stop`](struct.Context.html#method.stop)) before it was handled.
+    /// itself (by calling [`Context::stop`](../struct.Context.html#method.stop)) before it was handled.
     pub fn do_send_async<M>(&self, message: M) -> DoSendFuture<'_, A>
         where M: Message,
               A: Handler<M>
@@ -224,7 +225,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
         }
     }
 
-    /// Sends a [`Message`](trait.Message.html) to the actor, and waits for a response. If this
+    /// Send a [`Message`](../trait.Message.html) to the actor and asynchronously wait for a response. If this
     /// returns `Err(Disconnected)`, then the actor is stopped and not accepting messages.
     pub fn send<M>(&self, message: M) -> SendFuture<'_, A, M>
     where
@@ -252,7 +253,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
     ///
     /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
     /// method should be called on [`Address`](struct.Address.html). Otherwise, it should be called
-    /// on [`WeakAddress`](struct.WeakAddress.html).
+    /// on [`WeakAddress`](type.WeakAddress.html).
     pub async fn attach_stream<S, M, K>(self, stream: S)
         where
             K: Into<KeepRunning> + Send,

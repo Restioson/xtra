@@ -1,7 +1,7 @@
 use std::sync::{Arc, Weak as ArcWeak};
 
 /// The reference count of a strong address. Strong addresses will prevent the actor from being
-/// dropped as long as they live. Read the docs of [`Address`](struct.Address.html) to find
+/// dropped as long as they live. Read the docs of [`Address`](../address/struct.Address.html) to find
 /// out more.
 #[derive(Clone)]
 pub struct Strong(pub(crate) Arc<()>);
@@ -13,7 +13,7 @@ impl Strong {
 }
 
 /// The reference count of a weak address. Weak addresses will bit prevent the actor from being
-/// dropped. Read the docs of [`Address`](struct.Address.html) to find out more.
+/// dropped. Read the docs of [`Address`](../address/struct.Address.html) to find out more.
 #[derive(Clone)]
 pub struct Weak(pub(crate) ArcWeak<()>);
 
@@ -64,8 +64,8 @@ impl RefCounter for Either {
 /// This trait represents the strength of an address's reference counting. It is an internal trait.
 /// There are two implementations of this trait: [`Weak`](struct.Weak.html) and
 /// [`Strong`](struct.Weak.html). These can be provided as the second type argument to
-/// [`Address`](struct.Address.html) in order to change how the address affects the actor's
-/// dropping. Read the docs of [`Address`](struct.Address.html) to find out more.
+/// [`Address`](../address/struct.Address.html) in order to change how the address affects the actor's
+/// dropping. Read the docs of [`Address`](../address/struct.Address.html) to find out more.
 pub trait RefCounter: Clone + Unpin + Send + Sync + 'static {
     #[doc(hidden)]
     fn is_last_strong(&self) -> bool;

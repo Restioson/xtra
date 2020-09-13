@@ -1,5 +1,5 @@
 //! A message channel is a channel through which you can send only one kind of message, but to
-//! any actor that can handle it. It is like [`Address`](../struct.Address.html), but associated with
+//! any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
 //! the message type rather than the actor type.
 
 use crate::refcount::{RefCounter, Strong};
@@ -35,7 +35,7 @@ impl<M: Message> Future for SendFuture<M> {
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
-/// any actor that can handle it. It is like [`Address`](../struct.Address.html), but associated with
+/// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
 /// the message type rather than the actor type. This trait represents *any kind of message channel*.
 /// There are two traits which inherit from it - one for
 /// [weak message channels](trait.WeakMessageChannel.html), and one for
@@ -94,17 +94,17 @@ pub trait MessageChannel<M: Message>: Unpin + Send + Sync {
     /// Returns whether the actor referred to by this address is running and accepting messages.
     fn is_connected(&self) -> bool;
 
-    /// Sends a [`Message`](trait.Message.html) to the actor, and does not wait for a response.
+    /// Send a [`Message`](../trait.Message.html) to the actor without waiting for a response.
     /// If this returns `Err(Disconnected)`, then the actor is stopped and not accepting messages.
     /// If this returns `Ok(())`, the will be delivered, but may not be handled in the event that the
-    /// actor stops itself (by calling [`Context::stop`](struct.Context.html#method.stop))
+    /// actor stops itself (by calling [`Context::stop`](../struct.Context.html#method.stop))
     /// before it was handled.
     fn do_send(&self, message: M) -> Result<(), Disconnected>;
 
-    /// Sends a [`Message`](../trait.Message.html) to the actor, and waits for a response. If this
+    /// Send a [`Message`](../trait.Message.html) to the actor and asynchronously wait for a response. If this
     /// returns `Err(Disconnected)`, then the actor is stopped and not accepting messages. This,
-    /// unlike [`Address::send`](../struct.Address.html#method.send) will block if the actor's mailbox
-    /// is full. If this is undesired, consider using a[`MessageSink`](../sink/trait.MessageSink.html).
+    /// unlike [`Address::send`](../address/struct.Address.html#method.send) will block if the actor's mailbox
+    /// is full. If this is undesired, consider using a [`MessageSink`](../sink/trait.MessageSink.html).
     fn send(&self, message: M) -> SendFuture<M>;
 
     /// Attaches a stream to this channel such that all messages produced by it are forwarded to the
@@ -115,8 +115,8 @@ pub trait MessageChannel<M: Message>: Unpin + Send + Sync {
     /// stream is no longer being forwarded).
     ///
     /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
-    /// method should be called on [`MessageChannel`](struct.MessageChannel.html). Otherwise, it should be called
-    /// on [`WeakMessageChannel`](struct.WeakMessageChannel.html).
+    /// method should be called on [`MessageChannel`](trait.MessageChannel.html). Otherwise, it should be called
+    /// on [`WeakMessageChannel`](trait.WeakMessageChannel.html).
     fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
         where
             M::Result: Into<KeepRunning> + Send;
@@ -124,16 +124,17 @@ pub trait MessageChannel<M: Message>: Unpin + Send + Sync {
     /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn MessageChannel<M>>;
 
-    /// Use this message channel as a sink and asynchronously send messages through it.
+    /// Use this message channel as [a futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
+    /// and asynchronously send messages through it.
     fn sink(&self) -> Box<dyn MessageSink<M>>;
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
-/// any actor that can handle it. It is like [`Address`](struct.Address.html), but associated with
+/// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
 /// the message type rather than the actor type. Any existing `MessageChannel`s will prevent the
-/// dropping of the actor. If this is undesirable, then the [`WeakMessageChannel`](struct.WeakMessageChannel.html)
+/// dropping of the actor. If this is undesirable, then the [`WeakMessageChannel`](trait.WeakMessageChannel.html)
 /// struct should be used instead. A `StrongMessageChannel` trait object is created by casting a
-/// strong [`Address`](struct.Address.html).
+/// strong [`Address`](../address/struct.Address.html).
 pub trait StrongMessageChannel<M: Message>: MessageChannel<M> {
     /// Create a weak message channel. Unlike with the strong variety of message channel (this kind),
     /// an actor will not be prevented from being dropped if only weak sinks, channels, and
@@ -151,17 +152,18 @@ pub trait StrongMessageChannel<M: Message>: MessageChannel<M> {
     /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn StrongMessageChannel<M>>;
 
-    /// Use this message channel as a sink and asynchronously send messages through it.
+    /// Use this message channel as [a futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
+    /// and asynchronously send messages through it.
     fn sink(&self) -> Box<dyn StrongMessageSink<M>>;
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
-/// any actor that can handle it. It is like [`Address`](struct.Address.html), but associated with
+/// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
 /// the message type rather than the actor type. Any existing `WeakMessageChannel`s will *not* prevent the
 /// dropping of the actor. If this is undesirable, then  [`StrongMessageChannel`](trait.StrongMessageChannel.html)
 /// should be used instead. A `WeakMessageChannel` trait object is created by calling
 /// [`StrongMessageChannel::downgrade`](trait.StrongMessageChannel.html#method.downgrade) or by
-/// casting a [`WeakAddress`](struct.WeakAddress.html).
+/// casting a [`WeakAddress`](../address/type.WeakAddress.html).
 pub trait WeakMessageChannel<M: Message>: MessageChannel<M> {
     /// Upcasts this weak message channel into a boxed generic
     /// [`MessageChannel`](trait.MessageChannel.html) trait object
@@ -174,7 +176,8 @@ pub trait WeakMessageChannel<M: Message>: MessageChannel<M> {
     /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn WeakMessageChannel<M>>;
 
-    /// Use this message channel as a sink and asynchronously send messages through it.
+    /// Use this message channel as [a futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
+    /// and asynchronously send messages through it.
     fn sink(&self) -> Box<dyn WeakMessageSink<M>>;
 }
 
