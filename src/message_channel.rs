@@ -5,7 +5,6 @@
 use crate::address::{MessageResponseFuture};
 use crate::refcount::{RefCounter, Strong};
 use crate::*;
-use futures_sink::Sink;
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
 
@@ -92,8 +91,7 @@ pub trait MessageChannel<M: Message>: Unpin + Send + Sync {
     /// on [`WeakMessageChannel`](struct.WeakMessageChannel.html).
     fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
         where
-            M::Result: Into<KeepRunning> + Send,
-            Self: Sized + Send + Sink<M, Error = Disconnected> + 'static;
+            M::Result: Into<KeepRunning> + Send;
 
     fn clone_channel(&self) -> Box<dyn MessageChannel<M>>;
 }
@@ -158,7 +156,6 @@ impl<A, M: Message, Rc: RefCounter> MessageChannel<M> for Address<A, Rc>
     fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
         where
             M::Result: Into<KeepRunning> + Send,
-            Self: Sized + Send + Sink<M, Error=Disconnected> + 'static
     {
         Box::pin(self.attach_stream(stream))
     }
