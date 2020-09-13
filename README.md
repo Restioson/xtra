@@ -41,7 +41,6 @@ impl Message for Print {
     type Result = ();
 }
 
-// In the real world, the synchronous SyncHandler trait would be better-suited
 #[async_trait]
 impl Handler<Print> for Printer {
     async fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) {

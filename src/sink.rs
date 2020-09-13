@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use crate::{Message, Actor, Handler, Disconnected};
 use crate::refcount::{RefCounter, Strong, Weak};
-use crate::manager::ManagerMessage;
+use crate::manager::AddressMessage;
 use futures_sink::Sink;
 use flume::r#async::SendSink;
 use crate::envelope::NonReturningEnvelope;
@@ -16,7 +16,7 @@ use futures_util::SinkExt;
 /// addresses, the strong variety of `AddressSink` will prevent the actor from being dropped, whereas
 /// the [weak variety](struct.AddressSink.html) will not.
 pub struct AddressSink<A: Actor, Rc: RefCounter = Strong> {
-    pub(crate) sink: SendSink<'static, ManagerMessage<A>>,
+    pub(crate) sink: SendSink<'static, AddressMessage<A>>,
     pub(crate) ref_counter: Rc
 }
 
@@ -56,7 +56,7 @@ impl<A: Actor, Rc: RefCounter> Drop for AddressSink<A, Rc> {
         // We should notify the ActorManager that there are no more strong Addresses and the actor
         // should be stopped.
         if self.ref_counter.is_last_strong() {
-            let _ = pollster::block_on(self.sink.send(ManagerMessage::LastAddress));
+            let _ = pollster::block_on(self.sink.send(AddressMessage::LastAddress));
         }
     }
 }
@@ -71,7 +71,7 @@ impl<A: Actor, Rc: RefCounter, M: Message> Sink<M> for AddressSink<A, Rc>
     }
 
     fn start_send(mut self: Pin<&mut Self>, item: M) -> Result<(), Self::Error> {
-        let item = ManagerMessage::Message(Box::new(NonReturningEnvelope::new(item)));
+        let item = AddressMessage::Message(Box::new(NonReturningEnvelope::new(item)));
         Pin::new(&mut self.sink).start_send(item).map_err(|_| Disconnected)
     }
 

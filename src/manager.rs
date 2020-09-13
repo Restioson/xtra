@@ -1,20 +1,33 @@
 use std::future::Future;
-use crate::envelope::MessageEnvelope;
+use crate::envelope::{BroadcastMessageEnvelope, MessageEnvelope};
 use crate::{Actor, Address, Context};
 use crate::spawn::ActorSpawner;
 
-/// A message that can be sent by an [`Address`](struct.Address.html) to the [`ActorManager`](struct.ActorManager.html)
-pub(crate) enum ManagerMessage<A: Actor> {
-    /// The address sending this is being dropped and is the only external strong address in existence
-    /// other than the one held by the [`Context`](struct.Context.html). This notifies the
-    /// [`ActorManager`](struct.ActorManager.html) so that it can check if the actor should be
-    /// dropped
+/// A message that can be sent by an Address to the manage loop
+pub(crate) enum AddressMessage<A: Actor> {
+    /// A message from the last address telling the actor that it should shut down
     LastAddress,
     /// A message being sent to the actor. To read about envelopes and why we use them, check out
     /// `envelope.rs`
     Message(Box<dyn MessageEnvelope<Actor = A>>),
-    /// A notification queued with `Context::notify_later`
-    LateNotification(Box<dyn MessageEnvelope<Actor = A>>),
+}
+
+/// A message that can be sent by another actor on the same address to the manage loop
+pub(crate) enum BroadcastMessage<A: Actor> {
+    /// A message from another actor on the same address telling the actor to unconditionally shut
+    /// down.
+    Shutdown,
+    Message(Box<dyn BroadcastMessageEnvelope<Actor = A>>)
+}
+
+impl<A: Actor> Clone for BroadcastMessage<A> {
+    fn clone(&self) -> Self {
+        use self::BroadcastMessage::*;
+        match self {
+            Shutdown => Shutdown,
+            Message(msg) => Message(msg.clone()),
+        }
+    }
 }
 
 /// If and how to continue the manage loop
@@ -22,11 +35,10 @@ pub(crate) enum ManagerMessage<A: Actor> {
 pub(crate) enum ContinueManageLoop {
     Yes,
     ExitImmediately,
-    ProcessNotifications,
 }
 
 /// A manager for the actor which handles incoming messages and stores the context. Its managing
-/// loop can be started with [`ActorManager::manage`](struct.ActorManager.html#method.manage).
+/// loop can be started with [`ActorManager::run`](struct.ActorManager.html#method.run).
 pub struct ActorManager<A: Actor> {
     pub(crate) address: Address<A>,
     pub(crate) actor: A,
@@ -35,7 +47,7 @@ pub struct ActorManager<A: Actor> {
 
 impl<A: Actor> ActorManager<A> {
     pub fn spawn<S: ActorSpawner>(self, spawner: S) -> Address<A> {
-        let (addr, fut) = self.manage();
+        let (addr, fut) = self.run();
         spawner.spawn(fut);
         addr
     }
@@ -55,7 +67,7 @@ impl<A: Actor> ActorManager<A> {
     ///     smol::spawn(fut).detach(); // Actually spawn the actor onto an executor
     /// });
     /// ```
-    pub fn manage(self) -> (Address<A>, impl Future<Output = ()>) {
+    pub fn run(self) -> (Address<A>, impl Future<Output = ()>) {
         (self.address, self.ctx.run(self.actor))
     }
 }

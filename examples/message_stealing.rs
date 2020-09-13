@@ -14,7 +14,12 @@ impl Printer {
     }
 }
 
-impl Actor for Printer {}
+#[async_trait::async_trait]
+impl Actor for Printer {
+    async fn stopped(&mut self) {
+        println!("Actor {} stopped", self.id);
+    }
+}
 
 struct Print(String);
 impl Message for Print {
@@ -23,7 +28,7 @@ impl Message for Print {
 
 #[async_trait::async_trait]
 impl Handler<Print> for Printer {
-    async fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) {
+    async fn handle(&mut self, print: Print, ctx: &mut Context<Self>) {
         self.times += 1;
         println!(
             "Printing {} from printer {}. Printed {} times so far.",
@@ -31,6 +36,11 @@ impl Handler<Print> for Printer {
             self.id,
             self.times
         );
+
+        if self.times == 10 {
+            println!("Stopping!");
+            ctx.stop();
+        }
     }
 }
 
@@ -40,8 +50,6 @@ fn main() {
         smol::spawn(ctx.attach(Printer::new(n))).detach();
     }
 
-    loop {
-        addr.do_send(Print("hello".to_string()))
-            .expect("Printer should not be dropped");
-    }
+    while addr.do_send(Print("hello".to_string())).is_ok() {}
+    println!("Stopping to send");
 }

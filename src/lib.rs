@@ -49,8 +49,7 @@ pub trait Message: Send + 'static {
 }
 
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
-/// asynchronously, and the logic to handle the message. If the message should be handled synchronously,
-/// then the [`SyncHandler`](trait.SyncHandler.html) trait should rather be implemented.
+/// asynchronously, and the logic to handle the message.
 ///
 /// This is an [`async_trait`](https://github.com/dtolnay/async-trait/), so implementations should
 /// be annotated `#[async_trait]`.
@@ -146,7 +145,6 @@ pub trait Handler<M: Message>: Actor {
 ///
 ///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
 /// })
-///
 /// ```
 ///
 /// For longer examples, see the `examples` directory.
@@ -177,7 +175,7 @@ pub trait Actor: 'static + Send + Sized {
     /// ```
     #[allow(unused_variables)]
     async fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
-        KeepRunning::No
+        KeepRunning::StopAll
     }
 
     /// Called when the actor is in the process of stopping. This could be because
@@ -186,7 +184,7 @@ pub trait Actor: 'static + Send + Sized {
     /// strong addresses ([`Address`](struct.Address.html), as opposed to [`WeakAddress`](struct.WeakAddress.html).
     /// This should be used for any final cleanup before the actor is dropped.
     #[allow(unused_variables)]
-    async fn stopped(&mut self, ctx: &mut Context<Self>) {}
+    async fn stopped(&mut self) {}
 
     /// Returns the actor's address and manager in a ready-to-start state, given the cap for the
     /// actor's mailbox. If `None` is passed, it will be of unbounded size. To spawn the actor,
@@ -217,25 +215,19 @@ pub trait Actor: 'static + Send + Sized {
 pub enum KeepRunning {
     /// Keep the actor running and prevent it from being stopped
     Yes,
-    /// Stop the actor
-    No,
+    /// Stop only this actor
+    StopSelf,
+    /// Stop all actors on this address
+    StopAll,
 }
 
+/// True is converted to yes, and false is converted to stop all.
 impl From<bool> for KeepRunning {
     fn from(b: bool) -> Self {
         if b {
             KeepRunning::Yes
         } else {
-            KeepRunning::No
-        }
-    }
-}
-
-impl Into<bool> for KeepRunning {
-    fn into(self) -> bool {
-        match self {
-            KeepRunning::Yes => true,
-            KeepRunning::No => false,
+            KeepRunning::StopAll
         }
     }
 }

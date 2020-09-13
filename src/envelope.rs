@@ -51,7 +51,7 @@ pub(crate) trait MessageEnvelope: Send {
 pub(crate) struct ReturningEnvelope<A: Actor, M: Message> {
     message: M,
     result_sender: Sender<M::Result>,
-    phantom: PhantomData<A>,
+    phantom: PhantomData<fn() -> A>,
 }
 
 impl<A: Actor, M: Message> ReturningEnvelope<A, M> {
@@ -91,7 +91,7 @@ impl<A: Handler<M>, M: Message> MessageEnvelope for ReturningEnvelope<A, M> {
 /// method.
 pub(crate) struct NonReturningEnvelope<A: Actor, M: Message> {
     message: M,
-    phantom: PhantomData<A>,
+    phantom: PhantomData<fn() -> A>,
 }
 
 impl<A: Actor, M: Message> NonReturningEnvelope<A, M> {
@@ -112,5 +112,25 @@ impl<A: Handler<M>, M: Message> MessageEnvelope for NonReturningEnvelope<A, M> {
         ctx: &'a mut Context<Self::Actor>,
     ) -> Fut<'a> {
         Box::pin(act.handle(self.message, ctx).map(|_| ()))
+    }
+}
+
+/// Like MessageEnvelope, but can be cloned.
+pub(crate) trait BroadcastMessageEnvelope: MessageEnvelope + Sync {
+    fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>>;
+}
+
+impl<A: Handler<M>, M: Message + Clone + Sync> BroadcastMessageEnvelope for NonReturningEnvelope<A, M> {
+    fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>> {
+        Box::new(NonReturningEnvelope {
+            message: self.message.clone(),
+            phantom: PhantomData,
+        })
+    }
+}
+
+impl<A: Actor> Clone for Box<dyn BroadcastMessageEnvelope<Actor = A>> {
+    fn clone(&self) -> Self {
+        BroadcastMessageEnvelope::clone(&**self)
     }
 }

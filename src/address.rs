@@ -2,7 +2,7 @@
 //! kind of message that it can receive.
 
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
-use crate::manager::ManagerMessage;
+use crate::manager::AddressMessage;
 use crate::*;
 use catty::Receiver;
 use std::future::Future;
@@ -75,7 +75,7 @@ impl Error for Disconnected {}
 /// is created by calling the [`Actor::create`](trait.Actor.html#method.create) or
 /// [`Actor::spawn`](trait.Actor.html#method.spawn) methods.
 pub struct Address<A: Actor, Rc: RefCounter = Strong> {
-    pub(crate) sender: Sender<ManagerMessage<A>>,
+    pub(crate) sender: Sender<AddressMessage<A>>,
     pub(crate) ref_counter: Rc,
 }
 
@@ -165,7 +165,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
             // To read more about what an envelope is and why we use them, look under `envelope.rs`
             let envelope = NonReturningEnvelope::<A, M>::new(message);
             self.sender
-                .send(ManagerMessage::Message(Box::new(envelope)))
+                .send(AddressMessage::Message(Box::new(envelope)))
                 .map_err(|_| Disconnected)
         } else {
             Err(Disconnected)
@@ -180,7 +180,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
             let (envelope, rx) = ReturningEnvelope::<A, M>::new(message);
             let _ = self
                 .sender
-                .send_async(ManagerMessage::Message(Box::new(envelope)))
+                .send_async(AddressMessage::Message(Box::new(envelope)))
                 .await;
             MessageResponseFuture::result(rx)
         } else {
@@ -199,7 +199,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
             let (envelope, rx) = ReturningEnvelope::<A, M>::new(message);
             let _ = self
                 .sender
-                .send(ManagerMessage::Message(Box::new(envelope)));
+                .send(AddressMessage::Message(Box::new(envelope)));
             MessageResponseFuture::result(rx)
         } else {
             MessageResponseFuture::disconnected()
@@ -258,7 +258,7 @@ impl<A: Actor, Rc: RefCounter> Drop for Address<A, Rc> {
         // We should notify the ActorManager that there are no more strong Addresses and the actor
         // should be stopped.
         if self.ref_counter.is_last_strong() {
-            let _ = self.sender.send(ManagerMessage::LastAddress);
+            let _ = self.sender.send(AddressMessage::LastAddress);
         }
     }
 }
