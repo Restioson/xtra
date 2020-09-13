@@ -224,8 +224,8 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
     {
         futures_util::pin_mut!(stream);
         while let Some(m) = stream.next().await {
-            let res = self.send(m).await; // Bound to make it Sync
-            if !matches!(res.map(Into::into), Ok(KeepRunning::Yes)) {
+            let res = self.send(m); // Bound to make it Sync
+            if !matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
                 break;
             }
         }
