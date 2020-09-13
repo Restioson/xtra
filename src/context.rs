@@ -121,7 +121,6 @@ impl<A: Actor> Context<A> {
                     },
                     KeepRunning::StopAll => {
                         assert!(self.broadcaster.send(BroadcastMessage::Shutdown).is_ok());
-                        println!("Sending shutdown");
                         self.running = RunningState::Stopped;
                         false
                     }
@@ -212,12 +211,10 @@ impl<A: Actor> Context<A> {
             Either::Left(BroadcastMessage::Message(msg)) => msg.handle(actor, self).await,
             Either::Left(BroadcastMessage::Shutdown) => {
                 self.running = RunningState::Stopped;
-                println!("Received shutdown");
                 return ContinueManageLoop::ExitImmediately;
             }
             Either::Right(AddressMessage::Message(msg)) => {
-                println!("Got msg");
-                msg.handle(actor, self).await
+                msg.handle(actor, self).await;
             },
             Either::Right(AddressMessage::LastAddress) => {
                 if self.ref_counter.strong_count() == 0 {

@@ -38,7 +38,7 @@ impl Handler<Print> for Printer {
         );
 
         if self.times == 10 {
-            println!("Stopping!");
+            println!("Actor {} stopping!", self.id);
             ctx.stop();
         }
     }

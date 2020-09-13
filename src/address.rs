@@ -208,9 +208,10 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
     /// Attaches a stream to this actor such that all messages produced by it are forwarded to the
     /// actor. This could, for instance, be used to forward messages from a socket to the actor
     /// (after the messages have been appropriately `map`ped). This is a convenience method over
-    /// explicitly forwarding a stream to this address, spawning that future onto the executor,
-    /// and mapping the error away (because disconnects are expected and will simply mean that the
-    /// stream is no longer being forwarded).
+    /// explicitly forwarding a stream to this address and checking when to stop forwarding.
+    ///
+    /// Often, this should be spawned onto an executor to run in the background. **Do not await this
+    /// inside of an actor** - this will cause it to await forever and never receive any messages.
     ///
     /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
     /// method should be called on [`Address`](struct.Address.html). Otherwise, it should be called
