@@ -1,20 +1,22 @@
 use std::future::Future;
 
+#[cfg(feature = "with-async_std-1")]
+pub use async_std_impl::*;
+#[cfg(feature = "with-smol-1")]
+pub use smol_impl::*;
+#[cfg(feature = "with-wasm_bindgen-0_2")]
+pub use smol_impl::*;
+#[cfg(feature = "with-tokio-0_2")]
+pub use tokio_impl::*;
+#[cfg(feature = "with-wasm_bindgen-0_2")]
+pub use wasm_bindgen_impl::*;
+
 /// An `Spawner` represents anything that can spawn a future to be run in the background. This is
 /// used to spawn actors.
 pub trait Spawner {
     /// Spawn the given future.
     fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F);
 }
-
-#[cfg(feature = "with-smol-1")]
-pub use smol_impl::*;
-#[cfg(feature = "with-async_std-1")]
-pub use async_std_impl::*;
-#[cfg(feature = "with-tokio-0_2")]
-pub use tokio_impl::*;
-#[cfg(feature = "with-wasm_bindgen-0_2")]
-pub use smol_impl::*;
 
 #[cfg(feature = "with-smol-1")]
 mod smol_impl {

@@ -1,15 +1,18 @@
-use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
-use crate::manager::{ContinueManageLoop, AddressMessage, BroadcastMessage};
-use crate::{Actor, Address, Handler, KeepRunning, Message};
-use futures_util::future::{self, Either};
-#[cfg(feature = "timing")]
-use {futures_timer::Delay, std::time::Duration};
-use flume::{Receiver, Sender};
-use crate::refcount::{RefCounter, Weak, Strong};
-use std::sync::Arc;
-use std::future::Future;
 use std::fmt::{Display, Formatter};
 use std::fmt;
+use std::future::Future;
+use std::sync::Arc;
+
+use flume::{Receiver, Sender};
+use futures_util::future::{self, Either};
+
+#[cfg(feature = "timing")]
+use {futures_timer::Delay, std::time::Duration};
+
+use crate::{Actor, Address, Handler, KeepRunning, Message};
+use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
+use crate::manager::{AddressMessage, BroadcastMessage, ContinueManageLoop};
+use crate::refcount::{RefCounter, Strong, Weak};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -108,17 +111,12 @@ impl<A: Actor> Context<A> {
         self.running = RunningState::Stopping;
     }
 
-    /// Get an address to the current actor if the actor is not stopping or stopped.
-    // TODO check this still works when we want it to
+    /// Get an address to the current actor if there are still external addresses to the actor.
     pub fn address(&self) -> Result<Address<A>, ActorShutdown> {
-        if self.running == RunningState::Running {
-            Ok(Address {
-                sender: self.sender.clone(),
-                ref_counter: self.ref_counter.upgrade().ok_or(ActorShutdown)?,
-            })
-        } else {
-            Err(ActorShutdown)
-        }
+        Ok(Address {
+            sender: self.sender.clone(),
+            ref_counter: self.ref_counter.upgrade().ok_or(ActorShutdown)?,
+        })
     }
 
     /// Check if the Context is still set to running, returning whether to continue the manage loop
