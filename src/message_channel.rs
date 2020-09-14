@@ -2,17 +2,19 @@
 //! any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
 //! the message type rather than the actor type.
 
-use crate::refcount::{RefCounter, Strong};
-use crate::*;
-use futures_core::future::BoxFuture;
-use futures_core::stream::BoxStream;
-use catty::Receiver;
 use std::future::Future;
 use std::pin::Pin;
-use std::task::{Poll, Context};
+use std::task::{Context, Poll};
+
+use catty::Receiver;
+use futures_core::future::BoxFuture;
+use futures_core::stream::BoxStream;
+
+use crate::*;
 use crate::envelope::ReturningEnvelope;
 use crate::manager::AddressMessage;
-use crate::sink::{MessageSink, StrongMessageSink, WeakMessageSink, AddressSink};
+use crate::refcount::{RefCounter, Strong};
+use crate::sink::{AddressSink, MessageSink, StrongMessageSink, WeakMessageSink};
 
 /// The future returned [`MessageChannel::send`](trait.MessageChannel.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -60,7 +62,12 @@ impl<M: Message> Future for SendFuture<M> {
 /// struct Alice;
 /// struct Bob;
 ///
-/// impl Actor for Alice {}
+/// #[async_trait::async_trait]
+/// impl Actor for Alice {
+///     async fn stopped(&mut self) {
+///         println!("Oh no");
+///     }
+/// }
 /// impl Actor for Bob {}
 ///
 /// #[async_trait::async_trait]
@@ -79,9 +86,9 @@ impl<M: Message> Future for SendFuture<M> {
 ///
 /// fn main() {
 /// smol::block_on(async {
-///         let channels: [Box<dyn MessageChannel<WhatsYourName>>; 2] = [
-///             Box::new(Alice.create(None).spawn(Smol::Global)).upcast(),
-///             Box::new(Bob.create(None).spawn(Smol::Global)).upcast()
+///         let channels: [Box<dyn StrongMessageChannel<WhatsYourName>>; 2] = [
+///             Box::new(Alice.create(None).spawn(&mut Smol::Global)),
+///             Box::new(Bob.create(None).spawn(&mut Smol::Global))
 ///         ];
 ///         let name = ["Alice", "Bob"];
 ///         for (channel, name) in channels.iter().zip(&name) {
@@ -197,7 +204,7 @@ impl<A, M: Message, Rc: RefCounter> MessageChannel<M> for Address<A, Rc>
             let (envelope, rx) = ReturningEnvelope::<A, M>::new(message);
             let _ = self
                 .sender
-                .send_async(AddressMessage::Message(Box::new(envelope)));
+                .send(AddressMessage::Message(Box::new(envelope)));
             SendFuture(SendFutureInner::Result(rx))
         } else {
             SendFuture(SendFutureInner::Disconnected)

@@ -1,6 +1,7 @@
 use std::future::Future;
-use crate::envelope::{BroadcastMessageEnvelope, MessageEnvelope};
+
 use crate::{Actor, Address, Context};
+use crate::envelope::{BroadcastMessageEnvelope, MessageEnvelope};
 use crate::spawn::Spawner;
 
 /// A message that can be sent by an Address to the manage loop
@@ -64,7 +65,7 @@ impl<A: Actor> ActorManager<A> {
     /// impl Actor for MyActor {}
     ///
     /// smol::block_on(async {
-    ///     let (addr, fut) = MyActor.create(None).manage();
+    ///     let (addr, fut) = MyActor.create(None).run();
     ///     smol::spawn(fut).detach(); // Actually spawn the actor onto an executor
     /// });
     /// ```

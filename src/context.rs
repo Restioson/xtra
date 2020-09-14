@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use flume::{Receiver, Sender};
 use futures_util::future::{self, Either};
+use futures_util::FutureExt;
 
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
@@ -57,11 +58,14 @@ impl<A: Actor> Context<A> {
     /// #     }
     /// # }
     /// # impl Actor for MyActor {}
+    /// # async {
     /// let (addr, mut ctx) = Context::new(Some(32));
     /// for n in 0..3 {
     ///     smol::spawn(ctx.attach(MyActor::new(n))).detach();
     /// }
     /// ctx.run(MyActor::new(4)).await;
+    /// # };
+    ///
     /// ```
     pub fn new(message_cap: Option<usize>) -> (Address<A>, Self) {
         let (sender, receiver) = match message_cap {
@@ -240,6 +244,7 @@ impl<A: Actor> Context<A> {
                 msg.handle(actor, self).await;
             },
             Either::Right(AddressMessage::LastAddress) => {
+                assert!(self.broadcaster.send(BroadcastMessage::Shutdown).is_ok());
                 if self.ref_counter.strong_count() == 0 {
                     self.running = RunningState::Stopped;
                     return ContinueManageLoop::ExitImmediately;
@@ -257,16 +262,16 @@ impl<A: Actor> Context<A> {
         ContinueManageLoop::Yes
     }
 
-    async fn recv_once(&self) -> Either<BroadcastMessage<A>, AddressMessage<A>> {
-        let next = future::select(
+    /// This is a combinator to avoid holding !Sync references across await points
+    fn recv_once(&self) -> impl Future<Output = Either<BroadcastMessage<A>, AddressMessage<A>>> + '_ {
+        future::select(
             self.broadcast_receiver.recv_async(),
             self.receiver.recv_async(),
-        ).await;
-
-        match next {
+        )
+        .map(|next|  match next {
             Either::Left((res, _)) => Either::Left(res.unwrap()),
             Either::Right((res, _)) => Either::Right(res.unwrap()),
-        }
+        })
     }
 
     /// Yields to the manager to handle one message.

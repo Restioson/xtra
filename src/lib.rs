@@ -3,17 +3,17 @@
 #![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
 #![deny(unsafe_code, missing_docs)]
 
+pub use address::{Address, Disconnected, WeakAddress};
+pub use context::{ActorShutdown, Context};
+pub use manager::ActorManager;
+
 pub mod message_channel;
 pub mod sink;
 
 mod envelope;
 
 pub mod address;
-pub use address::{Address, Disconnected, WeakAddress};
-
 mod context;
-pub use context::{Context, ActorShutdown};
-
 mod manager;
 /// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
 pub mod spawn;
@@ -21,14 +21,12 @@ pub mod spawn;
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount;
 
-pub use manager::ActorManager;
-
 /// Commonly used types from xtra
 pub mod prelude {
-    pub use crate::address::Address;
-    pub use crate::message_channel::{StrongMessageChannel, WeakMessageChannel, MessageChannel};
     #[doc(no_inline)]
-    pub use crate::{Context, Actor, Handler, Message};
+    pub use crate::{Actor, Context, Handler, Message};
+    pub use crate::address::Address;
+    pub use crate::message_channel::{MessageChannel, StrongMessageChannel, WeakMessageChannel};
 }
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
@@ -80,7 +78,7 @@ pub trait Message: Send + 'static {
 ///
 /// fn main() {
 /// smol::block_on(async {
-///         let addr = MyActor.create(None).spawn(Smol::Global);
+///         let addr = MyActor.create(None).spawn(&mut Smol::Global);
 ///         assert_eq!(addr.send(Msg).await, Ok(20));
 ///     })
 /// }
@@ -120,10 +118,10 @@ pub trait Handler<M: Message>: Actor {
 ///
 ///     async fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
 ///         println!("Decided not to keep running");
-///         KeepRunning::No
+///         KeepRunning::StopAll
 ///     }
 ///
-///     async fn stopped(&mut self, ctx: &mut Context<Self>) {
+///     async fn stopped(&mut self) {
 ///         println!("Finally stopping.");
 ///     }
 /// }
@@ -144,7 +142,7 @@ pub trait Handler<M: Message>: Actor {
 ///
 /// // Will print "Started!", "Goodbye!", "Decided not to keep running", and then "Finally stopping."
 /// smol::block_on(async {
-///     let addr = MyActor.create(None).spawn(Smol::Global);
+///     let addr = MyActor.create(None).spawn(&mut Smol::Global);
 ///     addr.send(Goodbye).await;
 ///
 ///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
@@ -213,7 +211,7 @@ pub trait Actor: 'static + Send + Sized {
     /// # struct MyActor;
     /// # impl Actor for MyActor {}
     /// smol::block_on(async {
-    ///     let (addr, fut) = MyActor.create(None).manage();
+    ///     let (addr, fut) = MyActor.create(None).run();
     ///     smol::spawn(fut).detach(); // Actually spawn the actor onto an executor
     ///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
     /// })

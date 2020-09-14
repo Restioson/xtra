@@ -28,7 +28,7 @@ impl Handler<Print> for Printer {
 
 #[async_std::main]
 async fn main() {
-    let addr = Printer::new().create(None).spawn(AsyncStd);
+    let addr = Printer::new().create(None).spawn(&mut AsyncStd);
     loop {
         addr.send(Print("hello".to_string()))
             .await
