@@ -1,4 +1,5 @@
 use std::time::{Duration, Instant};
+
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
 
@@ -91,7 +92,7 @@ async fn main() {
 
     /* Time do_send */
 
-    let addr = Counter { count: 0 }.create(None).spawn(Tokio::Global);
+    let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
 
     let start = Instant::now();
     for _ in 0..COUNT {
@@ -109,7 +110,7 @@ async fn main() {
 
     /* Time channel do_send */
 
-    let addr = Counter { count: 0 }.create(None).spawn(Tokio::Global);
+    let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
     let chan = &addr as &dyn MessageChannel<Increment>;
 
     let start = Instant::now();
@@ -122,25 +123,9 @@ async fn main() {
     let total_count = addr.send(GetCount).await.unwrap();
 
     let duration = Instant::now() - start;
-    let average_ns = duration.as_nanos() / total_count as u128; // <140ns on my machine
+    let average_ns = duration.as_nanos() / total_count as u128; // <210ns on my machine
     println!("channel do_send avg time of processing: {}ns", average_ns);
     assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 
-    /* Time send avg time of processing */
-
-    let addr = Counter { count: 0 }.create(None).spawn(Tokio::Global);
-
-    let start = Instant::now();
-    for _ in 0..COUNT {
-        let _ = addr.send(Increment);
-    }
-
-    // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
-    // future tokio reschedule time because of the .await
-    let total_count = addr.send(GetCount).await.unwrap();
-
-    let duration = Instant::now() - start;
-    let average_ns = duration.as_nanos() / total_count as u128; // ~270ns on my machine
-    println!("send avg time of processing: {}ns", average_ns);
-    assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
+    // I couldn't salvage send time of processing because overhead of block on :(
 }

@@ -19,7 +19,6 @@ async-trait = "0.1.36"
 pollster = "0.2"
 catty = "0.1.2"
 barrage = "0.2.1"
-
 flume = { git = "https://github.com/Restioson/flume", branch = "into_send_async", default-features = false, features = ["async"]}
 
 tokio = { version = "0.2", features = ["rt-core", "time"], optional = true }
@@ -35,6 +34,7 @@ futures-timer = { version = "3", optional = true, default-features = false }
 smol = "1"
 tokio = { version = "0.2", features = ["macros"] }
 rand = "0.7"
+waker-fn = "1"
 
 [features]
 default = ["timing"]

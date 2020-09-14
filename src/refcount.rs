@@ -4,6 +4,7 @@ use std::sync::{Arc, Weak as ArcWeak};
 /// dropped as long as they live. Read the docs of [`Address`](../address/struct.Address.html) to find
 /// out more.
 #[derive(Clone)]
+// TODO AtomicBool for disconnected when forcibly stopped ?
 pub struct Strong(pub(crate) Arc<()>);
 
 impl Strong {
