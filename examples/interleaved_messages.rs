@@ -47,12 +47,12 @@ impl Handler<Hello> for ActorB {
 
 fn main() {
     smol::block_on(async {
-        let actor_b = ActorB.create(None).spawn(Smol::Global);
+        let actor_b = ActorB.create(None).spawn(&mut Smol::Global);
         let actor_a = ActorA {
             actor_b: actor_b.clone(),
         }
             .create(None)
-            .spawn(Smol::Global);
+            .spawn(&mut Smol::Global);
         actor_b.send(Initialized(actor_a.clone())).await.unwrap();
     })
 }

@@ -29,7 +29,7 @@ pub struct Context<A: Actor> {
     /// Notifications that must be stored for immediate processing.
     self_notifications: Vec<Box<dyn MessageEnvelope<Actor = A>>>,
     receiver: Receiver<AddressMessage<A>>,
-    broadcast_receiver: barrage::Receiver<BroadcastMessage<A>>,
+    broadcast_receiver: barrage::SharedReceiver<BroadcastMessage<A>>,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -68,7 +68,7 @@ impl<A: Actor> Context<A> {
             None => flume::unbounded(),
             Some(cap) => flume::bounded(cap),
         };
-        let (broadcaster, broadcast_receiver) = barrage::unbounded();
+        let (broadcaster, broadcast_rx) = barrage::unbounded();
 
         let strong = Strong(Arc::new(()));
         let weak = strong.downgrade();
@@ -85,7 +85,7 @@ impl<A: Actor> Context<A> {
             ref_counter: weak,
             self_notifications: Vec::new(),
             receiver,
-            broadcast_receiver,
+            broadcast_receiver: broadcast_rx.into_shared(),
         };
         (addr, context)
     }
@@ -93,6 +93,10 @@ impl<A: Actor> Context<A> {
     /// Attaches an actor of the same type listening to the same address as this actor is.
     /// They will operate in a message-stealing fashion, with no message handled by two actors.
     pub fn attach(&mut self, actor: A) -> impl Future<Output = ()> {
+        // Give the new context a new mailbox on the same broadcast channel, and then make this
+        // receiver into a shared receiver.
+        let broadcast_receiver = self.broadcast_receiver.clone().upgrade().into_shared().clone();
+
         let ctx = Context {
             running: RunningState::Running,
             sender: self.sender.clone(),
@@ -100,7 +104,7 @@ impl<A: Actor> Context<A> {
             ref_counter: self.ref_counter.clone(),
             self_notifications: Vec::new(),
             receiver: self.receiver.clone(),
-            broadcast_receiver: self.broadcast_receiver.clone()
+            broadcast_receiver,
         };
         ctx.run(actor)
     }

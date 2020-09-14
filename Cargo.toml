@@ -18,9 +18,10 @@ futures-util = { version = "0.3.5", default-features = false }
 async-trait = "0.1.36"
 pollster = "0.2"
 catty = "0.1.2"
-barrage = "0.1.0"
+barrage = "0.2.1"
 
-flume = { version = "0.9", default-features = false, features = ["async"] }
+flume = { git = "https://github.com/Restioson/flume", branch = "into_send_async", default-features = false, features = ["async"]}
+#flume = { version = "0.9", default-features = false, features = ["async"] }
 
 tokio = { version = "0.2", features = ["rt-core", "time"], optional = true }
 smol = { version = "1", optional = true }
@@ -33,6 +34,7 @@ futures-timer = { version = "3", optional = true, default-features = false }
 
 [dev-dependencies]
 smol = "1"
+tokio = { version = "0.2", features = ["macros"] }
 rand = "0.7"
 
 [features]

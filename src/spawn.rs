@@ -81,6 +81,7 @@ mod tokio_impl {
 mod wasm_bindgen_impl {
     use super::*;
 
+    /// Spawn rust futures in WASM on the current thread in the background.
     pub struct WasmBindgen;
 
     impl Spawner for WasmBindgen {

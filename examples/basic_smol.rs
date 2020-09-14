@@ -28,7 +28,7 @@ impl Handler<Print> for Printer {
 
 fn main() {
     smol::block_on(async {
-        let addr = Printer::new().create(None).spawn(Smol::Global);
+        let addr = Printer::new().create(None).spawn(&mut Smol::Global);
         loop {
             addr.send(Print("hello".to_string()))
                 .await
