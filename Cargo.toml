@@ -35,6 +35,7 @@ smol = "1"
 tokio = { version = "0.2", features = ["macros"] }
 rand = "0.7"
 waker-fn = "1"
+event-listener = "2.4"
 
 [features]
 default = ["timing"]
