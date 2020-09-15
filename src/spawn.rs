@@ -4,8 +4,6 @@ use std::future::Future;
 pub use async_std_impl::*;
 #[cfg(feature = "with-smol-1")]
 pub use smol_impl::*;
-#[cfg(feature = "with-wasm_bindgen-0_2")]
-pub use smol_impl::*;
 #[cfg(feature = "with-tokio-0_2")]
 pub use tokio_impl::*;
 #[cfg(feature = "with-wasm_bindgen-0_2")]

@@ -1,6 +1,7 @@
-use wasm_bindgen::{prelude::*, JsValue};
+use wasm_bindgen::{JsValue, prelude::*};
+
 use xtra::prelude::*;
-use xtra::spawn::Tokio;
+use xtra::spawn::WasmBindgen;
 
 struct Echoer;
 
@@ -20,7 +21,7 @@ impl Handler<Echo> for Echoer {
 
 #[wasm_bindgen]
 pub async fn start() -> Result<(), JsValue> {
-    let addr = Echoer.create(None).spawn(Tokio::Global);
+    let addr = Echoer.create(None).spawn(&mut WasmBindgen);
     let response = addr
         .send(Echo("hello world".to_string()))
         .await
