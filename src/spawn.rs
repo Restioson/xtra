@@ -27,7 +27,7 @@ mod smol_impl {
         /// The global executor.
         Global,
         /// A specific smol executor.
-        Handle(&'a smol::Executor)
+        Handle(&'a smol::Executor),
     }
 
     impl<'a> Spawner for Smol<'a> {
@@ -64,14 +64,14 @@ mod tokio_impl {
         /// The global executor.
         Global,
         /// A handle to a specific executor.
-        Handle(&'a tokio::runtime::Handle)
+        Handle(&'a tokio::runtime::Handle),
     }
 
     impl<'a> Spawner for Tokio<'a> {
         fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
             match self {
                 Tokio::Global => tokio::spawn(fut),
-                Tokio::Handle(handle) => handle.spawn(fut)
+                Tokio::Handle(handle) => handle.spawn(fut),
             };
         }
     }

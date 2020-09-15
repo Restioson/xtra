@@ -24,11 +24,14 @@ use crate::sink::AddressSink;
 /// It resolves to `Result<M::Result, Disconnected>`.
 // This simply wraps the enum in order to hide the implementation details of the inner future
 // while still leaving outer future nameable.
-pub struct SendFuture< A: Actor, M: Message>(SendFutureInner<A, M>);
+pub struct SendFuture<A: Actor, M: Message>(SendFutureInner<A, M>);
 
 enum SendFutureInner<A: Actor, M: Message> {
     Disconnected,
-    Sending(ChannelSendFuture<'static, AddressMessage<A>>, Receiver<M::Result>),
+    Sending(
+        ChannelSendFuture<'static, AddressMessage<A>>,
+        Receiver<M::Result>,
+    ),
     Receiving(Receiver<M::Result>),
 }
 
@@ -56,7 +59,9 @@ impl<A: Actor, M: Message> Future for SendFuture<A, M> {
                     (Poll::Pending, SendFutureInner::Sending(tx, rx))
                 }
             }
-            SendFutureInner::Receiving(mut rx) => (poll_rx(&mut rx, ctx), SendFutureInner::Receiving(rx)),
+            SendFutureInner::Receiving(mut rx) => {
+                (poll_rx(&mut rx, ctx), SendFutureInner::Receiving(rx))
+            }
         };
 
         this.0 = new;
@@ -79,7 +84,9 @@ impl<A: Actor> Future for DoSendFuture<A> {
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         match &mut self.get_mut().0 {
             DoSendFutureInner::Disconnected => Poll::Ready(Err(Disconnected)),
-            DoSendFutureInner::Send(tx) => tx.poll_unpin(ctx).map(|res| res.map_err(|_| Disconnected))
+            DoSendFutureInner::Send(tx) => {
+                tx.poll_unpin(ctx).map(|res| res.map_err(|_| Disconnected))
+            }
         }
     }
 }
@@ -175,7 +182,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
     /// })
     /// ```
     pub fn is_connected(&self) -> bool {
-        self.ref_counter.strong_count() > 0 && !self.sender.is_disconnected()
+        self.ref_counter.is_connected()
     }
 
     /// Convert this address into a generic address which can be weak or strong.
@@ -213,8 +220,9 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
     /// `Ok(())`, the will be delivered, but may not be handled in the event that the actor stops
     /// itself (by calling [`Context::stop`](../struct.Context.html#method.stop)) before it was handled.
     pub fn do_send_async<M>(&self, message: M) -> DoSendFuture<A>
-        where M: Message,
-              A: Handler<M>
+    where
+        M: Message,
+        A: Handler<M>,
     {
         if self.is_connected() {
             let envelope = NonReturningEnvelope::<A, M>::new(message);
@@ -259,11 +267,11 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
     /// method should be called on [`Address`](struct.Address.html). Otherwise, it should be called
     /// on [`WeakAddress`](type.WeakAddress.html).
     pub async fn attach_stream<S, M, K>(self, stream: S)
-        where
-            K: Into<KeepRunning> + Send,
-            M: Message<Result = K>,
-            A: Handler<M>,
-            S: Stream<Item = M> + Send,
+    where
+        K: Into<KeepRunning> + Send,
+        M: Message<Result = K>,
+        A: Handler<M>,
+        S: Stream<Item = M> + Send,
     {
         futures_util::pin_mut!(stream);
         while let Some(m) = stream.next().await {

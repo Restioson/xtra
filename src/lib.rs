@@ -15,11 +15,11 @@ mod envelope;
 pub mod address;
 mod context;
 mod manager;
-/// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
-pub mod spawn;
 /// This module contains types representing the strength of an address's reference counting, which
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount;
+/// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
+pub mod spawn;
 
 /// Commonly used types from xtra
 pub mod prelude {
@@ -218,7 +218,11 @@ pub trait Actor: 'static + Send + Sized {
     /// ```
     fn create(self, message_cap: Option<usize>) -> ActorManager<Self> {
         let (address, ctx) = Context::new(message_cap);
-        ActorManager { address, actor: self, ctx }
+        ActorManager {
+            address,
+            actor: self,
+            ctx,
+        }
     }
 }
 

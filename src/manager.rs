@@ -18,7 +18,7 @@ pub(crate) enum BroadcastMessage<A: Actor> {
     /// A message from another actor on the same address telling the actor to unconditionally shut
     /// down.
     Shutdown,
-    Message(Box<dyn BroadcastMessageEnvelope<Actor = A>>)
+    Message(Box<dyn BroadcastMessageEnvelope<Actor = A>>),
 }
 
 impl<A: Actor> Clone for BroadcastMessage<A> {

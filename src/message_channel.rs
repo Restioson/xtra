@@ -125,8 +125,8 @@ pub trait MessageChannel<M: Message>: Unpin + Send + Sync {
     /// method should be called on [`MessageChannel`](trait.MessageChannel.html). Otherwise, it should be called
     /// on [`WeakMessageChannel`](trait.WeakMessageChannel.html).
     fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
-        where
-            M::Result: Into<KeepRunning> + Send;
+    where
+        M::Result: Into<KeepRunning> + Send;
 
     /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn MessageChannel<M>>;
@@ -189,7 +189,8 @@ pub trait WeakMessageChannel<M: Message>: MessageChannel<M> {
 }
 
 impl<A, M: Message, Rc: RefCounter> MessageChannel<M> for Address<A, Rc>
-    where A: Handler<M>,
+where
+    A: Handler<M>,
 {
     fn is_connected(&self) -> bool {
         self.is_connected()
@@ -212,8 +213,8 @@ impl<A, M: Message, Rc: RefCounter> MessageChannel<M> for Address<A, Rc>
     }
 
     fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
-        where
-            M::Result: Into<KeepRunning> + Send,
+    where
+        M::Result: Into<KeepRunning> + Send,
     {
         Box::pin(self.attach_stream(stream))
     }
@@ -231,7 +232,8 @@ impl<A, M: Message, Rc: RefCounter> MessageChannel<M> for Address<A, Rc>
 }
 
 impl<A, M: Message> StrongMessageChannel<M> for Address<A, Strong>
-    where A: Handler<M>
+where
+    A: Handler<M>,
 {
     fn downgrade(&self) -> Box<dyn WeakMessageChannel<M>> {
         Box::new(self.downgrade())
@@ -261,7 +263,10 @@ impl<A, M: Message> StrongMessageChannel<M> for Address<A, Strong>
     }
 }
 
-impl<A, M: Message> WeakMessageChannel<M> for WeakAddress<A> where A: Handler<M> {
+impl<A, M: Message> WeakMessageChannel<M> for WeakAddress<A>
+where
+    A: Handler<M>,
+{
     /// Upcasts this weak message channel into a boxed generic
     /// [`MessageChannel`](trait.MessageChannel.html) trait object
     fn upcast(self) -> Box<dyn MessageChannel<M>> {

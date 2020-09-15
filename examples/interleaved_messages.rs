@@ -51,8 +51,8 @@ fn main() {
         let actor_a = ActorA {
             actor_b: actor_b.clone(),
         }
-            .create(None)
-            .spawn(&mut Smol::Global);
+        .create(None)
+        .spawn(&mut Smol::Global);
         actor_b.send(Initialized(actor_a.clone())).await.unwrap();
     })
 }

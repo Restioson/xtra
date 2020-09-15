@@ -1,9 +1,11 @@
-use crate::*;
-use catty::{Receiver, Sender};
 use std::future::Future;
-use futures_util::FutureExt;
 use std::marker::PhantomData;
 use std::pin::Pin;
+
+use catty::{Receiver, Sender};
+use futures_util::FutureExt;
+
+use crate::*;
 
 /// The type of future returned by `Envelope::handle`
 type Fut<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
@@ -120,7 +122,9 @@ pub(crate) trait BroadcastMessageEnvelope: MessageEnvelope + Sync {
     fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>>;
 }
 
-impl<A: Handler<M>, M: Message + Clone + Sync> BroadcastMessageEnvelope for NonReturningEnvelope<A, M> {
+impl<A: Handler<M>, M: Message + Clone + Sync> BroadcastMessageEnvelope
+    for NonReturningEnvelope<A, M>
+{
     fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>> {
         Box::new(NonReturningEnvelope {
             message: self.message.clone(),

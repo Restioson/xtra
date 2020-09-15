@@ -127,5 +127,22 @@ async fn main() {
     println!("channel do_send avg time of processing: {}ns", average_ns);
     assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 
-    // I couldn't salvage send time of processing because overhead of block on :(
+    /* Time channel send and get response */
+
+    let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
+    let chan = &addr as &dyn MessageChannel<Increment>;
+
+    let start = Instant::now();
+    for _ in 0..COUNT {
+        let _ = chan.send(Increment);
+    }
+
+    // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
+    // future tokio reschedule time because of the .await
+    let total_count = addr.send(GetCount).await.unwrap();
+
+    let duration = Instant::now() - start;
+    let average_ns = duration.as_nanos() / total_count as u128; // <210ns on my machine
+    println!("channel send avg time of processing: {}ns", average_ns);
+    assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 }

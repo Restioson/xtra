@@ -1,6 +1,8 @@
 //! Set the SMOL_THREADS environment variable to have more threads, else each receiving task will
 //! switch only after it has received many messages.
 
+use std::time::Duration;
+
 use xtra::prelude::*;
 
 struct Printer {
@@ -10,7 +12,10 @@ struct Printer {
 
 impl Printer {
     fn new(id: usize) -> Self {
-        Printer { times: 0, id: id + 1 }
+        Printer {
+            times: 0,
+            id: id + 1,
+        }
     }
 }
 
@@ -32,9 +37,7 @@ impl Handler<Print> for Printer {
         self.times += 1;
         println!(
             "Printing {} from printer {}. Printed {} times so far.",
-            print.0,
-            self.id,
-            self.times
+            print.0, self.id, self.times
         );
 
         if self.times == 10 {
@@ -52,4 +55,7 @@ fn main() {
 
     while addr.do_send(Print("hello".to_string())).is_ok() {}
     println!("Stopping to send");
+
+    // Give a second for everything to shut down
+    std::thread::sleep(Duration::from_secs(1));
 }

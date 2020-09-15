@@ -3,13 +3,15 @@
 
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use crate::{Message, Actor, Handler, Disconnected};
-use crate::refcount::{RefCounter, Strong, Weak};
-use crate::manager::AddressMessage;
-use futures_sink::Sink;
+
 use flume::r#async::SendSink;
-use crate::envelope::NonReturningEnvelope;
+use futures_sink::Sink;
 use futures_util::SinkExt;
+
+use crate::{Actor, Disconnected, Handler, Message};
+use crate::envelope::NonReturningEnvelope;
+use crate::manager::AddressMessage;
+use crate::refcount::{RefCounter, Strong, Weak};
 
 /// An `AddressSink` is the [futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
 /// returned by [`Address::into_sink`](../address/struct.Address.html#method.into_sink). Similarly to with
@@ -17,7 +19,7 @@ use futures_util::SinkExt;
 /// the [weak variety](struct.AddressSink.html) will not.
 pub struct AddressSink<A: Actor, Rc: RefCounter = Strong> {
     pub(crate) sink: SendSink<'static, AddressMessage<A>>,
-    pub(crate) ref_counter: Rc
+    pub(crate) ref_counter: Rc,
 }
 
 impl<A: Actor, Rc: RefCounter> Clone for AddressSink<A, Rc> {
@@ -35,7 +37,7 @@ pub type WeakAddressSink<A> = AddressSink<A, Weak>;
 impl<A: Actor, Rc: RefCounter> AddressSink<A, Rc> {
     /// Returns whether the actor referred to by this address sink is running and accepting messages.
     pub fn is_connected(&self) -> bool {
-        self.ref_counter.strong_count() > 0 && !self.sink.is_disconnected()
+        self.ref_counter.is_connected()
     }
 }
 
@@ -62,25 +64,34 @@ impl<A: Actor, Rc: RefCounter> Drop for AddressSink<A, Rc> {
 }
 
 impl<A: Actor, Rc: RefCounter, M: Message> Sink<M> for AddressSink<A, Rc>
-    where A: Handler<M>
+where
+    A: Handler<M>,
 {
     type Error = Disconnected;
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.sink).poll_ready(cx).map_err(|_| Disconnected)
+        Pin::new(&mut self.sink)
+            .poll_ready(cx)
+            .map_err(|_| Disconnected)
     }
 
     fn start_send(mut self: Pin<&mut Self>, item: M) -> Result<(), Self::Error> {
         let item = AddressMessage::Message(Box::new(NonReturningEnvelope::new(item)));
-        Pin::new(&mut self.sink).start_send(item).map_err(|_| Disconnected)
+        Pin::new(&mut self.sink)
+            .start_send(item)
+            .map_err(|_| Disconnected)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.sink).poll_flush(cx).map_err(|_| Disconnected)
+        Pin::new(&mut self.sink)
+            .poll_flush(cx)
+            .map_err(|_| Disconnected)
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.sink).poll_close(cx).map_err(|_| Disconnected)
+        Pin::new(&mut self.sink)
+            .poll_close(cx)
+            .map_err(|_| Disconnected)
     }
 }
 
@@ -130,10 +141,11 @@ pub trait StrongMessageSink<M: Message>: MessageSink<M> {
 }
 
 impl<A: Actor, M: Message, Rc: RefCounter> MessageSink<M> for AddressSink<A, Rc>
-    where A: Handler<M> {
-
+where
+    A: Handler<M>,
+{
     fn is_connected(&self) -> bool {
-        self.ref_counter.strong_count() > 0 && !self.sink.is_disconnected()
+        self.ref_counter.is_connected()
     }
 
     fn clone_message_sink(&self) -> Box<dyn MessageSink<M>> {
@@ -142,7 +154,8 @@ impl<A: Actor, M: Message, Rc: RefCounter> MessageSink<M> for AddressSink<A, Rc>
 }
 
 impl<A: Actor, M: Message> StrongMessageSink<M> for AddressSink<A, Strong>
-    where A: Handler<M>
+where
+    A: Handler<M>,
 {
     fn downgrade(self) -> Box<dyn WeakMessageSink<M>> {
         Box::new(AddressSink::downgrade(&self))
@@ -162,7 +175,8 @@ impl<A: Actor, M: Message> StrongMessageSink<M> for AddressSink<A, Strong>
 }
 
 impl<A: Actor, M: Message> WeakMessageSink<M> for AddressSink<A, Weak>
-    where A: Handler<M>
+where
+    A: Handler<M>,
 {
     fn upcast(self) -> Box<dyn MessageSink<M, Error = Disconnected>> {
         Box::new(self)

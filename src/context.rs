@@ -1,7 +1,8 @@
-use std::fmt::{Display, Formatter};
 use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use flume::{Receiver, Sender};
 use futures_util::future::{self, Either};
@@ -37,7 +38,7 @@ pub struct Context<A: Actor> {
 enum RunningState {
     Running,
     Stopping,
-    Stopped
+    Stopped,
 }
 
 impl<A: Actor> Context<A> {
@@ -74,7 +75,7 @@ impl<A: Actor> Context<A> {
         };
         let (broadcaster, broadcast_rx) = barrage::unbounded();
 
-        let strong = Strong(Arc::new(()));
+        let strong = Strong(Arc::new(AtomicBool::new(true)));
         let weak = strong.downgrade();
 
         let addr = Address {
@@ -99,7 +100,11 @@ impl<A: Actor> Context<A> {
     pub fn attach(&mut self, actor: A) -> impl Future<Output = ()> {
         // Give the new context a new mailbox on the same broadcast channel, and then make this
         // receiver into a shared receiver.
-        let broadcast_receiver = self.broadcast_receiver.clone().upgrade().into_shared().clone();
+        let broadcast_receiver = self
+            .broadcast_receiver
+            .clone()
+            .upgrade()
+            .into_shared();
 
         let ctx = Context {
             running: RunningState::Running,
@@ -127,6 +132,16 @@ impl<A: Actor> Context<A> {
         })
     }
 
+    /// Stop all actors on this address
+    fn stop_all(&mut self) {
+        if let Some(strong) = self.ref_counter.upgrade() {
+            strong.0.store(false, Ordering::Release)
+        }
+
+        assert!(self.broadcaster.send(BroadcastMessage::Shutdown).is_ok());
+        self.receiver.drain();
+    }
+
     /// Check if the Context is still set to running, returning whether to continue the manage loop
     async fn check_running(&mut self, actor: &mut A) -> bool {
         // Check if the context was stopped, and if so return, thereby dropping the
@@ -140,18 +155,18 @@ impl<A: Actor> Context<A> {
                     KeepRunning::Yes => {
                         self.running = RunningState::Running;
                         true
-                    },
+                    }
                     KeepRunning::StopSelf => {
                         self.running = RunningState::Stopped;
                         false
-                    },
+                    }
                     KeepRunning::StopAll => {
-                        assert!(self.broadcaster.send(BroadcastMessage::Shutdown).is_ok());
+                        self.stop_all();
                         self.running = RunningState::Stopped;
                         false
                     }
                 }
-            },
+            }
             RunningState::Stopped => false,
         }
     }
@@ -183,7 +198,7 @@ impl<A: Actor> Context<A> {
         // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
         // in the started method, otherwise it would kinda be a bug
         if !self.check_running(&mut actor).await {
-            assert!(self.broadcaster.send(BroadcastMessage::Shutdown).is_ok());
+            self.stop_all();
             actor.stopped().await;
             return;
         }
@@ -202,27 +217,38 @@ impl<A: Actor> Context<A> {
         let mut broadcast_recv = broadcast_rx.recv_async();
 
         loop {
-            let next = future::select(broadcast_recv, addr_recv).await;
+            let next = future::select(addr_recv, broadcast_recv).await;
 
             let msg = match next {
                 Either::Left((res, other)) => {
+                    broadcast_recv = other;
+                    addr_recv = addr_rx.recv_async();
+                    Either::Right(res.unwrap())
+                }
+                Either::Right((res, other)) => {
                     addr_recv = other;
                     broadcast_recv = broadcast_rx.recv_async();
                     Either::Left(res.unwrap())
                 }
-                Either::Right((res, other)) => {
-                    addr_recv = addr_rx.recv_async();
-                    broadcast_recv = other;
-                    Either::Right(res.unwrap())
-                },
             };
+
+            // To avoid broadcast starvation, try receive a broadcast here
+            if let Ok(Some(broadcast)) = broadcast_rx.try_recv() {
+                match self.tick(Either::Left(broadcast), &mut actor).await {
+                    ContinueManageLoop::Yes => {}
+                    ContinueManageLoop::ExitImmediately => {
+                        actor.stopped().await;
+                        break;
+                    }
+                }
+            }
 
             match self.tick(msg, &mut actor).await {
                 ContinueManageLoop::Yes => {}
                 ContinueManageLoop::ExitImmediately => {
                     actor.stopped().await;
                     break;
-                },
+                }
             }
         }
     }
@@ -242,14 +268,14 @@ impl<A: Actor> Context<A> {
             }
             Either::Right(AddressMessage::Message(msg)) => {
                 msg.handle(actor, self).await;
-            },
+            }
             Either::Right(AddressMessage::LastAddress) => {
-                assert!(self.broadcaster.send(BroadcastMessage::Shutdown).is_ok());
                 if self.ref_counter.strong_count() == 0 {
+                    self.stop_all();
                     self.running = RunningState::Stopped;
                     return ContinueManageLoop::ExitImmediately;
                 }
-            },
+            }
         }
 
         if !self.check_running(actor).await {
@@ -263,12 +289,14 @@ impl<A: Actor> Context<A> {
     }
 
     /// This is a combinator to avoid holding !Sync references across await points
-    fn recv_once(&self) -> impl Future<Output = Either<BroadcastMessage<A>, AddressMessage<A>>> + '_ {
+    fn recv_once(
+        &self,
+    ) -> impl Future<Output = Either<BroadcastMessage<A>, AddressMessage<A>>> + '_ {
         future::select(
             self.broadcast_receiver.recv_async(),
             self.receiver.recv_async(),
         )
-        .map(|next|  match next {
+        .map(|next| match next {
             Either::Left((res, _)) => Either::Left(res.unwrap()),
             Either::Right((res, _)) => Either::Right(res.unwrap()),
         })
@@ -293,27 +321,50 @@ impl<A: Actor> Context<A> {
     #[cfg_attr(docsrs, doc("```"))]
     #[cfg_attr(docsrs, doc(include = "../examples/interleaved_messages.rs"))]
     #[cfg_attr(docsrs, doc("```"))]
-    pub async fn handle_while<F, R>(&mut self, act: &mut A, fut: F) -> R
+    pub async fn handle_while<F, R>(&mut self, actor: &mut A, fut: F) -> R
     where
-        F: Future<Output = R>
+        F: Future<Output = R>,
     {
-        if !self.handle_self_notifications(act).await {
+        if !self.handle_self_notifications(actor).await {
             self.stop();
         }
 
         futures_util::pin_mut!(fut);
 
+        let addr_rx = self.receiver.clone();
+        let broadcast_rx = self.broadcast_receiver.clone();
+        let mut addr_recv = addr_rx.recv_async();
+        let mut broadcast_recv = broadcast_rx.recv_async();
+
         loop {
-            let (msg, unfinished) = {
-                let recv = self.recv_once();
-                futures_util::pin_mut!(recv);
-                match future::select(fut, recv).await {
-                    Either::Left((res, _)) => break res,
+            let (next_msg, unfinished) = {
+                let next_msg = future::select(addr_recv, broadcast_recv);
+                futures_util::pin_mut!(next_msg);
+                match future::select(fut, next_msg).await {
+                    Either::Left((future_res, _)) => break future_res,
                     Either::Right(tuple) => tuple,
                 }
             };
 
-            self.tick(msg, act).await;
+            let msg = match next_msg {
+                Either::Left((res, other)) => {
+                    broadcast_recv = other;
+                    addr_recv = addr_rx.recv_async();
+                    Either::Right(res.unwrap())
+                }
+                Either::Right((res, other)) => {
+                    addr_recv = other;
+                    broadcast_recv = broadcast_rx.recv_async();
+                    Either::Left(res.unwrap())
+                }
+            };
+
+            // To avoid broadcast starvation, try receive a broadcast here
+            if let Ok(Some(broadcast)) = broadcast_rx.try_recv() {
+                self.tick(Either::Left(broadcast), actor).await;
+            }
+
+            self.tick(msg, actor).await;
             fut = unfinished;
         }
     }
@@ -351,7 +402,7 @@ impl<A: Actor> Context<A> {
     pub fn notify_interval<F, M>(
         &mut self,
         duration: Duration,
-        constructor: F
+        constructor: F,
     ) -> Result<impl Future<Output = ()>, ActorShutdown>
     where
         F: Send + 'static + Fn() -> M,
@@ -372,15 +423,18 @@ impl<A: Actor> Context<A> {
 
     /// Notify the actor with a synchronously handled message after a certain duration has elapsed.
     /// This does not take priority over other messages.
-    pub fn notify_after<M>(&mut self, duration: Duration, notification: M)
-        -> Result<impl Future<Output = ()>, ActorShutdown>
-            where
-                M: Message,
-                A: Handler<M>,
+    pub fn notify_after<M>(
+        &mut self,
+        duration: Duration,
+        notification: M,
+    ) -> Result<impl Future<Output = ()>, ActorShutdown>
+    where
+        M: Message,
+        A: Handler<M>,
     {
         let addr = self.address()?;
         let fut = async move {
-            Delay::new(duration.clone()).await;
+            Delay::new(duration).await;
             let _ = addr.do_send(notification);
         };
 
