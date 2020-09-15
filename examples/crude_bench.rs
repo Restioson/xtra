@@ -1,8 +1,4 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
-
-use event_listener::Event;
 
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
@@ -115,27 +111,11 @@ async fn do_address_benchmark(name: &str, f: fn(&Address<Counter>) -> ()) {
 async fn do_parallel_address_benchmark(name: &str, workers: usize, f: fn(&Address<Counter>) -> ()) {
     let (addr, mut ctx) = Context::new(None);
     let start = Instant::now();
-    let done = Arc::new(AtomicU8::new(0));
-    let event = Arc::new(Event::new());
     for _ in 0..workers {
         tokio::spawn(ctx.attach(Counter { count: 0 }));
-        let addr = addr.clone();
-        let done = done.clone();
-        let event = event.clone();
-        tokio::task::spawn_blocking(move || {
-            for _ in 0..(COUNT / workers) {
-                f(&addr);
-            }
-            if done.fetch_add(1, Ordering::SeqCst) == (workers - 1) as u8 {
-                event.notify(1);
-            }
-        });
     }
 
-    event.listen().await;
-
-    // rounding overflow
-    for _ in 0..COUNT - ((COUNT / workers) * workers) {
+    for _ in 0..COUNT {
         f(&addr);
     }
 
