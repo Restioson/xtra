@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 
 use xtra::prelude::*;
+#[cfg(feature = "with-tokio-0_2")]
 use xtra::spawn::Tokio;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -32,6 +33,7 @@ impl Handler<Report> for Accumulator {
     }
 }
 
+#[cfg(feature = "with-tokio-0_2")]
 #[tokio::test]
 async fn accumulate_to_ten() {
     let addr = Accumulator(0).create(None).spawn(&mut Tokio::Global);

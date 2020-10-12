@@ -25,7 +25,7 @@ mod smol_impl {
         /// The global executor.
         Global,
         /// A specific smol executor.
-        Handle(&'a smol::Executor),
+        Handle(&'a smol::Executor<'a>),
     }
 
     impl<'a> Spawner for Smol<'a> {
