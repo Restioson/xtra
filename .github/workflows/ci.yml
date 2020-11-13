@@ -12,7 +12,7 @@ jobs:
       matrix:
         runtime:
           - with-tokio-0_2
-          - with-smol-1
+          - with-smol-1_1
           - with-async_std-1
           - with-wasm_bindgen-0_2
 
