@@ -69,9 +69,7 @@ impl RefCounter for Strong {
     }
 
     fn is_last_strong(&self) -> bool {
-        // ActorManager holds one strong address, so if there are 2 strong addresses, this would be
-        // the only external one in existence.
-        Arc::strong_count(&self.0) == 2
+        Arc::strong_count(&self.0) == 1
     }
 
     fn strong_count(&self) -> usize {

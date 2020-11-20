@@ -1,5 +1,9 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use async_trait::async_trait;
 
+use xtra::KeepRunning;
 use xtra::prelude::*;
 #[cfg(feature = "with-tokio-0_2")]
 use xtra::spawn::Tokio;
@@ -42,4 +46,71 @@ async fn accumulate_to_ten() {
     }
 
     assert_eq!(addr.send(Report).await.unwrap().0, 10);
+}
+
+struct DropTester(Arc<AtomicUsize>);
+
+impl Drop for DropTester {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+#[async_trait]
+impl Actor for DropTester {
+    async fn stopping(&mut self, _ctx: &mut Context<Self>) -> KeepRunning {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        KeepRunning::StopAll
+    }
+
+    async fn stopped(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+struct Stop;
+
+impl Message for Stop {
+    type Result = ();
+}
+
+#[async_trait]
+impl Handler<Stop> for DropTester {
+    async fn handle(&mut self, _: Stop, ctx: &mut Context<Self>) {
+        ctx.stop();
+    }
+}
+
+#[cfg(feature = "with-tokio-0_2")]
+#[tokio::test]
+async fn test_stop_and_drop() {
+    // Drop the address
+    let drop_count = Arc::new(AtomicUsize::new(0));
+    let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
+    let handle = tokio::spawn(fut);
+    drop(addr);
+    handle.await.unwrap();
+    assert_eq!(drop_count.load(Ordering::SeqCst), 2);
+
+    // Send a stop message
+    let drop_count = Arc::new(AtomicUsize::new(0));
+    let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
+    let handle = tokio::spawn(fut);
+    addr.do_send(Stop).unwrap();
+    handle.await.unwrap();
+    assert_eq!(drop_count.load(Ordering::SeqCst), 3);
+
+    // Drop address before future has even begun
+    let drop_count = Arc::new(AtomicUsize::new(0));
+    let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
+    drop(addr);
+    tokio::spawn(fut).await.unwrap();
+    assert_eq!(drop_count.load(Ordering::SeqCst), 2);
+
+    // Send a stop message before future has even begun
+    let drop_count = Arc::new(AtomicUsize::new(0));
+    let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
+    addr.do_send(Stop).unwrap();
+    tokio::spawn(fut).await.unwrap();
+    assert_eq!(drop_count.load(Ordering::SeqCst), 3);
 }
