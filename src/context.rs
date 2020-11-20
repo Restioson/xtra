@@ -100,11 +100,7 @@ impl<A: Actor> Context<A> {
     pub fn attach(&mut self, actor: A) -> impl Future<Output = ()> {
         // Give the new context a new mailbox on the same broadcast channel, and then make this
         // receiver into a shared receiver.
-        let broadcast_receiver = self
-            .broadcast_receiver
-            .clone()
-            .upgrade()
-            .into_shared();
+        let broadcast_receiver = self.broadcast_receiver.clone().upgrade().into_shared();
 
         let ctx = Context {
             running: RunningState::Running,

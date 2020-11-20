@@ -83,7 +83,8 @@ impl RefCounter for Strong {
 
 impl RefCounter for Weak {
     fn is_connected(&self) -> bool {
-        let running = self.0
+        let running = self
+            .0
             .upgrade()
             .map(|b| b.load(Ordering::Acquire))
             .unwrap_or(false);

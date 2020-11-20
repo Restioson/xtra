@@ -147,22 +147,25 @@ async fn do_channel_benchmark<F: Fn(&dyn MessageChannel<Increment>)>(name: &str,
     assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 }
 
-
 #[tokio::main]
 async fn main() {
     do_address_benchmark("address do_send", |addr| {
         let _ = addr.do_send(Increment);
-    }).await;
+    })
+    .await;
 
     do_parallel_address_benchmark("address do_send 2 workers", 2, |addr| {
         let _ = addr.do_send(Increment);
-    }).await;
+    })
+    .await;
 
     do_channel_benchmark("channel do_send", |chan| {
         let _ = chan.do_send(Increment);
-    }).await;
+    })
+    .await;
 
     do_channel_benchmark("channel send", |chan| {
         let _ = chan.send(Increment);
-    }).await;
+    })
+    .await;
 }

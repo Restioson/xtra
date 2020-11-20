@@ -5,8 +5,7 @@ use async_trait::async_trait;
 
 use xtra::KeepRunning;
 use xtra::prelude::*;
-#[cfg(feature = "with-tokio-0_2")]
-use xtra::spawn::Tokio;
+use xtra::spawn::Smol;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
@@ -37,10 +36,9 @@ impl Handler<Report> for Accumulator {
     }
 }
 
-#[cfg(feature = "with-tokio-0_2")]
-#[tokio::test]
+#[smol_potat::test]
 async fn accumulate_to_ten() {
-    let addr = Accumulator(0).create(None).spawn(&mut Tokio::Global);
+    let addr = Accumulator(0).create(None).spawn(&mut Smol::Global);
     for _ in 0..10 {
         addr.do_send(Inc).unwrap();
     }
@@ -81,36 +79,35 @@ impl Handler<Stop> for DropTester {
     }
 }
 
-#[cfg(feature = "with-tokio-0_2")]
-#[tokio::test]
+#[smol_potat::test]
 async fn test_stop_and_drop() {
     // Drop the address
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
-    let handle = tokio::spawn(fut);
+    let handle = smol::spawn(fut);
     drop(addr);
-    handle.await.unwrap();
+    handle.await;
     assert_eq!(drop_count.load(Ordering::SeqCst), 2);
 
     // Send a stop message
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
-    let handle = tokio::spawn(fut);
+    let handle = smol::spawn(fut);
     addr.do_send(Stop).unwrap();
-    handle.await.unwrap();
+    handle.await;
     assert_eq!(drop_count.load(Ordering::SeqCst), 3);
 
     // Drop address before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
     drop(addr);
-    tokio::spawn(fut).await.unwrap();
+    smol::spawn(fut).await;
     assert_eq!(drop_count.load(Ordering::SeqCst), 2);
 
     // Send a stop message before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
     addr.do_send(Stop).unwrap();
-    tokio::spawn(fut).await.unwrap();
+    smol::spawn(fut).await;
     assert_eq!(drop_count.load(Ordering::SeqCst), 3);
 }
