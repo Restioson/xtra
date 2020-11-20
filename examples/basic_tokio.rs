@@ -28,7 +28,7 @@ impl Handler<Print> for Printer {
 
 #[tokio::main]
 async fn main() {
-    let addr = Printer::new().create(None).spawn(Tokio::Global);
+    let addr = Printer::new().create(None).spawn(&mut Tokio::Global);
     loop {
         addr.send(Print("hello".to_string()))
             .await

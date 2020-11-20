@@ -4,7 +4,7 @@ use std::future::Future;
 pub use async_std_impl::*;
 #[cfg(feature = "with-smol-1_1")]
 pub use smol_impl::*;
-#[cfg(feature = "with-tokio-0_2")]
+#[cfg(feature = "with-tokio-0_3")]
 pub use tokio_impl::*;
 #[cfg(feature = "with-wasm_bindgen-0_2")]
 pub use wasm_bindgen_impl::*;
@@ -53,7 +53,7 @@ mod async_std_impl {
     }
 }
 
-#[cfg(feature = "with-tokio-0_2")]
+#[cfg(feature = "with-tokio-0_3")]
 mod tokio_impl {
     use super::*;
 
@@ -62,7 +62,7 @@ mod tokio_impl {
         /// The global executor.
         Global,
         /// A handle to a specific executor.
-        Handle(&'a tokio::runtime::Handle),
+        Handle(&'a tokio::runtime::Runtime),
     }
 
     impl<'a> Spawner for Tokio<'a> {

@@ -11,7 +11,7 @@ jobs:
     strategy:
       matrix:
         runtime:
-          - with-tokio-0_2
+          - with-tokio-0_3
           - with-smol-1_1
           - with-async_std-1
           - with-wasm_bindgen-0_2

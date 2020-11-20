@@ -21,7 +21,7 @@ catty = "0.1.4"
 barrage = "0.2.1"
 flume = { git = "https://github.com/zesterer/flume", default-features = false, features = ["async"]}
 
-tokio = { version = "0.2", features = ["rt-core", "time"], optional = true }
+tokio = { version = "0.3", features = ["rt", "time"], optional = true }
 smol = { version = "1.1", optional = true }
 async-std = { version = "1", features = ["unstable"], optional = true}
 
@@ -39,14 +39,14 @@ waker-fn = "1"
 [features]
 default = ["timing"]
 timing = ["futures-timer"]
-with-tokio-0_2 = ["tokio"]
+with-tokio-0_3 = ["tokio"]
 with-async_std-1 = ["async-std"]
 with-wasm_bindgen-0_2 = ["wasm-bindgen", "wasm-bindgen-futures"]
 with-smol-1_1 = ["smol"]
 
 [[example]]
 name = "basic_tokio"
-required-features = ["with-tokio-0_2", "tokio/full"]
+required-features = ["with-tokio-0_3", "tokio/full"]
 
 [[example]]
 name = "basic_async_std"
@@ -67,7 +67,7 @@ required-features = ["with-smol-1_1"]
 
 [[example]]
 name = "crude_bench"
-required-features = ["with-tokio-0_2", "tokio/full"]
+required-features = ["with-tokio-0_3", "tokio/full"]
 
 [[test]]
 name = "basic"
@@ -77,4 +77,4 @@ required-features = ["with-smol-1_1"]
 members = ["examples/basic_wasm_bindgen"]
 
 [package.metadata.docs.rs]
-features = ["with-tokio-0_2", "with-async_std-1", "with-smol-1_1", "with-wasm_bindgen-0_2"]
+features = ["with-tokio-0_3", "with-async_std-1", "with-smol-1_1", "with-wasm_bindgen-0_2"]

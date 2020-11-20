@@ -15,6 +15,12 @@ impl Message for Increment {
     type Result = ();
 }
 
+struct IncrementWithData(usize);
+
+impl Message for IncrementWithData {
+    type Result = ();
+}
+
 struct GetCount;
 
 impl Message for GetCount {
@@ -24,6 +30,13 @@ impl Message for GetCount {
 #[async_trait::async_trait]
 impl Handler<Increment> for Counter {
     async fn handle(&mut self, _: Increment, _ctx: &mut Context<Self>) {
+        self.count += 1;
+    }
+}
+
+#[async_trait::async_trait]
+impl Handler<IncrementWithData> for Counter {
+    async fn handle(&mut self, _: IncrementWithData, _ctx: &mut Context<Self>) {
         self.count += 1;
     }
 }
@@ -42,19 +55,6 @@ struct SendTimer {
 }
 
 impl Actor for SendTimer {}
-
-struct TimeSend(Instant);
-
-impl Message for TimeSend {
-    type Result = ();
-}
-
-#[async_trait::async_trait]
-impl Handler<TimeSend> for SendTimer {
-    async fn handle(&mut self, time: TimeSend, _ctx: &mut Context<Self>) {
-        self.time += time.0.elapsed();
-    }
-}
 
 struct GetTime;
 
@@ -128,9 +128,11 @@ async fn do_parallel_address_benchmark(name: &str, workers: usize, f: fn(&Addres
     println!("{} avg time of processing: {}ns", name, average_ns);
 }
 
-async fn do_channel_benchmark<F: Fn(&dyn MessageChannel<Increment>)>(name: &str, f: F) {
+async fn do_channel_benchmark<M: Message, F: Fn(&dyn MessageChannel<M>)>(name: &str, f: F)
+    where Counter: Handler<M>,
+{
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
-    let chan = &addr as &dyn MessageChannel<Increment>;
+    let chan = &addr as &dyn MessageChannel<M>;
 
     let start = Instant::now();
     for _ in 0..COUNT {
@@ -139,7 +141,7 @@ async fn do_channel_benchmark<F: Fn(&dyn MessageChannel<Increment>)>(name: &str,
 
     // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
     // future tokio reschedule time because of the .await
-    let total_count = addr.send(GetCount).await.unwrap();
+    let total_count = addr.send::<GetCount>(GetCount).await.unwrap();
 
     let duration = Instant::now() - start;
     let average_ns = duration.as_nanos() / total_count as u128; // <120-170ns on my machine
@@ -149,23 +151,43 @@ async fn do_channel_benchmark<F: Fn(&dyn MessageChannel<Increment>)>(name: &str,
 
 #[tokio::main]
 async fn main() {
-    do_address_benchmark("address do_send", |addr| {
+    do_address_benchmark("address do_send (ZST message)", |addr| {
         let _ = addr.do_send(Increment);
     })
     .await;
 
-    do_parallel_address_benchmark("address do_send 2 workers", 2, |addr| {
+    do_address_benchmark("address do_send (8-byte message)", |addr| {
+        let _ = addr.do_send(IncrementWithData(0));
+    })
+    .await;
+
+    do_parallel_address_benchmark("address do_send 2 workers (ZST message)", 2, |addr| {
         let _ = addr.do_send(Increment);
     })
     .await;
 
-    do_channel_benchmark("channel do_send", |chan| {
+    do_parallel_address_benchmark("address do_send 2 workers (8-byte message)", 2, |addr| {
+        let _ = addr.do_send(IncrementWithData(0));
+    })
+    .await;
+
+    do_channel_benchmark("channel do_send (ZST message)", |chan| {
         let _ = chan.do_send(Increment);
     })
     .await;
 
-    do_channel_benchmark("channel send", |chan| {
+    do_channel_benchmark("channel do_send (8-byte message)", |chan| {
+        let _ = chan.do_send(IncrementWithData(0));
+    })
+    .await;
+
+    do_channel_benchmark("channel send (ZST message)", |chan| {
         let _ = chan.send(Increment);
+    })
+    .await;
+
+    do_channel_benchmark("channel send (8-byte message)", |chan| {
+        let _ = chan.send(IncrementWithData(0));
     })
     .await;
 }

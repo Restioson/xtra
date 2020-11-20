@@ -36,7 +36,6 @@ impl Printer {
 impl Actor for Printer {}
 
 struct Print(String);
-
 impl Message for Print {
     type Result = ();
 }
@@ -44,21 +43,21 @@ impl Message for Print {
 #[async_trait]
 impl Handler<Print> for Printer {
     async fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) {
-        self.times += 1; // Look ma, no ActorFuture!
+        self.times += 1; // no ActorFuture or anything just to access `self`
         println!("Printing {}. Printed {} times so far.", print.0, self.times);
     }
 }
 
 #[tokio::main]
 async fn main() {
-    let addr = Printer::new().create(None).spawn(Tokio::Global);
+    let addr = Printer::new().create(None).spawn(&mut Tokio::Global);
     loop {
-        // Likewise, in the real world the `.do_send` method should be used here as it is about 2x as fast
         addr.send(Print("hello".to_string()))
             .await
             .expect("Printer should not be dropped");
     }
 }
+
 ```
 
 For a longer example, check out [Vertex](https://github.com/Restioson/vertex/tree/development), a chat application
@@ -68,7 +67,7 @@ Too verbose? Check out the [spaad](https://crates.io/crates/spaad) sister-crate!
 
 ## Okay, sounds great! How do I use it?
 Check out the [docs](https://docs.rs/xtra) and the [examples](https://github.com/Restioson/xtra/blob/master/examples)
-to get started! Enabling the `with-tokio-0_2`, `with-async_std-1`, `with-smol-1_1`, or `with-wasm_bindgen-0_2` features
+to get started! Enabling the `with-tokio-0_3`, `with-async_std-1`, `with-smol-1_1`, or `with-wasm_bindgen-0_2` features
 is recommended in order to enable some  convenience methods (such as `Actor::spawn`). Which you enable will depend on
 which executor you want to use (check out their docs to learn more about each). If you have any questions, feel free to
 [open an issue](https://github.com/Restioson/xtra/issues/new) or message me on the [Rust discord](https://bit.ly/rust-community).
