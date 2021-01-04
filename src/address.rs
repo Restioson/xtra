@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use catty::Receiver;
-use flume::r#async::SendFuture as ChannelSendFuture;
+use flume::r#async::SendFut as ChannelSendFuture;
 use flume::Sender;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
