@@ -19,34 +19,34 @@ async-trait = "0.1.36"
 pollster = "0.2"
 catty = "0.1.4"
 barrage = "0.2.1"
-flume = { git = "https://github.com/zesterer/flume", default-features = false, features = ["async"]}
+flume = { version = "0.10.1", default-features = false, features = ["async"] }
 
-tokio = { version = "0.3", features = ["rt", "time"], optional = true }
+tokio = { version = "1.0", features = ["rt", "time"], optional = true }
 smol = { version = "1.1", optional = true }
-async-std = { version = "1", features = ["unstable"], optional = true}
+async-std = { version = "1.0", features = ["unstable"], optional = true }
 
 # Wasm-bindgen support
 wasm-bindgen = { version = "0.2", optional = true, default-features = false }
 wasm-bindgen-futures = { version = "0.4", optional = true, default-features = false }
-futures-timer = { version = "3", optional = true, default-features = false }
+futures-timer = { version = "3.0", optional = true, default-features = false }
 
 [dev-dependencies]
 smol = "1.1"
 smol-potat = "1.1"
-rand = "0.7"
-waker-fn = "1"
+rand = "0.8"
+waker-fn = "1.1"
 
 [features]
 default = ["timing"]
 timing = ["futures-timer"]
-with-tokio-0_3 = ["tokio"]
+with-tokio-1 = ["tokio"]
 with-async_std-1 = ["async-std"]
 with-wasm_bindgen-0_2 = ["wasm-bindgen", "wasm-bindgen-futures"]
-with-smol-1_1 = ["smol"]
+with-smol-1 = ["smol"]
 
 [[example]]
 name = "basic_tokio"
-required-features = ["with-tokio-0_3", "tokio/full"]
+required-features = ["with-tokio-1", "tokio/full"]
 
 [[example]]
 name = "basic_async_std"
@@ -55,26 +55,26 @@ required-features = ["with-async_std-1", "async-std/attributes"]
 [[example]]
 name = "basic_smol"
 path = "examples/basic_smol.rs"
-required-features = ["with-smol-1_1"]
+required-features = ["with-smol-1"]
 
 [[example]]
 name = "interleaved_messages"
-required-features = ["with-smol-1_1"]
+required-features = ["with-smol-1"]
 
 [[example]]
 name = "message_stealing"
-required-features = ["with-smol-1_1"]
+required-features = ["with-smol-1"]
 
 [[example]]
 name = "crude_bench"
-required-features = ["with-tokio-0_3", "tokio/full"]
+required-features = ["with-tokio-1", "tokio/full"]
 
 [[test]]
 name = "basic"
-required-features = ["with-smol-1_1"]
+required-features = ["with-smol-1"]
 
 [workspace]
 members = ["examples/basic_wasm_bindgen"]
 
 [package.metadata.docs.rs]
-features = ["with-tokio-0_3", "with-async_std-1", "with-smol-1_1", "with-wasm_bindgen-0_2"]
+features = ["with-tokio-1", "with-async_std-1", "with-smol-1", "with-wasm_bindgen-0_2"]

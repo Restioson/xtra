@@ -2,9 +2,9 @@ use std::future::Future;
 
 #[cfg(feature = "with-async_std-1")]
 pub use async_std_impl::*;
-#[cfg(feature = "with-smol-1_1")]
+#[cfg(feature = "with-smol-1")]
 pub use smol_impl::*;
-#[cfg(feature = "with-tokio-0_3")]
+#[cfg(feature = "with-tokio-1")]
 pub use tokio_impl::*;
 #[cfg(feature = "with-wasm_bindgen-0_2")]
 pub use wasm_bindgen_impl::*;
@@ -16,7 +16,7 @@ pub trait Spawner {
     fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F);
 }
 
-#[cfg(feature = "with-smol-1_1")]
+#[cfg(feature = "with-smol-1")]
 mod smol_impl {
     use super::*;
 
@@ -53,7 +53,7 @@ mod async_std_impl {
     }
 }
 
-#[cfg(feature = "with-tokio-0_3")]
+#[cfg(feature = "with-tokio-1")]
 mod tokio_impl {
     use super::*;
 
