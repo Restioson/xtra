@@ -1,5 +1,5 @@
-use std::sync::{Arc, atomic::AtomicBool, Weak as ArcWeak};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak as ArcWeak};
 
 /// The reference count of a strong address. Strong addresses will prevent the actor from being
 /// dropped as long as they live. Read the docs of [`Address`](../address/struct.Address.html) to find

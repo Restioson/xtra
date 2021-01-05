@@ -1,32 +1,55 @@
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
 
 name: Continuous integration
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
+        platform: [ubuntu-latest]
+        toolchain: [stable]
         runtime:
-          - with-tokio-1
-          - with-smol-1
           - with-async_std-1
+          - with-smol-1
+          - with-tokio-1
           - with-wasm_bindgen-0_2
+    runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - name: Checkout Sources
+        uses: actions/checkout@v2
+
+      - name: Install Rust Toolchain
+        uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          profile: minimal
+          toolchain: ${{ matrix.toolchain }}
           override: true
-      - uses: actions-rs/cargo@v1
+          component: rustfmt, clippy
+
+      - name: Check Code Format
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: -- --check
+
+      - name: Check Code Lint
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-features --all-targets -- -D warnings
+
+      - name: Build Examples
+        uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --verbose --release --examples --features ${{ matrix.runtime }}
-      - uses: actions-rs/cargo@v1
+          args: --verbose --examples --features ${{ matrix.runtime }}
+
+      - name: Test
+        uses: actions-rs/cargo@v1
         with:
           command: test
           args: --lib --tests --features ${{ matrix.runtime }}

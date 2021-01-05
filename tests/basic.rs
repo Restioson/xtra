@@ -1,11 +1,11 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use xtra::KeepRunning;
 use xtra::prelude::*;
 use xtra::spawn::Smol;
+use xtra::KeepRunning;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);

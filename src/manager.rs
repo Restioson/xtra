@@ -1,8 +1,10 @@
 use std::future::Future;
 
-use crate::{Actor, Address, Context};
+use crate::address::Address;
+use crate::context::Context;
 use crate::envelope::{BroadcastMessageEnvelope, MessageEnvelope};
 use crate::spawn::Spawner;
+use crate::Actor;
 
 /// A message that can be sent by an Address to the manage loop
 pub(crate) enum AddressMessage<A: Actor> {
