@@ -129,7 +129,8 @@ async fn do_parallel_address_benchmark(name: &str, workers: usize, f: fn(&Addres
 }
 
 async fn do_channel_benchmark<M: Message, F: Fn(&dyn MessageChannel<M>)>(name: &str, f: F)
-    where Counter: Handler<M>,
+where
+    Counter: Handler<M>,
 {
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
     let chan = &addr as &dyn MessageChannel<M>;

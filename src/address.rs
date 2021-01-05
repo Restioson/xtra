@@ -14,11 +14,11 @@ use flume::Sender;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 
-use crate::*;
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::AddressMessage;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::sink::AddressSink;
+use crate::{Actor, Handler, KeepRunning, Message};
 
 /// The future returned [`Address::send`](struct.Address.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.

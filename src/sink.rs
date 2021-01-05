@@ -8,10 +8,11 @@ use flume::r#async::SendSink;
 use futures_sink::Sink;
 use futures_util::SinkExt;
 
-use crate::{Actor, Disconnected, Handler, Message};
+use crate::address::Disconnected;
 use crate::envelope::NonReturningEnvelope;
 use crate::manager::AddressMessage;
 use crate::refcount::{RefCounter, Strong, Weak};
+use crate::{Actor, Handler, Message};
 
 /// An `AddressSink` is the [futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
 /// returned by [`Address::into_sink`](../address/struct.Address.html#method.into_sink). Similarly to with

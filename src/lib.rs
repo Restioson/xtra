@@ -3,31 +3,30 @@
 #![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
 #![deny(unsafe_code, missing_docs)]
 
-pub use address::{Address, Disconnected, WeakAddress};
-pub use context::{ActorShutdown, Context};
-pub use manager::ActorManager;
-
-pub mod message_channel;
-pub mod sink;
-
-mod envelope;
-
 pub mod address;
 mod context;
+mod envelope;
 mod manager;
+pub mod message_channel;
 /// This module contains types representing the strength of an address's reference counting, which
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount;
+pub mod sink;
 /// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
 pub mod spawn;
 
 /// Commonly used types from xtra
 pub mod prelude {
-    #[doc(no_inline)]
-    pub use crate::{Actor, Context, Handler, Message};
     pub use crate::address::Address;
+    pub use crate::context::Context;
     pub use crate::message_channel::{MessageChannel, StrongMessageChannel, WeakMessageChannel};
+    #[doc(no_inline)]
+    pub use crate::{Actor, Handler, Message};
 }
+
+pub use self::address::{Address, Disconnected, WeakAddress};
+pub use self::context::{ActorShutdown, Context};
+pub use self::manager::ActorManager;
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
 /// one at a time. Only actors implementing the corresponding [`Handler<M>`](trait.Handler.html)
@@ -77,7 +76,7 @@ pub trait Message: Send + 'static {
 /// }
 ///
 /// fn main() {
-/// smol::block_on(async {
+///     smol::block_on(async {
 ///         let addr = MyActor.create(None).spawn(&mut Smol::Global);
 ///         assert_eq!(addr.send(Msg).await, Ok(20));
 ///     })

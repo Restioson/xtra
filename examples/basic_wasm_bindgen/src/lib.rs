@@ -1,4 +1,4 @@
-use wasm_bindgen::{JsValue, prelude::*};
+use wasm_bindgen::{prelude::*, JsValue};
 
 use xtra::prelude::*;
 use xtra::spawn::WasmBindgen;

@@ -1,14 +1,11 @@
-use std::future::Future;
 use std::marker::PhantomData;
-use std::pin::Pin;
 
 use catty::{Receiver, Sender};
+use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 
-use crate::*;
-
-/// The type of future returned by `Envelope::handle`
-type Fut<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
+use crate::context::Context;
+use crate::{Actor, Handler, Message};
 
 /// A message envelope is a struct that encapsulates a message and its return channel sender (if applicable).
 /// Firstly, this allows us to be generic over returning and non-returning messages (as all use the
@@ -34,10 +31,10 @@ pub(crate) trait MessageEnvelope: Send {
     ///
     /// ```not_a_test
     /// enum Return<'a> {
-    ///     Fut(Fut<'a>),
+    ///     Fut(BoxFuture<'a, ()>),
     ///     Noop,
     /// }
-    /// ```featur
+    /// ```
     ///
     /// But this is actually about 10% *slower* for `do_send`. I don't know why. Maybe it's something
     /// to do with branch (mis)prediction or compiler optimisation. If you think that you can get
@@ -46,7 +43,7 @@ pub(crate) trait MessageEnvelope: Send {
         self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> Fut<'a>;
+    ) -> BoxFuture<'a, ()>;
 }
 
 /// An envelope that returns a result from a message. Constructed by the `AddressExt::do_send` method.
@@ -76,7 +73,7 @@ impl<A: Handler<M>, M: Message> MessageEnvelope for ReturningEnvelope<A, M> {
         self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> Fut<'a> {
+    ) -> BoxFuture<'a, ()> {
         let Self {
             message,
             result_sender,
@@ -112,7 +109,7 @@ impl<A: Handler<M>, M: Message> MessageEnvelope for NonReturningEnvelope<A, M> {
         self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> Fut<'a> {
+    ) -> BoxFuture<'a, ()> {
         Box::pin(act.handle(self.message, ctx).map(|_| ()))
     }
 }

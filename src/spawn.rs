@@ -16,6 +16,20 @@ pub trait Spawner {
     fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F);
 }
 
+#[cfg(feature = "with-async_std-1")]
+mod async_std_impl {
+    use super::*;
+
+    /// The async std runtime.
+    pub struct AsyncStd;
+
+    impl Spawner for AsyncStd {
+        fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
+            async_std::task::spawn(fut);
+        }
+    }
+}
+
 #[cfg(feature = "with-smol-1")]
 mod smol_impl {
     use super::*;
@@ -35,20 +49,6 @@ mod smol_impl {
                 Smol::Handle(e) => e.spawn(fut),
             };
             task.detach();
-        }
-    }
-}
-
-#[cfg(feature = "with-async_std-1")]
-mod async_std_impl {
-    use super::*;
-
-    /// The async std runtime.
-    pub struct AsyncStd;
-
-    impl Spawner for AsyncStd {
-        fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
-            async_std::task::spawn(fut);
         }
     }
 }

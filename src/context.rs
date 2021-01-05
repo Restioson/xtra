@@ -1,8 +1,8 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::future::Future;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use flume::{Receiver, Sender};
 use futures_util::future::{self, Either};
@@ -11,10 +11,10 @@ use futures_util::FutureExt;
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
 
-use crate::{Actor, Address, Handler, KeepRunning, Message};
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{AddressMessage, BroadcastMessage, ContinueManageLoop};
 use crate::refcount::{RefCounter, Strong, Weak};
+use crate::{Actor, Address, Handler, KeepRunning, Message};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
