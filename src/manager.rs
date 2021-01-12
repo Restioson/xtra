@@ -56,6 +56,13 @@ impl<A: Actor> ActorManager<A> {
         addr
     }
 
+    /// Spawn the actor's main loop on the given runtime using the default spawner. This will allow
+    /// it to handle messages.
+    pub fn spawn_default<S: Spawner + Default>(self) -> Address<A> {
+        let mut spawner = S::default();
+        self.spawn(&mut spawner)
+    }
+
     /// Starts the manager loop, returning the actor's address and its manage future. This will
     /// start the actor and allow it to respond to messages.
     ///
