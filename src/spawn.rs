@@ -9,6 +9,8 @@ pub use tokio_impl::*;
 #[cfg(feature = "with-wasm_bindgen-0_2")]
 pub use wasm_bindgen_impl::*;
 
+use crate::{Actor, ActorManager, Address};
+
 /// An `Spawner` represents anything that can spawn a future to be run in the background. This is
 /// used to spawn actors.
 pub trait Spawner {
@@ -26,6 +28,18 @@ mod async_std_impl {
     impl Spawner for AsyncStd {
         fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
             async_std::task::spawn(fut);
+        }
+    }
+
+    /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
+    pub trait AsyncStdGlobalSpawnExt<A: Actor> {
+        /// Spawn the actor onto the global runtime
+        fn spawn_global(self) -> Address<A>;
+    }
+
+    impl<A: Actor> AsyncStdSpawnExt<A> for ActorManager<A> {
+        fn spawn_global(self) -> Address<A> {
+            self.spawn(&mut AsyncStd)
         }
     }
 }
@@ -51,6 +65,18 @@ mod smol_impl {
             task.detach();
         }
     }
+
+    /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
+    pub trait SmolGlobalSpawnExt<A: Actor> {
+        /// Spawn the actor onto the global runtime
+        fn spawn_global(self) -> Address<A>;
+    }
+
+    impl<A: Actor> SmolGlobalSpawnExt<A> for ActorManager<A> {
+        fn spawn_global(self) -> Address<A> {
+            self.spawn(&mut Smol::Global)
+        }
+    }
 }
 
 #[cfg(feature = "with-tokio-1")]
@@ -73,6 +99,18 @@ mod tokio_impl {
             };
         }
     }
+
+    /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
+    pub trait TokioGlobalSpawnExt<A: Actor> {
+        /// Spawn the actor onto the global runtime
+        fn spawn_global(self) -> Address<A>;
+    }
+
+    impl<A: Actor> TokioGlobalSpawnExt<A> for ActorManager<A> {
+        fn spawn_global(self) -> Address<A> {
+            self.spawn(&mut Tokio::Global)
+        }
+    }
 }
 
 #[cfg(feature = "with-wasm_bindgen-0_2")]
@@ -85,6 +123,18 @@ mod wasm_bindgen_impl {
     impl Spawner for WasmBindgen {
         fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
             wasm_bindgen_futures::spawn_local(fut)
+        }
+    }
+
+    /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
+    pub trait WasmBindgenGlobalSpawnExt<A: Actor> {
+        /// Spawn the actor onto the global runtime
+        fn spawn_global(self) -> Address<A>;
+    }
+
+    impl<A: Actor> WasmBindgenGlobalSpawnExt<A> for ActorManager<A> {
+        fn spawn_global(self) -> Address<A> {
+            self.spawn(&mut WasmBindgen)
         }
     }
 }

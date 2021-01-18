@@ -76,6 +76,10 @@ required-features = ["with-smol-1"]
 name = "crude_bench"
 required-features = ["with-tokio-1", "tokio/full"]
 
+[[example]]
+name = "global_spawner_ext"
+required-features = ["with-smol-1"]
+
 [[test]]
 name = "basic"
 required-features = ["with-smol-1"]
