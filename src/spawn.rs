@@ -23,6 +23,7 @@ mod async_std_impl {
     use super::*;
 
     /// The async std runtime.
+    #[derive(Copy, Clone, Debug, Default)]
     pub struct AsyncStd;
 
     impl Spawner for AsyncStd {
@@ -49,11 +50,18 @@ mod smol_impl {
     use super::*;
 
     /// The smol runtime.
+    #[derive(Copy, Clone, Debug)]
     pub enum Smol<'a> {
         /// The global executor.
         Global,
         /// A specific smol executor.
         Handle(&'a smol::Executor<'a>),
+    }
+
+    impl<'a> Default for Smol<'a> {
+        fn default() -> Self {
+            Smol::Global
+        }
     }
 
     impl<'a> Spawner for Smol<'a> {
@@ -84,11 +92,18 @@ mod tokio_impl {
     use super::*;
 
     /// The Tokio runtime.
+    #[derive(Copy, Clone, Debug)]
     pub enum Tokio<'a> {
         /// The global executor.
         Global,
         /// A handle to a specific executor.
         Handle(&'a tokio::runtime::Runtime),
+    }
+
+    impl<'a> Default for Tokio<'a> {
+        fn default() -> Self {
+            Tokio::Global
+        }
     }
 
     impl<'a> Spawner for Tokio<'a> {
@@ -118,6 +133,7 @@ mod wasm_bindgen_impl {
     use super::*;
 
     /// Spawn rust futures in WASM on the current thread in the background.
+    #[derive(Copy, Clone, Debug, Default)]
     pub struct WasmBindgen;
 
     impl Spawner for WasmBindgen {
