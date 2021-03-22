@@ -1,6 +1,6 @@
 [package]
 name = "xtra"
-version = "0.5.0-rc.1"
+version = "0.5.0"
 description = "A tiny actor framework"
 authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
