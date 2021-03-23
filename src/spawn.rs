@@ -38,7 +38,7 @@ mod async_std_impl {
         fn spawn_global(self) -> Address<A>;
     }
 
-    impl<A: Actor> AsyncStdSpawnExt<A> for ActorManager<A> {
+    impl<A: Actor> AsyncStdGlobalSpawnExt<A> for ActorManager<A> {
         fn spawn_global(self) -> Address<A> {
             self.spawn(&mut AsyncStd)
         }

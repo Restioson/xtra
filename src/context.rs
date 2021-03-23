@@ -419,6 +419,7 @@ impl<A: Actor> Context<A> {
 
     /// Notify the actor with a synchronously handled message after a certain duration has elapsed.
     /// This does not take priority over other messages.
+    #[cfg(feature = "timing")]
     pub fn notify_after<M>(
         &mut self,
         duration: Duration,
