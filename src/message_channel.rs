@@ -65,7 +65,7 @@ impl<M: Message> Future for SendFuture<M> {
 ///
 /// #[async_trait::async_trait]
 /// impl Actor for Alice {
-///     async fn stopped(&mut self) {
+///     async fn stopped(self) {
 ///         println!("Oh no");
 ///     }
 /// }

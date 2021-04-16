@@ -61,7 +61,7 @@ impl Actor for DropTester {
         KeepRunning::StopAll
     }
 
-    async fn stopped(&mut self) {
+    async fn stopped(self) {
         self.0.fetch_add(1, Ordering::SeqCst);
     }
 }
