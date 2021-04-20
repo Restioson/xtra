@@ -61,6 +61,9 @@ pub trait RefCounter: Clone + Unpin + Send + Sync + 'static {
 
     #[doc(hidden)]
     fn into_either(self) -> Either;
+
+    #[doc(hidden)]
+    fn as_ptr(&self) -> *const AtomicBool;
 }
 
 impl RefCounter for Strong {
@@ -78,6 +81,10 @@ impl RefCounter for Strong {
 
     fn into_either(self) -> Either {
         Either::Strong(self)
+    }
+
+    fn as_ptr(&self) -> *const AtomicBool {
+        Arc::as_ptr(&self.0)
     }
 }
 
@@ -102,6 +109,10 @@ impl RefCounter for Weak {
 
     fn into_either(self) -> Either {
         Either::Weak(self)
+    }
+
+    fn as_ptr(&self) -> *const AtomicBool {
+        ArcWeak::as_ptr(&self.0)
     }
 }
 
@@ -129,5 +140,12 @@ impl RefCounter for Either {
 
     fn into_either(self) -> Either {
         self
+    }
+
+    fn as_ptr(&self) -> *const AtomicBool {
+        match self {
+            Either::Strong(s) => s.as_ptr(),
+            Either::Weak(s) => s.as_ptr(),
+        }
     }
 }

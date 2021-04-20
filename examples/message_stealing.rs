@@ -21,7 +21,7 @@ impl Printer {
 
 #[async_trait::async_trait]
 impl Actor for Printer {
-    async fn stopped(&mut self) {
+    async fn stopped(self) {
         println!("Actor {} stopped", self.id);
     }
 }

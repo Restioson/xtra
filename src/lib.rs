@@ -120,7 +120,7 @@ pub trait Handler<M: Message>: Actor {
 ///         KeepRunning::StopAll
 ///     }
 ///
-///     async fn stopped(&mut self) {
+///     async fn stopped(self) {
 ///         println!("Finally stopping.");
 ///     }
 /// }
@@ -194,7 +194,7 @@ pub trait Actor: 'static + Send + Sized {
     /// [`WeakAddress`](address/type.WeakAddress.html). This should be used for any final cleanup before
     /// the actor is dropped.
     #[allow(unused_variables)]
-    async fn stopped(&mut self) {}
+    async fn stopped(self) {}
 
     /// Returns the actor's address and manager in a ready-to-start state, given the cap for the
     /// actor's mailbox. If `None` is passed, it will be of unbounded size. To spawn the actor,

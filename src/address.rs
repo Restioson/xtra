@@ -1,12 +1,12 @@
 //! An address to an actor is a way to send it a message. An address allows an actor to be sent any
 //! kind of message that it can receive.
 
-use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::{cmp::Ordering, error::Error, hash::Hash};
 
 use catty::Receiver;
 use flume::r#async::SendFut as ChannelSendFuture;
@@ -310,5 +310,28 @@ impl<A: Actor, Rc: RefCounter> Drop for Address<A, Rc> {
         if self.ref_counter.is_last_strong() {
             let _ = self.sender.send(AddressMessage::LastAddress);
         }
+    }
+}
+
+// Pointer identity for Address equality/comparison
+impl<A: Actor, Rc: RefCounter, Rc2: RefCounter> PartialEq<Address<A, Rc2>> for Address<A, Rc> {
+    fn eq(&self, other: &Address<A, Rc2>) -> bool {
+        PartialEq::eq(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
+    }
+}
+impl<A: Actor, Rc: RefCounter> Eq for Address<A, Rc> {}
+impl<A: Actor, Rc: RefCounter, Rc2: RefCounter> PartialOrd<Address<A, Rc2>> for Address<A, Rc> {
+    fn partial_cmp(&self, other: &Address<A, Rc2>) -> Option<Ordering> {
+        PartialOrd::partial_cmp(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
+    }
+}
+impl<A: Actor, Rc: RefCounter> Ord for Address<A, Rc> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        Ord::cmp(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
+    }
+}
+impl<A: Actor, Rc: RefCounter> Hash for Address<A, Rc> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        Hash::hash(&self.ref_counter.as_ptr(), state)
     }
 }
