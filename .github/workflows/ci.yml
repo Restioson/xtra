@@ -31,25 +31,25 @@ jobs:
           component: rustfmt, clippy
 
       - name: Check Code Format
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1.0.3
         with:
           command: fmt
           args: -- --check
 
       - name: Check Code Lint
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1.0.3
         with:
           command: clippy
           args: --all-features --all-targets -- -D warnings
 
       - name: Build Examples
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1.0.3
         with:
           command: build
           args: --verbose --examples --features ${{ matrix.runtime }}
 
       - name: Test
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1.0.3
         with:
           command: test
           args: --lib --tests --features ${{ matrix.runtime }}
