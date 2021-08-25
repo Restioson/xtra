@@ -4,18 +4,20 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::AtomicBool;
 use std::task::{Context, Poll};
 
 use catty::Receiver;
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
 
+use crate::{Handler, KeepRunning, Message};
 use crate::address::{self, Address, Disconnected, WeakAddress};
 use crate::envelope::ReturningEnvelope;
 use crate::manager::AddressMessage;
+use crate::private::Sealed;
 use crate::refcount::{RefCounter, Strong};
 use crate::sink::{AddressSink, MessageSink, StrongMessageSink, WeakMessageSink};
-use crate::{Handler, KeepRunning, Message};
 
 /// The future returned [`MessageChannel::send`](trait.MessageChannel.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -98,9 +100,14 @@ impl<M: Message> Future for SendFuture<M> {
 ///     })
 /// }
 /// ```
-pub trait MessageChannel<M: Message>: Unpin + Send + Sync {
+pub trait MessageChannel<M: Message>: Sealed + Unpin + Send + Sync {
     /// Returns whether the actor referred to by this address is running and accepting messages.
     fn is_connected(&self) -> bool;
+
+    /// Returns the number of messages in the actor's mailbox. Note that this does **not**
+    /// differentiate between types of messages; it will return the count of all messages in the
+    /// actor's mailbox, not only the messages sent by this message channel type.
+    fn len(&self) -> usize;
 
     /// Send a [`Message`](../trait.Message.html) to the actor without waiting for a response.
     /// If this returns `Err(Disconnected)`, then the actor is stopped and not accepting messages.
@@ -135,6 +142,13 @@ pub trait MessageChannel<M: Message>: Unpin + Send + Sync {
     /// Use this message channel as [a futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
     /// and asynchronously send messages through it.
     fn sink(&self) -> Box<dyn MessageSink<M>>;
+
+    /// Determines whether this and the other message channel address the same actor mailbox.
+    fn eq(&self, other: &dyn MessageChannel<M>) -> bool;
+
+    /// This is an internal method and should never be called manually.
+    #[doc(hidden)]
+    fn _ref_counter_eq(&self, other: *const AtomicBool) -> bool;
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
@@ -197,6 +211,10 @@ where
         self.is_connected()
     }
 
+    fn len(&self) -> usize {
+        self.len()
+    }
+
     fn do_send(&self, message: M) -> Result<(), Disconnected> {
         self.do_send(message)
     }
@@ -229,6 +247,14 @@ where
             sink: self.sender.clone().into_sink(),
             ref_counter: self.ref_counter.clone(),
         })
+    }
+
+    fn eq(&self, other: &dyn MessageChannel<M>) -> bool {
+        other._ref_counter_eq(self.ref_counter.as_ptr())
+    }
+
+    fn _ref_counter_eq(&self, other: *const AtomicBool) -> bool {
+        self.ref_counter.as_ptr() == other
     }
 }
 

@@ -8,11 +8,12 @@ use flume::r#async::SendSink;
 use futures_sink::Sink;
 use futures_util::SinkExt;
 
+use crate::{Actor, Handler, Message};
 use crate::address::Disconnected;
 use crate::envelope::NonReturningEnvelope;
 use crate::manager::AddressMessage;
+use crate::private::Sealed;
 use crate::refcount::{RefCounter, Strong, Weak};
-use crate::{Actor, Handler, Message};
 
 /// An `AddressSink` is the [futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
 /// returned by [`Address::into_sink`](../address/struct.Address.html#method.into_sink). Similarly to with
@@ -98,7 +99,7 @@ where
 
 /// A `MessageSink` is similar to a [`MessageChannel`](../message_channel/trait.MessageChannel.html),
 /// but it is a sink and operates asynchronously.
-pub trait MessageSink<M: Message>: Sink<M, Error = Disconnected> + Unpin {
+pub trait MessageSink<M: Message>: Sealed + Sink<M, Error = Disconnected> + Unpin {
     /// Returns whether the actor referred to by this message sink is running and accepting messages.
     fn is_connected(&self) -> bool;
 

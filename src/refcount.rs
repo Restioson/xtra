@@ -1,5 +1,7 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak as ArcWeak};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use crate::private::Sealed;
 
 /// The reference count of a strong address. Strong addresses will prevent the actor from being
 /// dropped as long as they live. Read the docs of [`Address`](../address/struct.Address.html) to find
@@ -48,7 +50,7 @@ impl Either {
 /// [`Strong`](struct.Weak.html). These can be provided as the second type argument to
 /// [`Address`](../address/struct.Address.html) in order to change how the address affects the actor's
 /// dropping. Read the docs of [`Address`](../address/struct.Address.html) to find out more.
-pub trait RefCounter: Clone + Unpin + Send + Sync + 'static {
+pub trait RefCounter: Sealed + Clone + Unpin + Send + Sync + 'static {
     #[doc(hidden)]
     fn is_connected(&self) -> bool;
     #[doc(hidden)]

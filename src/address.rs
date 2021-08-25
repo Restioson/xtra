@@ -1,12 +1,12 @@
 //! An address to an actor is a way to send it a message. An address allows an actor to be sent any
 //! kind of message that it can receive.
 
+use std::{cmp::Ordering, error::Error, hash::Hash};
 use std::fmt::{self, Display, Formatter};
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::{cmp::Ordering, error::Error, hash::Hash};
 
 use catty::Receiver;
 use flume::r#async::SendFut as ChannelSendFuture;
@@ -14,11 +14,11 @@ use flume::Sender;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 
+use crate::{Actor, Handler, KeepRunning, Message};
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::AddressMessage;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::sink::AddressSink;
-use crate::{Actor, Handler, KeepRunning, Message};
 
 /// The future returned [`Address::send`](struct.Address.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -185,6 +185,11 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
         self.ref_counter.is_connected()
     }
 
+    /// Returns the number of messages in the actor's mailbox.
+    pub fn len(&self) -> usize {
+        self.sender.len()
+    }
+
     /// Convert this address into a generic address which can be weak or strong.
     pub fn as_either(&self) -> Address<A, Either> {
         Address {
@@ -319,7 +324,9 @@ impl<A: Actor, Rc: RefCounter, Rc2: RefCounter> PartialEq<Address<A, Rc2>> for A
         PartialEq::eq(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
     }
 }
+
 impl<A: Actor, Rc: RefCounter> Eq for Address<A, Rc> {}
+
 impl<A: Actor, Rc: RefCounter, Rc2: RefCounter> PartialOrd<Address<A, Rc2>> for Address<A, Rc> {
     fn partial_cmp(&self, other: &Address<A, Rc2>) -> Option<Ordering> {
         PartialOrd::partial_cmp(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())

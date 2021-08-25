@@ -3,6 +3,10 @@
 #![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
 #![deny(unsafe_code, missing_docs)]
 
+pub use self::address::{Address, Disconnected, WeakAddress};
+pub use self::context::{ActorShutdown, Context};
+pub use self::manager::ActorManager;
+
 pub mod address;
 mod context;
 mod envelope;
@@ -17,16 +21,12 @@ pub mod spawn;
 
 /// Commonly used types from xtra
 pub mod prelude {
+    #[doc(no_inline)]
+    pub use crate::{Actor, Handler, Message};
     pub use crate::address::Address;
     pub use crate::context::Context;
     pub use crate::message_channel::{MessageChannel, StrongMessageChannel, WeakMessageChannel};
-    #[doc(no_inline)]
-    pub use crate::{Actor, Handler, Message};
 }
-
-pub use self::address::{Address, Disconnected, WeakAddress};
-pub use self::context::{ActorShutdown, Context};
-pub use self::manager::ActorManager;
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
 /// one at a time. Only actors implementing the corresponding [`Handler<M>`](trait.Handler.html)
@@ -251,4 +251,18 @@ impl From<()> for KeepRunning {
     fn from(_: ()) -> KeepRunning {
         KeepRunning::Yes
     }
+}
+
+mod private {
+    use crate::{Actor, Address};
+    use crate::refcount::{Either, RefCounter, Strong, Weak};
+    use crate::sink::AddressSink;
+
+    pub trait Sealed {}
+
+    impl Sealed for Strong {}
+    impl Sealed for Weak {}
+    impl Sealed for Either {}
+    impl<A: Actor, Rc: RefCounter> Sealed for Address<A, Rc> {}
+    impl<A: Actor, Rc: RefCounter> Sealed for AddressSink<A, Rc> {}
 }
