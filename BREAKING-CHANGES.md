@@ -1,5 +1,9 @@
 # Breaking Changes by Version
 
+## 0.6.0
+
+- Sealed `RefCounter`, `MessageChannel`, and `MessageSink` traits
+
 ## 0.5.0
 
 - **The `SyncHandler` trait has been removed.** This simplifies the API and should not change the performance on stable.

@@ -74,4 +74,4 @@ which executor you want to use (check out their docs to learn more about each). 
 
 ## Latest Breaking Changes
 To see the breaking changes for each version, see [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md).
-The latest version is 0.5.
+The latest version is 0.6.0.

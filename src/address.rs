@@ -190,6 +190,11 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
         self.sender.len()
     }
 
+    /// Returns whether the actor's mailbox is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Convert this address into a generic address which can be weak or strong.
     pub fn as_either(&self) -> Address<A, Either> {
         Address {

@@ -109,6 +109,11 @@ pub trait MessageChannel<M: Message>: Sealed + Unpin + Send + Sync {
     /// actor's mailbox, not only the messages sent by this message channel type.
     fn len(&self) -> usize;
 
+    /// Returns whether the actor's mailbox is empty.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Send a [`Message`](../trait.Message.html) to the actor without waiting for a response.
     /// If this returns `Err(Disconnected)`, then the actor is stopped and not accepting messages.
     /// If this returns `Ok(())`, the will be delivered, but may not be handled in the event that the
