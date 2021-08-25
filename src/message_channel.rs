@@ -11,13 +11,13 @@ use catty::Receiver;
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
 
-use crate::{Handler, KeepRunning, Message};
 use crate::address::{self, Address, Disconnected, WeakAddress};
 use crate::envelope::ReturningEnvelope;
 use crate::manager::AddressMessage;
 use crate::private::Sealed;
 use crate::refcount::{RefCounter, Strong};
 use crate::sink::{AddressSink, MessageSink, StrongMessageSink, WeakMessageSink};
+use crate::{Handler, KeepRunning, Message};
 
 /// The future returned [`MessageChannel::send`](trait.MessageChannel.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.

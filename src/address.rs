@@ -1,12 +1,12 @@
 //! An address to an actor is a way to send it a message. An address allows an actor to be sent any
 //! kind of message that it can receive.
 
-use std::{cmp::Ordering, error::Error, hash::Hash};
 use std::fmt::{self, Display, Formatter};
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::{cmp::Ordering, error::Error, hash::Hash};
 
 use catty::Receiver;
 use flume::r#async::SendFut as ChannelSendFuture;
@@ -14,11 +14,11 @@ use flume::Sender;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 
-use crate::{Actor, Handler, KeepRunning, Message};
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::AddressMessage;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::sink::AddressSink;
+use crate::{Actor, Handler, KeepRunning, Message};
 
 /// The future returned [`Address::send`](struct.Address.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.

@@ -21,11 +21,11 @@ pub mod spawn;
 
 /// Commonly used types from xtra
 pub mod prelude {
-    #[doc(no_inline)]
-    pub use crate::{Actor, Handler, Message};
     pub use crate::address::Address;
     pub use crate::context::Context;
     pub use crate::message_channel::{MessageChannel, StrongMessageChannel, WeakMessageChannel};
+    #[doc(no_inline)]
+    pub use crate::{Actor, Handler, Message};
 }
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
@@ -254,9 +254,9 @@ impl From<()> for KeepRunning {
 }
 
 mod private {
-    use crate::{Actor, Address};
     use crate::refcount::{Either, RefCounter, Strong, Weak};
     use crate::sink::AddressSink;
+    use crate::{Actor, Address};
 
     pub trait Sealed {}
 

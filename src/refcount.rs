@@ -1,5 +1,5 @@
-use std::sync::{Arc, Weak as ArcWeak};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak as ArcWeak};
 
 use crate::private::Sealed;
 
