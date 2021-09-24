@@ -24,6 +24,7 @@ use crate::{Actor, Handler, KeepRunning, Message};
 /// It resolves to `Result<M::Result, Disconnected>`.
 // This simply wraps the enum in order to hide the implementation details of the inner future
 // while still leaving outer future nameable.
+#[must_use]
 pub struct SendFuture<A: Actor, M: Message>(SendFutureInner<A, M>);
 
 enum SendFutureInner<A: Actor, M: Message> {
