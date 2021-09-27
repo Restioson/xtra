@@ -72,6 +72,7 @@ impl<A: Actor, M: Message> Future for SendFuture<A, M> {
 
 /// The future returned from [`Address::do_send_async`](struct.Address.html#method.do_send_async).
 /// It resolves to `Result<(), Disconnected>`.
+#[must_use]
 pub struct DoSendFuture<A: Actor>(DoSendFutureInner<A>);
 
 enum DoSendFutureInner<A: Actor> {
