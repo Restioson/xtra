@@ -109,6 +109,11 @@ pub trait MessageChannel<M: Message>: Sealed + Unpin + Send + Sync {
     /// actor's mailbox, not only the messages sent by this message channel type.
     fn len(&self) -> usize;
 
+    /// The total capacity of the actor's mailbox. Note that this does **not** differentiate between
+    /// types of messages; it will return the total capacity of actor's mailbox, not only the
+    /// messages sent by this message channel type
+    fn capacity(&self) -> Option<usize>;
+
     /// Returns whether the actor's mailbox is empty.
     fn is_empty(&self) -> bool {
         self.len() == 0
@@ -218,6 +223,10 @@ where
 
     fn len(&self) -> usize {
         self.len()
+    }
+
+    fn capacity(&self) -> Option<usize> {
+        self.capacity()
     }
 
     fn do_send(&self, message: M) -> Result<(), Disconnected> {

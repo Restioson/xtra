@@ -192,6 +192,11 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
         self.sender.len()
     }
 
+    /// The total capacity of the actor's mailbox.
+    pub fn capacity(&self) -> Option<usize> {
+        self.sender.capacity()
+    }
+
     /// Returns whether the actor's mailbox is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0

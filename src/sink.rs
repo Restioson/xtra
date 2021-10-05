@@ -103,6 +103,21 @@ pub trait MessageSink<M: Message>: Sealed + Sink<M, Error = Disconnected> + Unpi
     /// Returns whether the actor referred to by this message sink is running and accepting messages.
     fn is_connected(&self) -> bool;
 
+    /// Returns the number of messages in the actor's mailbox. Note that this does **not**
+    /// differentiate between types of messages; it will return the count of all messages in the
+    /// actor's mailbox, not only the messages sent by this message channel type.
+    fn len(&self) -> usize;
+
+    /// The total capacity of the actor's mailbox. Note that this does **not** differentiate between
+    /// types of messages; it will return the total capacity of actor's mailbox, not only the
+    /// messages sent by this message channel type
+    fn capacity(&self) -> Option<usize>;
+
+    /// Returns whether the actor's mailbox is empty.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Clones this message sink as a boxed trait object.
     fn clone_message_sink(&self) -> Box<dyn MessageSink<M>>;
 }
@@ -148,6 +163,14 @@ where
 {
     fn is_connected(&self) -> bool {
         self.ref_counter.is_connected()
+    }
+
+    fn len(&self) -> usize {
+        self.sink.len()
+    }
+
+    fn capacity(&self) -> Option<usize> {
+        self.sink.capacity()
     }
 
     fn clone_message_sink(&self) -> Box<dyn MessageSink<M>> {
