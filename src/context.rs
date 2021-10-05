@@ -18,7 +18,7 @@ use crate::{Actor, Address, Handler, KeepRunning, Message};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
-pub struct Context<A: Actor> {
+pub struct Context<A> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
     /// for it to call the `stopping` method on the actor
     running: RunningState,
