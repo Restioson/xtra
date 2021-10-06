@@ -15,7 +15,7 @@ use crate::{Actor, Handler, Message};
 /// however, induce a bit of allocation (as envelopes have to be boxed).
 pub(crate) trait MessageEnvelope: Send {
     /// The type of actor that this envelope carries a message for
-    type Actor: Actor;
+    type Actor;
 
     /// Handle the message inside of the box by calling the relevant `AsyncHandler::handle` or
     /// `Handler::handle` method, returning its result over a return channel if applicable. The
@@ -130,7 +130,7 @@ impl<A: Handler<M>, M: Message + Clone + Sync> BroadcastMessageEnvelope
     }
 }
 
-impl<A: Actor> Clone for Box<dyn BroadcastMessageEnvelope<Actor = A>> {
+impl<A> Clone for Box<dyn BroadcastMessageEnvelope<Actor = A>> {
     fn clone(&self) -> Self {
         BroadcastMessageEnvelope::clone(&**self)
     }

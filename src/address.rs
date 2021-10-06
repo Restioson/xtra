@@ -116,7 +116,7 @@ impl Error for Disconnected {}
 /// should be used instead. An address is created by calling the
 /// [`Actor::create`](../trait.Actor.html#method.create) or
 /// [`Context::run`](../struct.Context.html#method.run) methods, or by cloning another `Address`.
-pub struct Address<A: Actor, Rc: RefCounter = Strong> {
+pub struct Address<A, Rc: RefCounter = Strong> {
     pub(crate) sender: Sender<AddressMessage<A>>,
     pub(crate) ref_counter: Rc,
 }
@@ -128,7 +128,7 @@ pub struct Address<A: Actor, Rc: RefCounter = Strong> {
 pub type WeakAddress<A> = Address<A, Weak>;
 
 /// Functions which apply only to strong addresses (the default kind).
-impl<A: Actor> Address<A, Strong> {
+impl<A> Address<A, Strong> {
     /// Create a weak address to the actor. Unlike with the strong variety of address (this kind),
     /// an actor will not be prevented from being dropped if only weak sinks, channels, and
     /// addresses exist.
@@ -141,7 +141,7 @@ impl<A: Actor> Address<A, Strong> {
 }
 
 /// Functions which apply only to addresses which can either be strong or weak.
-impl<A: Actor> Address<A, Either> {
+impl<A> Address<A, Either> {
     /// Converts this address into a weak address.
     pub fn downgrade(&self) -> WeakAddress<A> {
         WeakAddress {
@@ -152,7 +152,7 @@ impl<A: Actor> Address<A, Either> {
 }
 
 /// Functions which apply to any kind of address, be they strong or weak.
-impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
+impl<A, Rc: RefCounter> Address<A, Rc> {
     /// Returns whether the actor referred to by this address is running and accepting messages.
     ///
     /// ```rust
@@ -310,7 +310,7 @@ impl<A: Actor, Rc: RefCounter> Address<A, Rc> {
 }
 
 // Required because #[derive] adds an A: Clone bound
-impl<A: Actor, Rc: RefCounter> Clone for Address<A, Rc> {
+impl<A, Rc: RefCounter> Clone for Address<A, Rc> {
     fn clone(&self) -> Self {
         Address {
             sender: self.sender.clone(),
@@ -320,7 +320,7 @@ impl<A: Actor, Rc: RefCounter> Clone for Address<A, Rc> {
 }
 
 // Drop impls cannot be specialised, so a little bit of fanagling is used in the RefCounter impl
-impl<A: Actor, Rc: RefCounter> Drop for Address<A, Rc> {
+impl<A, Rc: RefCounter> Drop for Address<A, Rc> {
     fn drop(&mut self) {
         // We should notify the ActorManager that there are no more strong Addresses and the actor
         // should be stopped.
@@ -331,25 +331,25 @@ impl<A: Actor, Rc: RefCounter> Drop for Address<A, Rc> {
 }
 
 // Pointer identity for Address equality/comparison
-impl<A: Actor, Rc: RefCounter, Rc2: RefCounter> PartialEq<Address<A, Rc2>> for Address<A, Rc> {
+impl<A, Rc: RefCounter, Rc2: RefCounter> PartialEq<Address<A, Rc2>> for Address<A, Rc> {
     fn eq(&self, other: &Address<A, Rc2>) -> bool {
         PartialEq::eq(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
     }
 }
 
-impl<A: Actor, Rc: RefCounter> Eq for Address<A, Rc> {}
+impl<A, Rc: RefCounter> Eq for Address<A, Rc> {}
 
-impl<A: Actor, Rc: RefCounter, Rc2: RefCounter> PartialOrd<Address<A, Rc2>> for Address<A, Rc> {
+impl<A, Rc: RefCounter, Rc2: RefCounter> PartialOrd<Address<A, Rc2>> for Address<A, Rc> {
     fn partial_cmp(&self, other: &Address<A, Rc2>) -> Option<Ordering> {
         PartialOrd::partial_cmp(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
     }
 }
-impl<A: Actor, Rc: RefCounter> Ord for Address<A, Rc> {
+impl<A, Rc: RefCounter> Ord for Address<A, Rc> {
     fn cmp(&self, other: &Self) -> Ordering {
         Ord::cmp(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
     }
 }
-impl<A: Actor, Rc: RefCounter> Hash for Address<A, Rc> {
+impl<A, Rc: RefCounter> Hash for Address<A, Rc> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         Hash::hash(&self.ref_counter.as_ptr(), state)
     }

@@ -19,12 +19,12 @@ use crate::{Actor, Handler, Message};
 /// returned by [`Address::into_sink`](../address/struct.Address.html#method.into_sink). Similarly to with
 /// addresses, the strong variety of `AddressSink` will prevent the actor from being dropped, whereas
 /// the [weak variety](struct.AddressSink.html) will not.
-pub struct AddressSink<A: Actor, Rc: RefCounter = Strong> {
+pub struct AddressSink<A: 'static, Rc: RefCounter = Strong> {
     pub(crate) sink: SendSink<'static, AddressMessage<A>>,
     pub(crate) ref_counter: Rc,
 }
 
-impl<A: Actor, Rc: RefCounter> Clone for AddressSink<A, Rc> {
+impl<A, Rc: RefCounter> Clone for AddressSink<A, Rc> {
     fn clone(&self) -> Self {
         AddressSink {
             sink: self.sink.clone(),
@@ -36,14 +36,14 @@ impl<A: Actor, Rc: RefCounter> Clone for AddressSink<A, Rc> {
 /// This variety of `AddressSink` will not prevent the actor from being dropped.
 pub type WeakAddressSink<A> = AddressSink<A, Weak>;
 
-impl<A: Actor, Rc: RefCounter> AddressSink<A, Rc> {
+impl<A, Rc: RefCounter> AddressSink<A, Rc> {
     /// Returns whether the actor referred to by this address sink is running and accepting messages.
     pub fn is_connected(&self) -> bool {
         self.ref_counter.is_connected()
     }
 }
 
-impl<A: Actor> AddressSink<A, Strong> {
+impl<A> AddressSink<A, Strong> {
     /// Create a weak address sink. Unlike with the strong variety of address sink (this kind),
     /// an actor will not be prevented from being dropped if only weak sinks, channels, and
     /// addresses exist.
@@ -55,7 +55,7 @@ impl<A: Actor> AddressSink<A, Strong> {
     }
 }
 
-impl<A: Actor, Rc: RefCounter> Drop for AddressSink<A, Rc> {
+impl<A, Rc: RefCounter> Drop for AddressSink<A, Rc> {
     fn drop(&mut self) {
         // We should notify the ActorManager that there are no more strong Addresses and the actor
         // should be stopped.
@@ -65,7 +65,7 @@ impl<A: Actor, Rc: RefCounter> Drop for AddressSink<A, Rc> {
     }
 }
 
-impl<A: Actor, Rc: RefCounter, M: Message> Sink<M> for AddressSink<A, Rc>
+impl<A, Rc: RefCounter, M: Message> Sink<M> for AddressSink<A, Rc>
 where
     A: Handler<M>,
 {
