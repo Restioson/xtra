@@ -5,8 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use flume::{Receiver, Sender};
+use futures_core::Stream;
 use futures_util::future::{self, Either};
 use futures_util::FutureExt;
+use futures_util::StreamExt;
 
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
@@ -244,6 +246,81 @@ impl<A: Actor> Context<A> {
                 ContinueManageLoop::ExitImmediately => {
                     actor.stopped().await;
                     break;
+                }
+            }
+        }
+    }
+
+    /// TODO
+    pub async fn run2<E>(mut self, mut actor: A)
+    where
+        A: Stream<Item = E> + Unpin + Handler<E>,
+        E: Message<Result = ()>,
+    {
+        actor.started(&mut self).await;
+
+        // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
+        // in the started method, otherwise it would kinda be a bug
+        if !self.check_running(&mut actor).await {
+            self.stop_all();
+            actor.stopped().await;
+            return;
+        }
+
+        // Similar to above
+        if let Some(BroadcastMessage::Shutdown) = self.broadcast_receiver.try_recv().unwrap() {
+            actor.stopped().await;
+            return;
+        }
+
+        // Listen for any messages for the ActorManager
+        let addr_rx = self.receiver.clone();
+        let broadcast_rx = self.broadcast_receiver.clone();
+
+        let mut addr_recv = addr_rx.recv_async().fuse();
+        let mut broadcast_recv = broadcast_rx.recv_async().fuse();
+
+        loop {
+            let mut stream_recv = actor.next().fuse();
+
+            futures_util::select! {
+                addr_msg = addr_recv => {
+                    match addr_msg {
+                        Ok(AddressMessage::Message(msg)) => {
+                            msg.handle(&mut actor, &mut self).await
+                        }
+                        Ok(AddressMessage::LastAddress) => {
+                            if self.ref_counter.strong_count() == 0 {
+                                self.stop_all();
+                                self.running = RunningState::Stopped;
+
+                                break;
+                            }
+                        }
+                        Err(flume::RecvError::Disconnected) => {
+                            todo!()
+                        }
+                    }
+                }
+                broadcast_msg = broadcast_recv => {
+                    match broadcast_msg {
+                        Ok(BroadcastMessage::Message(msg)) => {
+                            msg.handle(&mut actor, &mut self).await
+                        }
+                        Ok(BroadcastMessage::Shutdown) => {
+                            self.running = RunningState::Stopped;
+                            actor.stopped().await;
+                            break;
+                        }
+                        Err(barrage::Disconnected) => {
+                            todo!()
+                        }
+                    }
+                }
+                stream_message = stream_recv => {
+                    if let Some(msg) = stream_message {
+                        actor.handle(msg, &mut self).await;
+                    }
                 }
             }
         }

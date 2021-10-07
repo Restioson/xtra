@@ -31,7 +31,7 @@ async-std = { version = "1.0", features = ["unstable"], optional = true }
 smol = { version = "1.1", optional = true }
 
 # Feature `with-tokio-1`
-tokio = { version = "1.0", features = ["rt", "time"], optional = true }
+tokio = { version = "1.0", features = ["rt", "time", "macros", "rt-multi-thread"], optional = true }
 
 # Feature `with-wasm_bindgen-0_2`
 wasm-bindgen = { version = "0.2", optional = true, default-features = false }
@@ -42,6 +42,7 @@ rand = "0.8"
 smol = "1.1"
 smol-potat = "1.1"
 waker-fn = "1.1"
+libp2p = "0.39"
 
 [features]
 default = ["timing"]
@@ -79,6 +80,10 @@ required-features = ["with-tokio-1", "tokio/full"]
 [[example]]
 name = "global_spawner_ext"
 required-features = ["with-smol-1"]
+
+[[example]]
+name = "libp2p"
+required-features = ["with-tokio-1"]
 
 [[test]]
 name = "basic"
