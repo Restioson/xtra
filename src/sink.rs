@@ -99,7 +99,7 @@ where
 
 /// A `MessageSink` is similar to a [`MessageChannel`](../message_channel/trait.MessageChannel.html),
 /// but it is a sink and operates asynchronously.
-pub trait MessageSink<M: Message>: Sealed + Sink<M, Error = Disconnected> + Unpin {
+pub trait MessageSink<M: Message>: Sealed + Sink<M, Error = Disconnected> + Unpin + Send {
     /// Returns whether the actor referred to by this message sink is running and accepting messages.
     fn is_connected(&self) -> bool;
 
