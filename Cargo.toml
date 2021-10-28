@@ -37,6 +37,9 @@ tokio = { version = "1.0", features = ["rt", "time"], optional = true }
 wasm-bindgen = { version = "0.2", optional = true, default-features = false }
 wasm-bindgen-futures = { version = "0.4", optional = true, default-features = false }
 
+# Feature `with-tracing-0_1`
+tracing = { version = "0.1", optional = true, default-features = false }
+
 [dev-dependencies]
 rand = "0.8"
 smol = "1.1"
@@ -50,6 +53,7 @@ with-async_std-1 = ["async-std"]
 with-smol-1 = ["smol"]
 with-tokio-1 = ["tokio"]
 with-wasm_bindgen-0_2 = ["wasm-bindgen", "wasm-bindgen-futures"]
+with-tracing-0_1 = ["tracing"]
 
 [[example]]
 name = "basic_tokio"
