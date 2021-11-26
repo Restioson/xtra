@@ -316,6 +316,11 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
             ref_counter: self.ref_counter.clone(),
         }
     }
+
+    /// Waits until this address becomes disconnected.
+    pub async fn join(&self) {
+        self.tripwire.clone().await;
+    }
 }
 
 // Required because #[derive] adds an A: Clone bound
