@@ -407,7 +407,7 @@ impl<A: Actor> Context<A> {
         M: Message,
         A: Handler<M>,
     {
-        let addr = self.address()?;
+        let addr = self.address()?.downgrade();
 
         let fut = async move {
             Delay::new(duration).await;
@@ -431,7 +431,7 @@ impl<A: Actor> Context<A> {
         M: Message,
         A: Handler<M>,
     {
-        let addr = self.address()?;
+        let addr = self.address()?.downgrade();
         let fut = async move {
             Delay::new(duration).await;
             let _ = addr.do_send(notification);
