@@ -13,6 +13,7 @@ use flume::r#async::SendFut as ChannelSendFuture;
 use flume::Sender;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
+use stream_cancel::{StreamExt as StreamCancelExt, Tripwire};
 
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::AddressMessage;
@@ -119,6 +120,10 @@ impl Error for Disconnected {}
 pub struct Address<A, Rc: RefCounter = Strong> {
     pub(crate) sender: Sender<AddressMessage<A>>,
     pub(crate) ref_counter: Rc,
+    /// Activates once all contexts on this address have been dropped.
+    /// Used in [`Address::attach_stream`](struct.Address.html#method.attach_stream) to stop waiting
+    /// for new messages when this `Address` becomes disconnected and in [`Address::join`].
+    pub(crate) tripwire: Tripwire
 }
 
 /// A `WeakAddress` is a reference to an actor through which [`Message`s](../trait.Message.html) can be
@@ -136,6 +141,7 @@ impl<A> Address<A, Strong> {
         WeakAddress {
             sender: self.sender.clone(),
             ref_counter: self.ref_counter.downgrade(),
+            tripwire: self.tripwire.clone(),
         }
     }
 }
@@ -147,6 +153,7 @@ impl<A> Address<A, Either> {
         WeakAddress {
             sender: self.sender.clone(),
             ref_counter: self.ref_counter.clone().into_weak(),
+            tripwire: self.tripwire.clone(),
         }
     }
 }
@@ -207,6 +214,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         Address {
             ref_counter: self.ref_counter.clone().into_either(),
             sender: self.sender.clone(),
+            tripwire: self.tripwire.clone(),
         }
     }
 
@@ -291,6 +299,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         A: Handler<M>,
         S: Stream<Item = M> + Send,
     {
+        let stream = stream.take_until_if(self.tripwire.clone());
         futures_util::pin_mut!(stream);
         while let Some(m) = stream.next().await {
             let res = self.send(m); // Bound to make it Sync
@@ -315,6 +324,7 @@ impl<A, Rc: RefCounter> Clone for Address<A, Rc> {
         Address {
             sender: self.sender.clone(),
             ref_counter: self.ref_counter.clone(),
+            tripwire: self.tripwire.clone(),
         }
     }
 }

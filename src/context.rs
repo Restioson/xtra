@@ -7,6 +7,7 @@ use std::sync::Arc;
 use flume::{Receiver, Sender};
 use futures_util::future::{self, Either};
 use futures_util::FutureExt;
+use stream_cancel::{Trigger, Tripwire};
 
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
@@ -32,6 +33,9 @@ pub struct Context<A> {
     self_notifications: Vec<Box<dyn MessageEnvelope<Actor = A>>>,
     receiver: Receiver<AddressMessage<A>>,
     broadcast_receiver: barrage::SharedReceiver<BroadcastMessage<A>>,
+    /// Shared between all contexts on the same address
+    shared_trigger: Arc<Trigger>,
+    shared_tripwire: Tripwire,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -78,9 +82,12 @@ impl<A: Actor> Context<A> {
         let strong = Strong(Arc::new(AtomicBool::new(true)));
         let weak = strong.downgrade();
 
+        let (shared_trigger, shared_tripwire) = Tripwire::new();
+
         let addr = Address {
             sender: sender.clone(),
             ref_counter: strong,
+            tripwire: shared_tripwire.clone(),
         };
 
         let context = Context {
@@ -91,6 +98,8 @@ impl<A: Actor> Context<A> {
             self_notifications: Vec::new(),
             receiver,
             broadcast_receiver: broadcast_rx.into_shared(),
+            shared_trigger: Arc::new(shared_trigger),
+            shared_tripwire,
         };
         (addr, context)
     }
@@ -111,6 +120,8 @@ impl<A: Actor> Context<A> {
             self_notifications: Vec::new(),
             receiver: self.receiver.clone(),
             broadcast_receiver,
+            shared_trigger: self.shared_trigger.clone(),
+            shared_tripwire: self.shared_tripwire.clone(),
         };
         ctx.run(actor)
     }
@@ -126,6 +137,7 @@ impl<A: Actor> Context<A> {
         Ok(Address {
             sender: self.sender.clone(),
             ref_counter: self.ref_counter.upgrade().ok_or(ActorShutdown)?,
+            tripwire: self.shared_tripwire.clone(),
         })
     }
 
