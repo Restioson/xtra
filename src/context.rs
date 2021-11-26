@@ -36,6 +36,11 @@ pub struct Context<A> {
     /// Shared between all contexts on the same address
     shared_trigger: Arc<Trigger>,
     shared_tripwire: Tripwire,
+    #[allow(dead_code)]
+    own_trigger: Trigger,
+    /// Activates when this context is dropped. Used in [`Context::notify_interval`] and [`Context::notify_after`]
+    /// to shutdown the tasks as soon as the context stops.
+    own_tripwire: Tripwire,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -83,6 +88,7 @@ impl<A: Actor> Context<A> {
         let weak = strong.downgrade();
 
         let (shared_trigger, shared_tripwire) = Tripwire::new();
+        let (own_trigger, own_tripwire) = Tripwire::new();
 
         let addr = Address {
             sender: sender.clone(),
@@ -100,6 +106,8 @@ impl<A: Actor> Context<A> {
             broadcast_receiver: broadcast_rx.into_shared(),
             shared_trigger: Arc::new(shared_trigger),
             shared_tripwire,
+            own_trigger,
+            own_tripwire,
         };
         (addr, context)
     }
@@ -112,6 +120,8 @@ impl<A: Actor> Context<A> {
         // receiver into a shared receiver.
         let broadcast_receiver = self.broadcast_receiver.clone().upgrade().into_shared();
 
+        let (own_trigger, own_tripwire) = Tripwire::new();
+
         let ctx = Context {
             running: RunningState::Running,
             sender: self.sender.clone(),
@@ -122,6 +132,8 @@ impl<A: Actor> Context<A> {
             broadcast_receiver,
             shared_trigger: self.shared_trigger.clone(),
             shared_tripwire: self.shared_tripwire.clone(),
+            own_trigger,
+            own_tripwire,
         };
         ctx.run(actor)
     }
@@ -420,11 +432,23 @@ impl<A: Actor> Context<A> {
         A: Handler<M>,
     {
         let addr = self.address()?.downgrade();
+        let tripwire = self.own_tripwire.clone();
 
         let fut = async move {
-            Delay::new(duration).await;
-            while addr.do_send(constructor()).is_ok() {
-                Delay::new(duration).await
+            loop {
+                let tripwire = tripwire.clone();
+                let delay = Delay::new(duration);
+                match future::select(delay, tripwire).await {
+                    Either::Left(_) => {
+                        if addr.do_send(constructor()).is_err() {
+                            break;
+                        }
+                    },
+                    Either::Right(_) => {
+                        // Context stopped before the end of the delay was reached
+                        break;
+                    }
+                }
             }
         };
 
@@ -444,9 +468,18 @@ impl<A: Actor> Context<A> {
         A: Handler<M>,
     {
         let addr = self.address()?.downgrade();
+        let tripwire = self.own_tripwire.clone();
+
         let fut = async move {
-            Delay::new(duration).await;
-            let _ = addr.do_send(notification);
+            let delay = Delay::new(duration);
+            match future::select(delay, tripwire).await {
+                Either::Left(_) => {
+                    let _ = addr.do_send(notification);
+                },
+                Either::Right(_) => {
+                    // Context stopped before the end of the delay was reached
+                }
+            }
         };
 
         Ok(fut)
