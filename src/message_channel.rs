@@ -21,6 +21,7 @@ use crate::{Handler, KeepRunning, Message};
 
 /// The future returned [`MessageChannel::send`](trait.MessageChannel.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
+#[must_use]
 pub struct SendFuture<M: Message>(SendFutureInner<M>);
 
 enum SendFutureInner<M: Message> {
