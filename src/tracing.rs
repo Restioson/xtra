@@ -49,8 +49,9 @@ impl<A: Handler<M>, M: Message, const IS_CHILD: bool> Handler<Instrumented<M, IS
         if IS_CHILD {
             self.handle(message.msg, ctx).instrument(message.parent).await
         } else {
-            Span::current().follows_from(message.parent);
-            self.handle(message.msg, ctx).await
+            let span = Span::current();
+            span.follows_from(message.parent);
+            self.handle(message.msg, ctx).instrument(span).await
         }
     }
 }

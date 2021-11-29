@@ -72,6 +72,20 @@ is recommended in order to enable some  convenience methods (such as `Actor::spa
 which executor you want to use (check out their docs to learn more about each). If you have any questions, feel free to
 [open an issue](https://github.com/Restioson/xtra/issues/new) or message me on the [Rust discord](https://bit.ly/rust-community).
 
+## Cargo features
+
+- `timing`: enables the `notify_interval` method, and brings in the
+  [futures-timer](https://github.com/async-rs/futures-timer) crate.
+- `with-async_std-1`: enables integration with [async-std](https://async.rs/).
+- `with-smol-1`: enables integration with [smol](https://github.com/smol-rs/smol). Note that this requires smol 1.1 as
+  1.1 had a minor breaking change from 1.0 which leads to xtra no longer compiling on 1.0 and 1.1 simultaneously.
+- `with-tokio-1`: enables integration with [tokio](https://tokio.rs).
+- `with-wasm_bindgen-0_2`: enables integration with [wasm-bindgen](https://github.com/rustwasm/wasm-bindgen), and
+  particularly its futures crate.
+- `with-tracing-0_1`: enables the `Instrumented` wrapper and `InstrumentedExt` traits, to integrate with
+  [tracing](https://tracing.rs). This allows a tracing span to follow through execution of a message, either as a child
+  of the sending span, or as a separate span marked as `follows_from` the sending span.
+
 ## Latest Breaking Changes
 To see the breaking changes for each version, see [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md).
 The latest version is 0.6.0.
