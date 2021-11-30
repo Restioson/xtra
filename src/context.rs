@@ -7,7 +7,6 @@ use std::sync::Arc;
 use flume::{Receiver, Sender};
 use futures_util::future::{self, Either};
 use futures_util::FutureExt;
-use stream_cancel::{Trigger, Tripwire};
 
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
@@ -16,6 +15,7 @@ use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{AddressMessage, BroadcastMessage, ContinueManageLoop};
 use crate::refcount::{RefCounter, Strong, Weak};
 use crate::{Actor, Address, Handler, KeepRunning, Message};
+use crate::drop_notice::DropNotifier;
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -34,13 +34,10 @@ pub struct Context<A> {
     receiver: Receiver<AddressMessage<A>>,
     broadcast_receiver: barrage::SharedReceiver<BroadcastMessage<A>>,
     /// Shared between all contexts on the same address
-    shared_trigger: Arc<Trigger>,
-    shared_tripwire: Tripwire,
-    #[allow(dead_code)]
-    own_trigger: Trigger,
+    shared_drop_notifier: Arc<DropNotifier>,
     /// Activates when this context is dropped. Used in [`Context::notify_interval`] and [`Context::notify_after`]
     /// to shutdown the tasks as soon as the context stops.
-    own_tripwire: Tripwire,
+    drop_notifier: DropNotifier,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -87,13 +84,12 @@ impl<A: Actor> Context<A> {
         let strong = Strong(Arc::new(AtomicBool::new(true)));
         let weak = strong.downgrade();
 
-        let (shared_trigger, shared_tripwire) = Tripwire::new();
-        let (own_trigger, own_tripwire) = Tripwire::new();
+        let shared_drop_notifier = Arc::new(DropNotifier::new());
 
         let addr = Address {
             sender: sender.clone(),
             ref_counter: strong,
-            tripwire: shared_tripwire.clone(),
+            stop_notice: shared_drop_notifier.subscribe(),
         };
 
         let context = Context {
@@ -104,10 +100,8 @@ impl<A: Actor> Context<A> {
             self_notifications: Vec::new(),
             receiver,
             broadcast_receiver: broadcast_rx.into_shared(),
-            shared_trigger: Arc::new(shared_trigger),
-            shared_tripwire,
-            own_trigger,
-            own_tripwire,
+            shared_drop_notifier,
+            drop_notifier: DropNotifier::new(),
         };
         (addr, context)
     }
@@ -120,8 +114,6 @@ impl<A: Actor> Context<A> {
         // receiver into a shared receiver.
         let broadcast_receiver = self.broadcast_receiver.clone().upgrade().into_shared();
 
-        let (own_trigger, own_tripwire) = Tripwire::new();
-
         let ctx = Context {
             running: RunningState::Running,
             sender: self.sender.clone(),
@@ -130,10 +122,8 @@ impl<A: Actor> Context<A> {
             self_notifications: Vec::new(),
             receiver: self.receiver.clone(),
             broadcast_receiver,
-            shared_trigger: self.shared_trigger.clone(),
-            shared_tripwire: self.shared_tripwire.clone(),
-            own_trigger,
-            own_tripwire,
+            shared_drop_notifier: self.shared_drop_notifier.clone(),
+            drop_notifier: DropNotifier::new(),
         };
         ctx.run(actor)
     }
@@ -149,7 +139,7 @@ impl<A: Actor> Context<A> {
         Ok(Address {
             sender: self.sender.clone(),
             ref_counter: self.ref_counter.upgrade().ok_or(ActorShutdown)?,
-            tripwire: self.shared_tripwire.clone(),
+            stop_notice: self.shared_drop_notifier.subscribe(),
         })
     }
 
@@ -432,13 +422,12 @@ impl<A: Actor> Context<A> {
         A: Handler<M>,
     {
         let addr = self.address()?.downgrade();
-        let tripwire = self.own_tripwire.clone();
+        let mut stopped = self.drop_notifier.subscribe();
 
         let fut = async move {
             loop {
-                let tripwire = tripwire.clone();
                 let delay = Delay::new(duration);
-                match future::select(delay, tripwire).await {
+                match future::select(delay, &mut stopped).await {
                     Either::Left(_) => {
                         if addr.do_send(constructor()).is_err() {
                             break;
@@ -468,11 +457,11 @@ impl<A: Actor> Context<A> {
         A: Handler<M>,
     {
         let addr = self.address()?.downgrade();
-        let tripwire = self.own_tripwire.clone();
+        let mut stopped = self.drop_notifier.subscribe();
 
         let fut = async move {
             let delay = Delay::new(duration);
-            match future::select(delay, tripwire).await {
+            match future::select(delay, &mut stopped).await {
                 Either::Left(_) => {
                     let _ = addr.do_send(notification);
                 },

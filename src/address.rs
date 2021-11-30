@@ -12,14 +12,14 @@ use catty::Receiver;
 use flume::r#async::SendFut as ChannelSendFuture;
 use flume::Sender;
 use futures_core::Stream;
-use futures_util::{FutureExt, StreamExt};
-use stream_cancel::{StreamExt as StreamCancelExt, Tripwire};
+use futures_util::{future, FutureExt, StreamExt};
 
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::AddressMessage;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::sink::AddressSink;
 use crate::{Actor, Handler, KeepRunning, Message};
+use crate::drop_notice::DropNotice;
 
 /// The future returned [`Address::send`](struct.Address.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -120,10 +120,10 @@ impl Error for Disconnected {}
 pub struct Address<A, Rc: RefCounter = Strong> {
     pub(crate) sender: Sender<AddressMessage<A>>,
     pub(crate) ref_counter: Rc,
-    /// Activates once all contexts on this address have been dropped.
+    /// Resolves once all contexts on this address have been dropped.
     /// Used in [`Address::attach_stream`](struct.Address.html#method.attach_stream) to stop waiting
     /// for new messages when this `Address` becomes disconnected and in [`Address::join`].
-    pub(crate) tripwire: Tripwire
+    pub(crate) stop_notice: DropNotice,
 }
 
 /// A `WeakAddress` is a reference to an actor through which [`Message`s](../trait.Message.html) can be
@@ -141,7 +141,7 @@ impl<A> Address<A, Strong> {
         WeakAddress {
             sender: self.sender.clone(),
             ref_counter: self.ref_counter.downgrade(),
-            tripwire: self.tripwire.clone(),
+            stop_notice: self.stop_notice.clone(),
         }
     }
 }
@@ -153,7 +153,7 @@ impl<A> Address<A, Either> {
         WeakAddress {
             sender: self.sender.clone(),
             ref_counter: self.ref_counter.clone().into_weak(),
-            tripwire: self.tripwire.clone(),
+            stop_notice: self.stop_notice.clone(),
         }
     }
 }
@@ -214,7 +214,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         Address {
             ref_counter: self.ref_counter.clone().into_either(),
             sender: self.sender.clone(),
-            tripwire: self.tripwire.clone(),
+            stop_notice: self.stop_notice.clone(),
         }
     }
 
@@ -299,13 +299,22 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         A: Handler<M>,
         S: Stream<Item = M> + Send,
     {
-        let stream = stream.take_until_if(self.tripwire.clone());
+        let mut stopped = self.stop_notice.clone();
         futures_util::pin_mut!(stream);
-        while let Some(m) = stream.next().await {
-            let res = self.send(m); // Bound to make it Sync
-            if !matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
-                break;
+
+        loop {
+            match future::select(&mut stream.next(), &mut stopped).await {
+                future::Either::Left((Some(m), _)) => {
+                    let res = self.send(m); // Bound to make it Sync
+                    if matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
+                        continue;
+                    }
+                }
+                _ => {
+                    // Stream ended or contexts stopped
+                }
             }
+            break;
         }
     }
 
@@ -318,8 +327,9 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     }
 
     /// Waits until this address becomes disconnected.
-    pub async fn join(&self) {
-        self.tripwire.clone().await;
+    #[must_use]
+    pub fn join(&self) -> impl Future<Output = ()> + Unpin {
+        self.stop_notice.clone()
     }
 }
 
@@ -329,7 +339,7 @@ impl<A, Rc: RefCounter> Clone for Address<A, Rc> {
         Address {
             sender: self.sender.clone(),
             ref_counter: self.ref_counter.clone(),
-            tripwire: self.tripwire.clone(),
+            stop_notice: self.stop_notice.clone(),
         }
     }
 }
