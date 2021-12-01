@@ -18,6 +18,7 @@ use crate::private::Sealed;
 use crate::refcount::{RefCounter, Strong};
 use crate::sink::{AddressSink, MessageSink, StrongMessageSink, WeakMessageSink};
 use crate::{Handler, KeepRunning, Message};
+use crate::drop_notice::DropNotice;
 
 /// The future returned [`MessageChannel::send`](trait.MessageChannel.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -158,7 +159,7 @@ pub trait MessageChannel<M: Message>: Sealed + Unpin + Send + Sync {
 
     /// This is an internal method and should never be called manually.
     #[doc(hidden)]
-    fn _ref_counter_eq(&self, other: *const AtomicBool) -> bool;
+    fn _ref_counter_eq(&self, other: *const (AtomicBool, DropNotice)) -> bool;
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
@@ -267,7 +268,7 @@ where
         other._ref_counter_eq(self.ref_counter.as_ptr())
     }
 
-    fn _ref_counter_eq(&self, other: *const AtomicBool) -> bool {
+    fn _ref_counter_eq(&self, other: *const (AtomicBool, DropNotice)) -> bool {
         self.ref_counter.as_ptr() == other
     }
 }

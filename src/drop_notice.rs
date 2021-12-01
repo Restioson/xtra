@@ -1,6 +1,6 @@
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::task::Poll;
 use event_listener::{Event, EventListener};
 
@@ -21,7 +21,7 @@ impl DropNotifier {
     /// Issues a new `DropNotice` linked to this `DropNotifier`.
     pub fn subscribe(&self) -> DropNotice {
         DropNotice {
-            drop_event: Arc::downgrade(&self.drop_event),
+            drop_event: Some(Arc::downgrade(&self.drop_event)),
             listener: None,
         }
     }
@@ -37,8 +37,17 @@ impl Drop for DropNotifier {
 /// For convenience, it can be cloned and easily passed around. All clones are linked to the
 /// same `DropNotifier` instance.
 pub struct DropNotice {
-    drop_event: std::sync::Weak<Event>,
+    drop_event: Option<Weak<Event>>,
     listener: Option<EventListener>,
+}
+
+/// Returns a `DropNotice` that is not linked to a `DropNotifier`. Instead, it resolves
+/// immediately when polled.
+pub fn dropped() -> DropNotice {
+    DropNotice {
+        drop_event: None,
+        listener: None,
+    }
 }
 
 impl Clone for DropNotice {
@@ -54,27 +63,37 @@ impl Future for DropNotice {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
-        let event = {
-            match self.drop_event.clone().upgrade() {
-                Some(event) =>  Some(event),
-                None => None,
-            }
-        };
-
-        if event.is_none() {
-            self.listener = None;
-            return Poll::Ready(());
-        }
-
         if self.listener.is_none() {
-            let listener = event.unwrap().listen();
-            self.listener = Some(listener);
-        } else {
-            drop(event);
+            let event = match &self.drop_event {
+                Some(drop_event) => {
+                    match drop_event.upgrade() {
+                        Some(event) =>  Some(event),
+                        None => {
+                            self.drop_event = None;
+                            None
+                        },
+                    }
+                }
+                None => None,
+            };
+
+            if event.is_none() {
+                return Poll::Ready(());
+            }
+            self.listener = Some(event.unwrap().listen());
+            self.drop_event = None;
         }
 
         let listener = self.listener.as_mut().unwrap();
         futures_util::pin_mut!(listener);
-        listener.poll(cx)
+
+        match listener.poll(cx) {
+            Poll::Ready(()) => {
+                self.listener = None;
+                self.drop_event = None;
+                Poll::Ready(())
+            },
+            Poll::Pending => Poll::Pending
+        }
     }
 }

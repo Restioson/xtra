@@ -1,5 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak as ArcWeak};
+use crate::drop_notice;
+use crate::drop_notice::DropNotice;
 
 use crate::private::Sealed;
 
@@ -8,7 +10,7 @@ use crate::private::Sealed;
 /// out more.
 #[derive(Clone)]
 // TODO AtomicBool for disconnected when forcibly stopped ?
-pub struct Strong(pub(crate) Arc<AtomicBool>);
+pub struct Strong(pub(crate) Arc<(AtomicBool, DropNotice)>);
 
 impl Strong {
     pub(crate) fn downgrade(&self) -> Weak {
@@ -19,7 +21,7 @@ impl Strong {
 /// The reference count of a weak address. Weak addresses will bit prevent the actor from being
 /// dropped. Read the docs of [`Address`](../address/struct.Address.html) to find out more.
 #[derive(Clone)]
-pub struct Weak(pub(crate) ArcWeak<AtomicBool>);
+pub struct Weak(pub(crate) ArcWeak<(AtomicBool, DropNotice)>);
 
 impl Weak {
     pub(crate) fn upgrade(&self) -> Option<Strong> {
@@ -65,12 +67,15 @@ pub trait RefCounter: Sealed + Clone + Unpin + Send + Sync + 'static {
     fn into_either(self) -> Either;
 
     #[doc(hidden)]
-    fn as_ptr(&self) -> *const AtomicBool;
+    fn as_ptr(&self) -> *const (AtomicBool, DropNotice);
+
+    /// Returns a `DropNotice` that resolves once this address becomes disconnected.
+    fn disconnect_notice(&self) -> DropNotice;
 }
 
 impl RefCounter for Strong {
     fn is_connected(&self) -> bool {
-        self.strong_count() > 0 && self.0.load(Ordering::Acquire)
+        self.strong_count() > 0 && self.0.0.load(Ordering::Acquire)
     }
 
     fn is_last_strong(&self) -> bool {
@@ -85,8 +90,12 @@ impl RefCounter for Strong {
         Either::Strong(self)
     }
 
-    fn as_ptr(&self) -> *const AtomicBool {
+    fn as_ptr(&self) -> *const (AtomicBool, DropNotice) {
         Arc::as_ptr(&self.0)
+    }
+
+    fn disconnect_notice(&self) -> DropNotice {
+        self.0.1.clone()
     }
 }
 
@@ -95,7 +104,7 @@ impl RefCounter for Weak {
         let running = self
             .0
             .upgrade()
-            .map(|b| b.load(Ordering::Acquire))
+            .map(|b| b.0.load(Ordering::Acquire))
             .unwrap_or(false);
 
         self.strong_count() > 0 && running
@@ -113,8 +122,15 @@ impl RefCounter for Weak {
         Either::Weak(self)
     }
 
-    fn as_ptr(&self) -> *const AtomicBool {
+    fn as_ptr(&self) -> *const (AtomicBool, DropNotice) {
         ArcWeak::as_ptr(&self.0)
+    }
+
+    fn disconnect_notice(&self) -> DropNotice {
+        match self.0.upgrade() {
+            Some(arc) =>  arc.1.clone(),
+            None => drop_notice::dropped(),
+        }
     }
 }
 
@@ -144,10 +160,17 @@ impl RefCounter for Either {
         self
     }
 
-    fn as_ptr(&self) -> *const AtomicBool {
+    fn as_ptr(&self) -> *const (AtomicBool, DropNotice) {
         match self {
             Either::Strong(s) => s.as_ptr(),
             Either::Weak(s) => s.as_ptr(),
+        }
+    }
+
+    fn disconnect_notice(&self) -> DropNotice {
+        match self {
+            Either::Strong(s) => s.disconnect_notice(),
+            Either::Weak(s) => s.disconnect_notice(),
         }
     }
 }

@@ -81,15 +81,14 @@ impl<A: Actor> Context<A> {
         };
         let (broadcaster, broadcast_rx) = barrage::unbounded();
 
-        let strong = Strong(Arc::new(AtomicBool::new(true)));
-        let weak = strong.downgrade();
-
         let shared_drop_notifier = Arc::new(DropNotifier::new());
+
+        let strong = Strong(Arc::new((AtomicBool::new(true), shared_drop_notifier.subscribe())));
+        let weak = strong.downgrade();
 
         let addr = Address {
             sender: sender.clone(),
             ref_counter: strong,
-            stop_notice: shared_drop_notifier.subscribe(),
         };
 
         let context = Context {
@@ -139,14 +138,13 @@ impl<A: Actor> Context<A> {
         Ok(Address {
             sender: self.sender.clone(),
             ref_counter: self.ref_counter.upgrade().ok_or(ActorShutdown)?,
-            stop_notice: self.shared_drop_notifier.subscribe(),
         })
     }
 
     /// Stop all actors on this address
     fn stop_all(&mut self) {
         if let Some(strong) = self.ref_counter.upgrade() {
-            strong.0.store(false, Ordering::Release)
+            strong.0.0.store(false, Ordering::Release)
         }
 
         assert!(self.broadcaster.send(BroadcastMessage::Shutdown).is_ok());

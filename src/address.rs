@@ -19,7 +19,6 @@ use crate::manager::AddressMessage;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::sink::AddressSink;
 use crate::{Actor, Handler, KeepRunning, Message};
-use crate::drop_notice::DropNotice;
 
 /// The future returned [`Address::send`](struct.Address.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -120,10 +119,6 @@ impl Error for Disconnected {}
 pub struct Address<A, Rc: RefCounter = Strong> {
     pub(crate) sender: Sender<AddressMessage<A>>,
     pub(crate) ref_counter: Rc,
-    /// Resolves once all contexts on this address have been dropped.
-    /// Used in [`Address::attach_stream`](struct.Address.html#method.attach_stream) to stop waiting
-    /// for new messages when this `Address` becomes disconnected and in [`Address::join`].
-    pub(crate) stop_notice: DropNotice,
 }
 
 /// A `WeakAddress` is a reference to an actor through which [`Message`s](../trait.Message.html) can be
@@ -141,7 +136,6 @@ impl<A> Address<A, Strong> {
         WeakAddress {
             sender: self.sender.clone(),
             ref_counter: self.ref_counter.downgrade(),
-            stop_notice: self.stop_notice.clone(),
         }
     }
 }
@@ -153,7 +147,6 @@ impl<A> Address<A, Either> {
         WeakAddress {
             sender: self.sender.clone(),
             ref_counter: self.ref_counter.clone().into_weak(),
-            stop_notice: self.stop_notice.clone(),
         }
     }
 }
@@ -214,7 +207,6 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         Address {
             ref_counter: self.ref_counter.clone().into_either(),
             sender: self.sender.clone(),
-            stop_notice: self.stop_notice.clone(),
         }
     }
 
@@ -299,7 +291,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         A: Handler<M>,
         S: Stream<Item = M> + Send,
     {
-        let mut stopped = self.stop_notice.clone();
+        let mut stopped = self.ref_counter.disconnect_notice();
         futures_util::pin_mut!(stream);
 
         loop {
@@ -328,8 +320,8 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
 
     /// Waits until this address becomes disconnected.
     #[must_use]
-    pub fn join(&self) -> impl Future<Output = ()> + Unpin {
-        self.stop_notice.clone()
+    pub fn join(&self) -> impl Future<Output = ()> + Send + Unpin {
+        self.ref_counter.disconnect_notice()
     }
 }
 
@@ -339,7 +331,6 @@ impl<A, Rc: RefCounter> Clone for Address<A, Rc> {
         Address {
             sender: self.sender.clone(),
             ref_counter: self.ref_counter.clone(),
-            stop_notice: self.stop_notice.clone(),
         }
     }
 }
