@@ -1,13 +1,13 @@
+use event_listener::{Event, EventListener};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
 use std::task::Poll;
-use event_listener::{Event, EventListener};
 
 /// A `DropNotifier` is a simple mechanism that notifies interested parties of its own demise.
 /// Once dropped all corresponding `DropNotices` will immediately resolve.
 pub struct DropNotifier {
-    drop_event: Arc<Event>
+    drop_event: Arc<Event>,
 }
 
 impl DropNotifier {
@@ -65,15 +65,13 @@ impl Future for DropNotice {
     fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
         if self.listener.is_none() {
             let event = match &self.drop_event {
-                Some(drop_event) => {
-                    match drop_event.upgrade() {
-                        Some(event) =>  Some(event),
-                        None => {
-                            self.drop_event = None;
-                            None
-                        },
+                Some(drop_event) => match drop_event.upgrade() {
+                    Some(event) => Some(event),
+                    None => {
+                        self.drop_event = None;
+                        None
                     }
-                }
+                },
                 None => None,
             };
 
@@ -92,8 +90,8 @@ impl Future for DropNotice {
                 self.listener = None;
                 self.drop_event = None;
                 Poll::Ready(())
-            },
-            Poll::Pending => Poll::Pending
+            }
+            Poll::Pending => Poll::Pending,
         }
     }
 }

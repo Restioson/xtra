@@ -1,7 +1,7 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak as ArcWeak};
 use crate::drop_notice;
 use crate::drop_notice::DropNotice;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak as ArcWeak};
 
 use crate::private::Sealed;
 
@@ -75,7 +75,7 @@ pub trait RefCounter: Sealed + Clone + Unpin + Send + Sync + 'static {
 
 impl RefCounter for Strong {
     fn is_connected(&self) -> bool {
-        self.strong_count() > 0 && self.0.0.load(Ordering::Acquire)
+        self.strong_count() > 0 && self.0 .0.load(Ordering::Acquire)
     }
 
     fn is_last_strong(&self) -> bool {
@@ -95,7 +95,7 @@ impl RefCounter for Strong {
     }
 
     fn disconnect_notice(&self) -> DropNotice {
-        self.0.1.clone()
+        self.0 .1.clone()
     }
 }
 
@@ -128,7 +128,7 @@ impl RefCounter for Weak {
 
     fn disconnect_notice(&self) -> DropNotice {
         match self.0.upgrade() {
-            Some(arc) =>  arc.1.clone(),
+            Some(arc) => arc.1.clone(),
             None => drop_notice::dropped(),
         }
     }

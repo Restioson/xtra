@@ -9,6 +9,7 @@ pub use self::manager::ActorManager;
 
 pub mod address;
 mod context;
+mod drop_notice;
 mod envelope;
 mod manager;
 pub mod message_channel;
@@ -18,7 +19,6 @@ pub mod refcount;
 pub mod sink;
 /// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
 pub mod spawn;
-mod drop_notice;
 
 /// Commonly used types from xtra
 pub mod prelude {

@@ -11,11 +11,11 @@ use futures_util::FutureExt;
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
 
+use crate::drop_notice::DropNotifier;
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{AddressMessage, BroadcastMessage, ContinueManageLoop};
 use crate::refcount::{RefCounter, Strong, Weak};
 use crate::{Actor, Address, Handler, KeepRunning, Message};
-use crate::drop_notice::DropNotifier;
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -83,7 +83,10 @@ impl<A: Actor> Context<A> {
 
         let shared_drop_notifier = Arc::new(DropNotifier::new());
 
-        let strong = Strong(Arc::new((AtomicBool::new(true), shared_drop_notifier.subscribe())));
+        let strong = Strong(Arc::new((
+            AtomicBool::new(true),
+            shared_drop_notifier.subscribe(),
+        )));
         let weak = strong.downgrade();
 
         let addr = Address {
@@ -144,7 +147,7 @@ impl<A: Actor> Context<A> {
     /// Stop all actors on this address
     fn stop_all(&mut self) {
         if let Some(strong) = self.ref_counter.upgrade() {
-            strong.0.0.store(false, Ordering::Release)
+            strong.0 .0.store(false, Ordering::Release)
         }
 
         assert!(self.broadcaster.send(BroadcastMessage::Shutdown).is_ok());
@@ -430,7 +433,7 @@ impl<A: Actor> Context<A> {
                         if addr.do_send(constructor()).is_err() {
                             break;
                         }
-                    },
+                    }
                     Either::Right(_) => {
                         // Context stopped before the end of the delay was reached
                         break;
@@ -462,7 +465,7 @@ impl<A: Actor> Context<A> {
             match future::select(delay, &mut stopped).await {
                 Either::Left(_) => {
                     let _ = addr.do_send(notification);
-                },
+                }
                 Either::Right(_) => {
                     // Context stopped before the end of the delay was reached
                 }
