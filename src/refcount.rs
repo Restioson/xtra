@@ -1,7 +1,7 @@
 use crate::drop_notice;
 use crate::drop_notice::DropNotice;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak as ArcWeak};
+use std::sync::{Arc, RwLock, Weak as ArcWeak};
 
 use crate::private::Sealed;
 
@@ -10,22 +10,35 @@ use crate::private::Sealed;
 /// out more.
 #[derive(Clone)]
 // TODO AtomicBool for disconnected when forcibly stopped ?
-pub struct Strong(pub(crate) Arc<(AtomicBool, DropNotice)>);
+// The RwLock is there to prevent exposing a temporarily inconsistent strong_count caused by brief
+// Arc::upgrade calls in some `Weak` functions below. If exposed, it could lead to a race condition
+// that can prevent an Actor from being stopped.
+pub struct Strong(pub(crate) Arc<(AtomicBool, DropNotice)>, Arc<RwLock<()>>);
 
 impl Strong {
+    pub(crate) fn new(connected: AtomicBool, drop_notice: DropNotice) -> Self {
+        Self {
+            0: Arc::new((connected, drop_notice)),
+            1: Arc::new(RwLock::new(())),
+        }
+    }
+
     pub(crate) fn downgrade(&self) -> Weak {
-        Weak(Arc::downgrade(&self.0))
+        Weak(Arc::downgrade(&self.0), self.1.clone())
     }
 }
 
 /// The reference count of a weak address. Weak addresses will bit prevent the actor from being
 /// dropped. Read the docs of [`Address`](../address/struct.Address.html) to find out more.
 #[derive(Clone)]
-pub struct Weak(pub(crate) ArcWeak<(AtomicBool, DropNotice)>);
+pub struct Weak(
+    pub(crate) ArcWeak<(AtomicBool, DropNotice)>,
+    Arc<RwLock<()>>,
+);
 
 impl Weak {
     pub(crate) fn upgrade(&self) -> Option<Strong> {
-        ArcWeak::upgrade(&self.0).map(Strong)
+        ArcWeak::upgrade(&self.0).map(|b| Strong(b, self.1.clone()))
     }
 }
 
@@ -79,10 +92,12 @@ impl RefCounter for Strong {
     }
 
     fn is_last_strong(&self) -> bool {
+        let _lock = self.1.read().unwrap();
         Arc::strong_count(&self.0) == 1
     }
 
     fn strong_count(&self) -> usize {
+        let _lock = self.1.read().unwrap();
         Arc::strong_count(&self.0)
     }
 
@@ -101,12 +116,19 @@ impl RefCounter for Strong {
 
 impl RefCounter for Weak {
     fn is_connected(&self) -> bool {
+        let lock = self.1.write().unwrap();
+
         let running = self
             .0
             .upgrade()
-            .map(|b| b.0.load(Ordering::Acquire))
+            .map(|b| {
+                let connected = b.0.load(Ordering::Acquire);
+                drop(b);
+                connected
+            })
             .unwrap_or(false);
 
+        drop(lock);
         self.strong_count() > 0 && running
     }
 
@@ -115,6 +137,7 @@ impl RefCounter for Weak {
     }
 
     fn strong_count(&self) -> usize {
+        let _lock = self.1.read().unwrap();
         ArcWeak::strong_count(&self.0)
     }
 
@@ -127,8 +150,14 @@ impl RefCounter for Weak {
     }
 
     fn disconnect_notice(&self) -> DropNotice {
+        let _lock = self.1.write().unwrap();
+
         match self.0.upgrade() {
-            Some(arc) => arc.1.clone(),
+            Some(b) => {
+                let drop_notice = b.1.clone();
+                drop(b);
+                drop_notice
+            }
             None => drop_notice::dropped(),
         }
     }

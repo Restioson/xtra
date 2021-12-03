@@ -83,10 +83,7 @@ impl<A: Actor> Context<A> {
 
         let shared_drop_notifier = Arc::new(DropNotifier::new());
 
-        let strong = Strong(Arc::new((
-            AtomicBool::new(true),
-            shared_drop_notifier.subscribe(),
-        )));
+        let strong = Strong::new(AtomicBool::new(true), shared_drop_notifier.subscribe());
         let weak = strong.downgrade();
 
         let addr = Address {
