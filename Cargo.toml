@@ -42,6 +42,7 @@ wasm-bindgen-futures = { version = "0.4", optional = true, default-features = fa
 rand = "0.8"
 smol = "1.1"
 smol-potat = "1.1"
+smol-timeout = "0.6"
 waker-fn = "1.1"
 
 [features]
