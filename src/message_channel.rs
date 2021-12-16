@@ -4,7 +4,6 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::AtomicBool;
 use std::task::{Context, Poll};
 
 use catty::Receiver;
@@ -12,11 +11,10 @@ use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
 
 use crate::address::{self, Address, Disconnected, WeakAddress};
-use crate::drop_notice::DropNotice;
 use crate::envelope::ReturningEnvelope;
 use crate::manager::AddressMessage;
 use crate::private::Sealed;
-use crate::refcount::{RefCounter, Strong};
+use crate::refcount::{RefCounter, Shared, Strong};
 use crate::sink::{AddressSink, MessageSink, StrongMessageSink, WeakMessageSink};
 use crate::{Handler, KeepRunning, Message};
 
@@ -159,7 +157,7 @@ pub trait MessageChannel<M: Message>: Sealed + Unpin + Send + Sync {
 
     /// This is an internal method and should never be called manually.
     #[doc(hidden)]
-    fn _ref_counter_eq(&self, other: *const (AtomicBool, DropNotice)) -> bool;
+    fn _ref_counter_eq(&self, other: *const Shared) -> bool;
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
@@ -268,7 +266,7 @@ where
         other._ref_counter_eq(self.ref_counter.as_ptr())
     }
 
-    fn _ref_counter_eq(&self, other: *const (AtomicBool, DropNotice)) -> bool {
+    fn _ref_counter_eq(&self, other: *const Shared) -> bool {
         self.ref_counter.as_ptr() == other
     }
 }

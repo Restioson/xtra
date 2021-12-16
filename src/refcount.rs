@@ -13,32 +13,54 @@ use crate::private::Sealed;
 // The RwLock is there to prevent exposing a temporarily inconsistent strong_count caused by brief
 // Arc::upgrade calls in some `Weak` functions below. If exposed, it could lead to a race condition
 // that can prevent an Actor from being stopped.
-pub struct Strong(pub(crate) Arc<(AtomicBool, DropNotice)>, Arc<RwLock<()>>);
+pub struct Strong {
+    shared: Arc<Shared>,
+    lock: Arc<RwLock<()>>,
+}
+
+#[doc(hidden)]
+pub struct Shared {
+    connected: AtomicBool,
+    drop_notice: DropNotice,
+}
 
 impl Strong {
     pub(crate) fn new(connected: AtomicBool, drop_notice: DropNotice) -> Self {
         Self {
-            0: Arc::new((connected, drop_notice)),
-            1: Arc::new(RwLock::new(())),
+            shared: Arc::new(Shared {
+                connected,
+                drop_notice,
+            }),
+            lock: Arc::new(RwLock::new(())),
         }
     }
 
     pub(crate) fn downgrade(&self) -> Weak {
-        Weak(Arc::downgrade(&self.0), self.1.clone())
+        Weak {
+            shared: Arc::downgrade(&self.shared),
+            lock: self.lock.clone(),
+        }
+    }
+
+    pub(crate) fn mark_disconnected(&self) {
+        self.shared.connected.store(false, Ordering::Release)
     }
 }
 
 /// The reference count of a weak address. Weak addresses will bit prevent the actor from being
 /// dropped. Read the docs of [`Address`](../address/struct.Address.html) to find out more.
 #[derive(Clone)]
-pub struct Weak(
-    pub(crate) ArcWeak<(AtomicBool, DropNotice)>,
-    Arc<RwLock<()>>,
-);
+pub struct Weak {
+    shared: ArcWeak<Shared>,
+    lock: Arc<RwLock<()>>,
+}
 
 impl Weak {
     pub(crate) fn upgrade(&self) -> Option<Strong> {
-        ArcWeak::upgrade(&self.0).map(|b| Strong(b, self.1.clone()))
+        ArcWeak::upgrade(&self.shared).map(|shared| Strong {
+            shared,
+            lock: self.lock.clone(),
+        })
     }
 }
 
@@ -80,7 +102,7 @@ pub trait RefCounter: Sealed + Clone + Unpin + Send + Sync + 'static {
     fn into_either(self) -> Either;
 
     #[doc(hidden)]
-    fn as_ptr(&self) -> *const (AtomicBool, DropNotice);
+    fn as_ptr(&self) -> *const Shared;
 
     /// Returns a `DropNotice` that resolves once this address becomes disconnected.
     fn disconnect_notice(&self) -> DropNotice;
@@ -88,42 +110,42 @@ pub trait RefCounter: Sealed + Clone + Unpin + Send + Sync + 'static {
 
 impl RefCounter for Strong {
     fn is_connected(&self) -> bool {
-        self.strong_count() > 0 && self.0 .0.load(Ordering::Acquire)
+        self.strong_count() > 0 && self.shared.connected.load(Ordering::Acquire)
     }
 
     fn is_last_strong(&self) -> bool {
-        let _lock = self.1.read().unwrap();
-        Arc::strong_count(&self.0) == 1
+        let _lock = self.lock.read().unwrap();
+        Arc::strong_count(&self.shared) == 1
     }
 
     fn strong_count(&self) -> usize {
-        let _lock = self.1.read().unwrap();
-        Arc::strong_count(&self.0)
+        let _lock = self.lock.read().unwrap();
+        Arc::strong_count(&self.shared)
     }
 
     fn into_either(self) -> Either {
         Either::Strong(self)
     }
 
-    fn as_ptr(&self) -> *const (AtomicBool, DropNotice) {
-        Arc::as_ptr(&self.0)
+    fn as_ptr(&self) -> *const Shared {
+        Arc::as_ptr(&self.shared)
     }
 
     fn disconnect_notice(&self) -> DropNotice {
-        self.0 .1.clone()
+        self.shared.drop_notice.clone()
     }
 }
 
 impl RefCounter for Weak {
     fn is_connected(&self) -> bool {
-        let lock = self.1.write().unwrap();
+        let lock = self.lock.write().unwrap();
 
         let running = self
-            .0
+            .shared
             .upgrade()
-            .map(|b| {
-                let connected = b.0.load(Ordering::Acquire);
-                drop(b);
+            .map(|shared| {
+                let connected = shared.connected.load(Ordering::Acquire);
+                drop(shared);
                 connected
             })
             .unwrap_or(false);
@@ -137,25 +159,25 @@ impl RefCounter for Weak {
     }
 
     fn strong_count(&self) -> usize {
-        let _lock = self.1.read().unwrap();
-        ArcWeak::strong_count(&self.0)
+        let _lock = self.lock.read().unwrap();
+        ArcWeak::strong_count(&self.shared)
     }
 
     fn into_either(self) -> Either {
         Either::Weak(self)
     }
 
-    fn as_ptr(&self) -> *const (AtomicBool, DropNotice) {
-        ArcWeak::as_ptr(&self.0)
+    fn as_ptr(&self) -> *const Shared {
+        ArcWeak::as_ptr(&self.shared)
     }
 
     fn disconnect_notice(&self) -> DropNotice {
-        let _lock = self.1.write().unwrap();
+        let _lock = self.lock.write().unwrap();
 
-        match self.0.upgrade() {
-            Some(b) => {
-                let drop_notice = b.1.clone();
-                drop(b);
+        match self.shared.upgrade() {
+            Some(shared) => {
+                let drop_notice = shared.drop_notice.clone();
+                drop(shared);
                 drop_notice
             }
             None => drop_notice::dropped(),
@@ -189,7 +211,7 @@ impl RefCounter for Either {
         self
     }
 
-    fn as_ptr(&self) -> *const (AtomicBool, DropNotice) {
+    fn as_ptr(&self) -> *const Shared {
         match self {
             Either::Strong(s) => s.as_ptr(),
             Either::Weak(s) => s.as_ptr(),

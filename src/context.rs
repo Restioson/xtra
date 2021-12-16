@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use flume::{Receiver, Sender};
@@ -143,7 +143,7 @@ impl<A: Actor> Context<A> {
     /// Stop all actors on this address
     fn stop_all(&mut self) {
         if let Some(strong) = self.ref_counter.upgrade() {
-            strong.0 .0.store(false, Ordering::Release)
+            strong.mark_disconnected();
         }
 
         assert!(self.broadcaster.send(BroadcastMessage::Shutdown).is_ok());
