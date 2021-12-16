@@ -107,7 +107,6 @@ impl<A: Actor> Context<A> {
 
     /// Attaches an actor of the same type listening to the same address as this actor is.
     /// They will operate in a message-stealing fashion, with no message handled by two actors.
-    #[must_use]
     pub fn attach(&mut self, actor: A) -> impl Future<Output = ()> {
         // Give the new context a new mailbox on the same broadcast channel, and then make this
         // receiver into a shared receiver.
@@ -408,7 +407,6 @@ impl<A: Actor> Context<A> {
     /// (either directly with [`Context::stop`](struct.Context.html#method.stop), or for a lack of
     /// strong [`Address`es](address/struct.Address.html)). This does not take priority over other messages.
     #[cfg(feature = "timing")]
-    #[must_use]
     pub fn notify_interval<F, M>(
         &mut self,
         duration: Duration,
@@ -444,7 +442,6 @@ impl<A: Actor> Context<A> {
 
     /// Notify the actor with a synchronously handled message after a certain duration has elapsed.
     /// This does not take priority over other messages.
-    #[must_use]
     pub fn notify_after<M>(
         &mut self,
         duration: Duration,

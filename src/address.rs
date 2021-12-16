@@ -295,15 +295,12 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         futures_util::pin_mut!(stream);
 
         loop {
-            match future::select(&mut stream.next(), &mut stopped).await {
-                future::Either::Left((Some(m), _)) => {
-                    let res = self.send(m); // Bound to make it Sync
-                    if matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
-                        continue;
-                    }
-                }
-                _ => {
-                    // Stream ended or contexts stopped
+            if let future::Either::Left((Some(m), _)) =
+                future::select(&mut stream.next(), &mut stopped).await
+            {
+                let res = self.send(m); // Bound to make it Sync
+                if matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
+                    continue;
                 }
             }
             break;
@@ -319,7 +316,6 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     }
 
     /// Waits until this address becomes disconnected.
-    #[must_use]
     pub fn join(&self) -> impl Future<Output = ()> + Send + Unpin {
         self.ref_counter.disconnect_notice()
     }
