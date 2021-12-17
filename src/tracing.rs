@@ -1,5 +1,5 @@
-use tracing::{Instrument, Span};
 use crate::{Handler, Message};
+use tracing::{Instrument, Span};
 
 /// Instrument a message with `tracing`. This will attach the message handler span to the given
 /// `parent` span. If `IS_CHILD` is true, the message handler span will be instrumented with the
@@ -44,10 +44,12 @@ impl<A: Handler<M>, M: Message, const IS_CHILD: bool> Handler<Instrumented<M, IS
     async fn handle(
         &mut self,
         message: Instrumented<M, IS_CHILD>,
-        ctx: &mut crate::Context<Self>
+        ctx: &mut crate::Context<Self>,
     ) -> M::Result {
         if IS_CHILD {
-            self.handle(message.msg, ctx).instrument(message.parent).await
+            self.handle(message.msg, ctx)
+                .instrument(message.parent)
+                .await
         } else {
             let span = Span::current();
             span.follows_from(message.parent);

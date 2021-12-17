@@ -18,6 +18,7 @@ pub mod refcount;
 pub mod sink;
 /// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
 pub mod spawn;
+#[cfg(feature = "with-tracing-0_1")]
 /// Integration with [`tracing`](https://tracing.rs).
 pub mod tracing;
 
@@ -26,10 +27,10 @@ pub mod prelude {
     pub use crate::address::Address;
     pub use crate::context::Context;
     pub use crate::message_channel::{MessageChannel, StrongMessageChannel, WeakMessageChannel};
-    #[doc(no_inline)]
-    pub use crate::{Actor, Handler, Message};
     #[cfg(feature = "with-tracing-0_1")]
     pub use crate::tracing::InstrumentedExt;
+    #[doc(no_inline)]
+    pub use crate::{Actor, Handler, Message};
 }
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
