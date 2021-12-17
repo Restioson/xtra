@@ -18,6 +18,7 @@ pub mod refcount;
 pub mod sink;
 /// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
 pub mod spawn;
+#[cfg(feature = "with-tracing-0_1")]
 /// Integration with [`tracing`](https://tracing.rs).
 pub mod tracing;
 
