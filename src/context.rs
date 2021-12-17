@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use flume::{Receiver, Sender};
@@ -11,6 +11,7 @@ use futures_util::FutureExt;
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
 
+use crate::drop_notice::DropNotifier;
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{AddressMessage, BroadcastMessage, ContinueManageLoop};
 use crate::refcount::{RefCounter, Strong, Weak};
@@ -32,6 +33,11 @@ pub struct Context<A> {
     self_notifications: Vec<Box<dyn MessageEnvelope<Actor = A>>>,
     receiver: Receiver<AddressMessage<A>>,
     broadcast_receiver: barrage::SharedReceiver<BroadcastMessage<A>>,
+    /// Shared between all contexts on the same address
+    shared_drop_notifier: Arc<DropNotifier>,
+    /// Activates when this context is dropped. Used in [`Context::notify_interval`] and [`Context::notify_after`]
+    /// to shutdown the tasks as soon as the context stops.
+    drop_notifier: DropNotifier,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -75,7 +81,9 @@ impl<A: Actor> Context<A> {
         };
         let (broadcaster, broadcast_rx) = barrage::unbounded();
 
-        let strong = Strong(Arc::new(AtomicBool::new(true)));
+        let shared_drop_notifier = Arc::new(DropNotifier::new());
+
+        let strong = Strong::new(AtomicBool::new(true), shared_drop_notifier.subscribe());
         let weak = strong.downgrade();
 
         let addr = Address {
@@ -91,6 +99,8 @@ impl<A: Actor> Context<A> {
             self_notifications: Vec::new(),
             receiver,
             broadcast_receiver: broadcast_rx.into_shared(),
+            shared_drop_notifier,
+            drop_notifier: DropNotifier::new(),
         };
         (addr, context)
     }
@@ -110,6 +120,8 @@ impl<A: Actor> Context<A> {
             self_notifications: Vec::new(),
             receiver: self.receiver.clone(),
             broadcast_receiver,
+            shared_drop_notifier: self.shared_drop_notifier.clone(),
+            drop_notifier: DropNotifier::new(),
         };
         ctx.run(actor)
     }
@@ -131,7 +143,7 @@ impl<A: Actor> Context<A> {
     /// Stop all actors on this address
     fn stop_all(&mut self) {
         if let Some(strong) = self.ref_counter.upgrade() {
-            strong.0.store(false, Ordering::Release)
+            strong.mark_disconnected();
         }
 
         assert!(self.broadcaster.send(BroadcastMessage::Shutdown).is_ok());
@@ -405,12 +417,23 @@ impl<A: Actor> Context<A> {
         M: Message,
         A: Handler<M>,
     {
-        let addr = self.address()?;
+        let addr = self.address()?.downgrade();
+        let mut stopped = self.drop_notifier.subscribe();
 
         let fut = async move {
-            Delay::new(duration).await;
-            while addr.do_send(constructor()).is_ok() {
-                Delay::new(duration).await
+            loop {
+                let delay = Delay::new(duration);
+                match future::select(delay, &mut stopped).await {
+                    Either::Left(_) => {
+                        if addr.do_send(constructor()).is_err() {
+                            break;
+                        }
+                    }
+                    Either::Right(_) => {
+                        // Context stopped before the end of the delay was reached
+                        break;
+                    }
+                }
             }
         };
 
@@ -428,10 +451,19 @@ impl<A: Actor> Context<A> {
         M: Message,
         A: Handler<M>,
     {
-        let addr = self.address()?;
+        let addr = self.address()?.downgrade();
+        let mut stopped = self.drop_notifier.subscribe();
+
         let fut = async move {
-            Delay::new(duration).await;
-            let _ = addr.do_send(notification);
+            let delay = Delay::new(duration);
+            match future::select(delay, &mut stopped).await {
+                Either::Left(_) => {
+                    let _ = addr.do_send(notification);
+                }
+                Either::Right(_) => {
+                    // Context stopped before the end of the delay was reached
+                }
+            }
         };
 
         Ok(fut)

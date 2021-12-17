@@ -12,7 +12,7 @@ use catty::Receiver;
 use flume::r#async::SendFut as ChannelSendFuture;
 use flume::Sender;
 use futures_core::Stream;
-use futures_util::{FutureExt, StreamExt};
+use futures_util::{future, FutureExt, StreamExt};
 
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::AddressMessage;
@@ -291,12 +291,19 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         A: Handler<M>,
         S: Stream<Item = M> + Send,
     {
+        let mut stopped = self.ref_counter.disconnect_notice();
         futures_util::pin_mut!(stream);
-        while let Some(m) = stream.next().await {
-            let res = self.send(m); // Bound to make it Sync
-            if !matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
-                break;
+
+        loop {
+            if let future::Either::Left((Some(m), _)) =
+                future::select(&mut stream.next(), &mut stopped).await
+            {
+                let res = self.send(m); // Bound to make it Sync
+                if matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
+                    continue;
+                }
             }
+            break;
         }
     }
 
@@ -306,6 +313,11 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
             sink: self.sender.clone().into_sink(),
             ref_counter: self.ref_counter.clone(),
         }
+    }
+
+    /// Waits until this address becomes disconnected.
+    pub fn join(&self) -> impl Future<Output = ()> + Send + Unpin {
+        self.ref_counter.disconnect_notice()
     }
 }
 

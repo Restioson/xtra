@@ -9,6 +9,7 @@ pub use self::manager::ActorManager;
 
 pub mod address;
 mod context;
+mod drop_notice;
 mod envelope;
 mod manager;
 pub mod message_channel;
