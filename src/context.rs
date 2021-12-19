@@ -206,7 +206,6 @@ impl<A: Actor> Context<A> {
         // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
         // in the started method, otherwise it would kinda be a bug
         if !self.check_running(&mut actor).await {
-            self.stop_all();
             actor.stopped().await;
             return;
         }
