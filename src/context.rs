@@ -325,39 +325,28 @@ impl<A: Actor> Context<A> {
 
         let addr_rx = self.receiver.clone();
         let broadcast_rx = self.broadcast_receiver.clone();
-        let mut addr_recv = addr_rx.recv_async();
-        let mut broadcast_recv = broadcast_rx.recv_async();
+        let mut addr_recv = addr_rx.recv_async().fuse();
+        let mut broadcast_recv = broadcast_rx.recv_async().fuse();
+        let mut fut = fut.fuse();
 
         loop {
-            let (next_msg, unfinished) = {
-                let next_msg = future::select(addr_recv, broadcast_recv);
-                futures_util::pin_mut!(next_msg);
-                match future::select(fut, next_msg).await {
-                    Either::Left((future_res, _)) => break future_res,
-                    Either::Right(tuple) => tuple,
+            let msg = futures_util::select! {
+                msg = addr_recv => {
+                    addr_recv = addr_rx.recv_async().fuse();
+
+                    Either::Right(msg.unwrap())
+                }
+                msg = broadcast_recv => {
+                    broadcast_recv = broadcast_rx.recv_async().fuse();
+
+                    Either::Left(msg.unwrap())
+                }
+                result = fut => {
+                    return result
                 }
             };
-
-            let msg = match next_msg {
-                Either::Left((res, other)) => {
-                    broadcast_recv = other;
-                    addr_recv = addr_rx.recv_async();
-                    Either::Right(res.unwrap())
-                }
-                Either::Right((res, other)) => {
-                    addr_recv = other;
-                    broadcast_recv = broadcast_rx.recv_async();
-                    Either::Left(res.unwrap())
-                }
-            };
-
-            // To avoid broadcast starvation, try receive a broadcast here
-            if let Ok(Some(broadcast)) = broadcast_rx.try_recv() {
-                self.tick(Either::Left(broadcast), actor).await;
-            }
 
             self.tick(msg, actor).await;
-            fut = unfinished;
         }
     }
 
