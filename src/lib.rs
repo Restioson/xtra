@@ -1,7 +1,7 @@
 //! xtra is a tiny, fast, and safe actor system.
 
 #![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
-#![deny(missing_docs)]
+#![deny(unsafe_code, missing_docs)]
 
 pub use self::address::{Address, Disconnected, WeakAddress};
 pub use self::context::{ActorShutdown, Context};
