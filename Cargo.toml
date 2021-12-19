@@ -96,3 +96,7 @@ members = ["examples/basic_wasm_bindgen"]
 
 [package.metadata.docs.rs]
 features = ["with-async_std-1", "with-smol-1", "with-tokio-1", "with-wasm_bindgen-0_2"]
+
+[[bench]]
+name = "throughput"
+harness = false
