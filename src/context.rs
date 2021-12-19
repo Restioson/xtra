@@ -220,35 +220,22 @@ impl<A: Actor> Context<A> {
         let addr_rx = self.receiver.clone();
         let broadcast_rx = self.broadcast_receiver.clone();
 
-        let mut addr_recv = addr_rx.recv_async();
-        let mut broadcast_recv = broadcast_rx.recv_async();
+        let mut addr_recv = addr_rx.recv_async().fuse();
+        let mut broadcast_recv = broadcast_rx.recv_async().fuse();
 
         loop {
-            let next = future::select(addr_recv, broadcast_recv).await;
+            let msg = futures_util::select! {
+                msg = addr_recv => {
+                    addr_recv = addr_rx.recv_async().fuse();
 
-            let msg = match next {
-                Either::Left((res, other)) => {
-                    broadcast_recv = other;
-                    addr_recv = addr_rx.recv_async();
-                    Either::Right(res.unwrap())
+                    Either::Right(msg.unwrap())
                 }
-                Either::Right((res, other)) => {
-                    addr_recv = other;
-                    broadcast_recv = broadcast_rx.recv_async();
-                    Either::Left(res.unwrap())
+                msg = broadcast_recv => {
+                    broadcast_recv = broadcast_rx.recv_async().fuse();
+
+                    Either::Left(msg.unwrap())
                 }
             };
-
-            // To avoid broadcast starvation, try receive a broadcast here
-            if let Ok(Some(broadcast)) = broadcast_rx.try_recv() {
-                match self.tick(Either::Left(broadcast), &mut actor).await {
-                    ContinueManageLoop::Yes => {}
-                    ContinueManageLoop::ExitImmediately => {
-                        actor.stopped().await;
-                        break;
-                    }
-                }
-            }
 
             match self.tick(msg, &mut actor).await {
                 ContinueManageLoop::Yes => {}
