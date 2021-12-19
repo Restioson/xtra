@@ -16,6 +16,11 @@ use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{AddressMessage, BroadcastMessage, ContinueManageLoop};
 use crate::refcount::{RefCounter, Strong, Weak};
 use crate::{Actor, Address, Handler, KeepRunning, Message};
+use futures_core::FusedFuture;
+use futures_util::__private::async_await;
+use std::pin::Pin;
+use std::task;
+use task::Poll;
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -224,16 +229,68 @@ impl<A: Actor> Context<A> {
         let mut broadcast_recv = broadcast_rx.recv_async().fuse();
 
         loop {
-            let msg = futures_util::select! {
-                msg = addr_recv => {
-                    addr_recv = addr_rx.recv_async().fuse();
-
-                    Either::Right(msg.unwrap())
+            let msg = {
+                enum __PrivResult<_0, _1> {
+                    _0(_0),
+                    _1(_1),
                 }
-                msg = broadcast_recv => {
-                    broadcast_recv = broadcast_rx.recv_async().fuse();
+                let __select_result = {
+                    let mut __poll_fn = |__cx: &mut task::Context<'_>| {
+                        let mut __any_polled = false;
+                        let mut _0 = |__cx: &mut task::Context<'_>| {
+                            let mut addr_recv = unsafe { Pin::new_unchecked(&mut addr_recv) };
+                            if FusedFuture::is_terminated(&addr_recv) {
+                                None
+                            } else {
+                                Some(
+                                    future::FutureExt::poll_unpin(&mut addr_recv, __cx)
+                                        .map(__PrivResult::_0),
+                                )
+                            }
+                        };
+                        let _0: &mut dyn FnMut(&mut task::Context<'_>) -> Option<Poll<_>> = &mut _0;
+                        let mut _1 = |__cx: &mut task::Context<'_>| {
+                            let mut broadcast_recv =
+                                unsafe { Pin::new_unchecked(&mut broadcast_recv) };
+                            if FusedFuture::is_terminated(&broadcast_recv) {
+                                None
+                            } else {
+                                Some(
+                                    future::FutureExt::poll_unpin(&mut broadcast_recv, __cx)
+                                        .map(__PrivResult::_1),
+                                )
+                            }
+                        };
+                        let _1: &mut dyn FnMut(&mut task::Context<'_>) -> Option<Poll<_>> = &mut _1;
+                        let mut __select_arr = [_0, _1];
+                        async_await::shuffle(&mut __select_arr);
 
-                    Either::Left(msg.unwrap())
+                        for poller in &mut __select_arr {
+                            match poller(__cx) {
+                                Some(x @ Poll::Ready(_)) => return x,
+                                Some(Poll::Pending) => {
+                                    __any_polled = true;
+                                }
+                                None => {}
+                            }
+                        }
+                        if !__any_polled {
+                            panic!("all futures in select! were completed, but no `complete =>` handler was provided");
+                        } else {
+                            Poll::Pending
+                        }
+                    };
+                    future::poll_fn(__poll_fn).await
+                };
+                match __select_result {
+                    __PrivResult::_0(msg) => {
+                        addr_recv = addr_rx.recv_async().fuse();
+                        Either::Right(msg.unwrap())
+                    }
+                    __PrivResult::_1(msg) => {
+                        broadcast_recv = broadcast_rx.recv_async().fuse();
+                        Either::Left(msg.unwrap())
+                    }
                 }
             };
 
