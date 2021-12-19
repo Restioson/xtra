@@ -296,17 +296,15 @@ impl<A: Actor> Context<A> {
     }
 
     /// This is a combinator to avoid holding !Sync references across await points
-    fn recv_once(
-        &self,
-    ) -> impl Future<Output = Either<BroadcastMessage<A>, AddressMessage<A>>> + '_ {
-        future::select(
-            self.broadcast_receiver.recv_async(),
-            self.receiver.recv_async(),
-        )
-        .map(|next| match next {
-            Either::Left((res, _)) => Either::Left(res.unwrap()),
-            Either::Right((res, _)) => Either::Right(res.unwrap()),
-        })
+    async fn recv_once(&self) -> Either<BroadcastMessage<A>, AddressMessage<A>> {
+        futures_util::select! {
+            msg = self.broadcast_receiver.recv_async().fuse() => {
+                Either::Left(msg.unwrap())
+            }
+            msg = self.receiver.recv_async().fuse() => {
+                Either::Right(msg.unwrap())
+            }
+        }
     }
 
     /// Yields to the manager to handle one message.
