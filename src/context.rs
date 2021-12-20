@@ -258,7 +258,6 @@ impl<A: Actor> Context<A> {
             Either::Left(BroadcastMessage::Message(msg)) => msg.handle(actor, self).await,
             Either::Left(BroadcastMessage::Shutdown) => {
                 self.running = RunningState::Stopped;
-                return ContinueManageLoop::ExitImmediately;
             }
             Either::Right(AddressMessage::Message(msg)) => {
                 msg.handle(actor, self).await;
@@ -267,7 +266,6 @@ impl<A: Actor> Context<A> {
                 if self.ref_counter.strong_count() == 0 {
                     self.stop_all();
                     self.running = RunningState::Stopped;
-                    return ContinueManageLoop::ExitImmediately;
                 }
             }
         }
