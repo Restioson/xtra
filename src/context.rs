@@ -239,12 +239,11 @@ impl<A: Actor> Context<A> {
 
             match self.tick(msg, &mut actor).await {
                 ContinueManageLoop::Yes => {}
-                ContinueManageLoop::ExitImmediately => {
-                    actor.stopped().await;
-                    break;
-                }
+                ContinueManageLoop::ExitImmediately => break,
             }
         }
+
+        actor.stopped().await;
     }
 
     /// Handle a message and immediate notifications, returning whether to exit from the manage loop
