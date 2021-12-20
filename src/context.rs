@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 use flume::{Receiver, Sender};
 use futures_util::future::{self, Either};
+use futures_util::stream::FusedStream;
 use futures_util::FutureExt;
+use futures_util::StreamExt;
 
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
@@ -216,27 +218,9 @@ impl<A: Actor> Context<A> {
             return;
         }
 
-        // Listen for any messages for the ActorManager
-        let addr_rx = self.receiver.clone();
-        let broadcast_rx = self.broadcast_receiver.clone();
+        let mut inbox = self.inbox();
 
-        let mut addr_recv = addr_rx.recv_async().fuse();
-        let mut broadcast_recv = broadcast_rx.recv_async().fuse();
-
-        loop {
-            let msg = futures_util::select_biased! {
-                msg = broadcast_recv => {
-                    broadcast_recv = broadcast_rx.recv_async().fuse();
-
-                    Either::Left(msg.unwrap())
-                }
-                msg = addr_recv => {
-                    addr_recv = addr_rx.recv_async().fuse();
-
-                    Either::Right(msg.unwrap())
-                }
-            };
-
+        while let Some(msg) = inbox.next().await {
             match self.tick(msg, &mut actor).await {
                 ContinueManageLoop::Yes => {}
                 ContinueManageLoop::ExitImmediately => break,
@@ -277,18 +261,6 @@ impl<A: Actor> Context<A> {
         ContinueManageLoop::Yes
     }
 
-    /// This is a combinator to avoid holding !Sync references across await points
-    async fn recv_once(&self) -> Either<BroadcastMessage<A>, AddressMessage<A>> {
-        futures_util::select_biased! {
-            msg = self.broadcast_receiver.recv_async().fuse() => {
-                Either::Left(msg.unwrap())
-            }
-            msg = self.receiver.recv_async().fuse() => {
-                Either::Right(msg.unwrap())
-            }
-        }
-    }
-
     /// Yields to the manager to handle one message.
     pub async fn yield_once(&mut self, act: &mut A) {
         if let Some(keep_running) = self.handle_self_notification(act).await {
@@ -298,7 +270,9 @@ impl<A: Actor> Context<A> {
             return;
         }
 
-        self.tick(self.recv_once().await, act).await;
+        let msg = self.inbox().select_next_some().await;
+
+        self.tick(msg, act).await;
     }
 
     /// Handle any incoming messages for the actor while running a given future.
@@ -318,30 +292,18 @@ impl<A: Actor> Context<A> {
 
         futures_util::pin_mut!(fut);
 
-        let addr_rx = self.receiver.clone();
-        let broadcast_rx = self.broadcast_receiver.clone();
-        let mut addr_recv = addr_rx.recv_async().fuse();
-        let mut broadcast_recv = broadcast_rx.recv_async().fuse();
         let mut fut = fut.fuse();
+        let mut inbox = self.inbox();
 
         loop {
-            let msg = futures_util::select_biased! {
-                msg = broadcast_recv => {
-                    broadcast_recv = broadcast_rx.recv_async().fuse();
-
-                    Either::Left(msg.unwrap())
-                }
-                msg = addr_recv => {
-                    addr_recv = addr_rx.recv_async().fuse();
-
-                    Either::Right(msg.unwrap())
+            futures_util::select_biased! {
+                msg = inbox.select_next_some() => {
+                    self.tick(msg, actor).await;
                 }
                 result = fut => {
                     return result
                 }
-            };
-
-            self.tick(msg, actor).await;
+            }
         }
     }
 
@@ -435,6 +397,25 @@ impl<A: Actor> Context<A> {
         };
 
         Ok(fut)
+    }
+
+    fn inbox(&self) -> impl FusedStream<Item = Either<BroadcastMessage<A>, AddressMessage<A>>> {
+        let addr_rx = self.receiver.clone();
+        let broadcast_rx = self.broadcast_receiver.clone();
+
+        let broadcast_stream =
+            futures_util::stream::unfold(broadcast_rx, |broadcast_rx| async move {
+                match broadcast_rx.recv_async().await {
+                    Ok(msg) => Some((msg, broadcast_rx)),
+                    Err(_) => None,
+                }
+            })
+            .map(Either::Left)
+            .boxed();
+
+        let address_stream = addr_rx.into_stream().map(Either::Right).boxed();
+
+        futures_util::stream_select!(broadcast_stream, address_stream).fuse()
     }
 }
 
