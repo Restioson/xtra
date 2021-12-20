@@ -1,5 +1,6 @@
-use criterion::{criterion_group, criterion_main, Criterion, Throughput, BatchSize};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput, BatchSize, BenchmarkId};
 use xtra::{Actor, Address, Context, Handler, Message};
+use criterion::async_executor::SmolExecutor;
 
 struct Counter(u64);
 
@@ -30,25 +31,20 @@ impl Handler<Finish> for Counter {
 }
 
 fn throughput(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Throughput");
-    group.throughput(Throughput::Elements(100));
-    group.bench_function("inc 100", |b| {
-        let setup = || {
-            let (addr, ctx) = Counter(0).create(Some(100)).run();
-            for _ in 0..100 {
-                addr.do_send(IncrementZst).unwrap();
-            }
+    let mut group = c.benchmark_group("send_zst");
 
-            (addr, ctx)
-        };
+    for num_messages in [1, 10, 100, 1000] {
+        let (address, task) = Counter(0).create(Some(num_messages)).run();
+        let _task = smol::spawn(task);
 
-        let iter = |(addr, fut): (Address<_>, _)| {
-            let _g = smol::spawn(fut);
-            pollster::block_on(addr.send(Finish)).unwrap();
-        };
-
-        b.iter_batched(setup, iter, BatchSize::SmallInput);
-    });
+        group.bench_with_input(BenchmarkId::from_parameter(num_messages), &num_messages, |b, &num_messages| {
+            b.to_async(SmolExecutor).iter(|| async {
+                for _ in 0..num_messages {
+                    address.send(IncrementZst).await;
+                }
+            });
+        });
+    }
 }
 
 criterion_group!(benches, throughput);
