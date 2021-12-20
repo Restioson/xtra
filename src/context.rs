@@ -13,7 +13,7 @@ use {futures_timer::Delay, std::time::Duration};
 
 use crate::drop_notice::DropNotifier;
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
-use crate::manager::{AddressMessage, BroadcastMessage, ContinueManageLoop};
+use crate::manager::{AddressMessage, BroadcastMessage};
 use crate::refcount::{RefCounter, Strong, Weak};
 use crate::{Actor, Address, Handler, KeepRunning, Message};
 
@@ -437,6 +437,13 @@ impl<A: Actor> Context<A> {
 
         Ok(fut)
     }
+}
+
+/// If and how to continue the manage loop
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+enum ContinueManageLoop {
+    Yes,
+    ExitImmediately,
 }
 
 /// The operation failed because the actor is being shut down

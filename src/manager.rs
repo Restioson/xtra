@@ -33,13 +33,6 @@ impl<A> Clone for BroadcastMessage<A> {
     }
 }
 
-/// If and how to continue the manage loop
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
-pub(crate) enum ContinueManageLoop {
-    Yes,
-    ExitImmediately,
-}
-
 /// A manager for the actor which handles incoming messages and stores the context. Its managing
 /// loop can be started with [`ActorManager::run`](struct.ActorManager.html#method.run).
 pub struct ActorManager<A: Actor> {
