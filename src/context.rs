@@ -224,16 +224,16 @@ impl<A: Actor> Context<A> {
         let mut broadcast_recv = broadcast_rx.recv_async().fuse();
 
         loop {
-            let msg = futures_util::select! {
-                msg = addr_recv => {
-                    addr_recv = addr_rx.recv_async().fuse();
-
-                    Either::Right(msg.unwrap())
-                }
+            let msg = futures_util::select_biased! {
                 msg = broadcast_recv => {
                     broadcast_recv = broadcast_rx.recv_async().fuse();
 
                     Either::Left(msg.unwrap())
+                }
+                msg = addr_recv => {
+                    addr_recv = addr_rx.recv_async().fuse();
+
+                    Either::Right(msg.unwrap())
                 }
             };
 
@@ -284,7 +284,7 @@ impl<A: Actor> Context<A> {
 
     /// This is a combinator to avoid holding !Sync references across await points
     async fn recv_once(&self) -> Either<BroadcastMessage<A>, AddressMessage<A>> {
-        futures_util::select! {
+        futures_util::select_biased! {
             msg = self.broadcast_receiver.recv_async().fuse() => {
                 Either::Left(msg.unwrap())
             }
@@ -330,16 +330,16 @@ impl<A: Actor> Context<A> {
         let mut fut = fut.fuse();
 
         loop {
-            let msg = futures_util::select! {
-                msg = addr_recv => {
-                    addr_recv = addr_rx.recv_async().fuse();
-
-                    Either::Right(msg.unwrap())
-                }
+            let msg = futures_util::select_biased! {
                 msg = broadcast_recv => {
                     broadcast_recv = broadcast_rx.recv_async().fuse();
 
                     Either::Left(msg.unwrap())
+                }
+                msg = addr_recv => {
+                    addr_recv = addr_rx.recv_async().fuse();
+
+                    Either::Right(msg.unwrap())
                 }
                 result = fut => {
                     return result
