@@ -296,7 +296,7 @@ impl<A: Actor> Context<A> {
         let mut inbox = self.inbox();
 
         loop {
-            futures_util::select_biased! {
+            futures_util::select! {
                 msg = inbox.select_next_some() => {
                     self.tick(msg, actor).await;
                 }
