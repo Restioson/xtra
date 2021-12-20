@@ -256,11 +256,9 @@ impl<A: Actor> Context<A> {
     ) -> ContinueManageLoop {
         match msg {
             Either::Left(BroadcastMessage::Message(msg)) => msg.handle(actor, self).await,
+            Either::Right(AddressMessage::Message(msg)) => msg.handle(actor, self).await,
             Either::Left(BroadcastMessage::Shutdown) => {
                 self.running = RunningState::Stopped;
-            }
-            Either::Right(AddressMessage::Message(msg)) => {
-                msg.handle(actor, self).await;
             }
             Either::Right(AddressMessage::LastAddress) => {
                 if self.ref_counter.strong_count() == 0 {
