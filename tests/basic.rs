@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures_util::future::FutureExt;
 use smol_timeout::TimeoutExt;
 
 use xtra::prelude::*;
@@ -148,4 +149,21 @@ async fn test_stream_cancel_join() {
 
     // Join should also return right away
     assert!(jh.timeout(Duration::from_secs(2)).await.is_some());
+}
+
+#[smol_potat::test]
+async fn stop_in_started_actor_stops_immediately() {
+    let (_address, ctx) = Context::new(None);
+    let fut = ctx.run(StopInStarted);
+
+    fut.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
+}
+
+struct StopInStarted;
+
+#[async_trait]
+impl Actor for StopInStarted {
+    async fn started(&mut self, ctx: &mut Context<Self>) {
+        ctx.stop();
+    }
 }
