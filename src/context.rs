@@ -5,8 +5,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use flume::{Receiver, Sender};
+use futures_core::stream::BoxStream;
 use futures_util::future::{self, Either};
-use futures_util::stream::FusedStream;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
 
@@ -232,12 +232,8 @@ impl<A: Actor> Context<A> {
 
     /// Handle a message and immediate notifications, returning whether to exit from the manage loop
     /// or not.
-    async fn tick(
-        &mut self,
-        msg: Either<BroadcastMessage<A>, AddressMessage<A>>,
-        actor: &mut A,
-    ) -> ContinueManageLoop {
-        match msg {
+    async fn tick(&mut self, msg: InboxMessage<A>, actor: &mut A) -> ContinueManageLoop {
+        match msg.inner {
             Either::Left(BroadcastMessage::Message(msg)) => msg.handle(actor, self).await,
             Either::Right(AddressMessage::Message(msg)) => msg.handle(actor, self).await,
             Either::Left(BroadcastMessage::Shutdown) => {
@@ -270,9 +266,9 @@ impl<A: Actor> Context<A> {
             return;
         }
 
-        let msg = self.inbox().select_next_some().await;
-
-        self.tick(msg, act).await;
+        if let Some(msg) = self.inbox().next().await {
+            self.tick(msg, act).await;
+        }
     }
 
     /// Handle any incoming messages for the actor while running a given future.
@@ -296,9 +292,16 @@ impl<A: Actor> Context<A> {
         let mut inbox = self.inbox();
 
         loop {
+            let inbox_msg = inbox.next().fuse();
+            futures_util::pin_mut!(inbox_msg);
+
             futures_util::select! {
-                msg = inbox.select_next_some() => {
-                    self.tick(msg, actor).await;
+                msg = inbox_msg => {
+                    if let Some(msg) = msg {
+                        self.tick(msg, actor).await;
+                    }
+
+                    // On `None`, the actor's inbox is closed (shutdown?) but our `fut` hasn't resolved yet. Essentially, we now just wait for `fut` to complete.
                 }
                 result = fut => {
                     return result
@@ -399,24 +402,57 @@ impl<A: Actor> Context<A> {
         Ok(fut)
     }
 
-    fn inbox(&self) -> impl FusedStream<Item = Either<BroadcastMessage<A>, AddressMessage<A>>> {
-        let addr_rx = self.receiver.clone();
-        let broadcast_rx = self.broadcast_receiver.clone();
+    fn inbox(&self) -> Inbox<A> {
+        Inbox::new(self.receiver.clone(), self.broadcast_receiver.clone())
+    }
+}
 
+struct Inbox<A> {
+    inner: BoxStream<'static, Either<BroadcastMessage<A>, AddressMessage<A>>>,
+}
+
+impl<A> Inbox<A>
+where
+    A: 'static,
+{
+    fn new(
+        address_receiver: Receiver<AddressMessage<A>>,
+        broadcast_receiver: barrage::SharedReceiver<BroadcastMessage<A>>,
+    ) -> Self {
         let broadcast_stream =
-            futures_util::stream::unfold(broadcast_rx, |broadcast_rx| async move {
-                match broadcast_rx.recv_async().await {
-                    Ok(msg) => Some((msg, broadcast_rx)),
+            futures_util::stream::unfold(broadcast_receiver, |broadcast_receiver| async move {
+                match broadcast_receiver.recv_async().await {
+                    Ok(msg) => Some((msg, broadcast_receiver)),
                     Err(_) => None,
                 }
             })
             .map(Either::Left)
             .boxed();
 
-        let address_stream = addr_rx.into_stream().map(Either::Right).boxed();
+        let address_stream =
+            futures_util::stream::unfold(address_receiver, |address_receiver| async move {
+                match address_receiver.recv_async().await {
+                    Ok(msg) => Some((msg, address_receiver)),
+                    Err(_) => None,
+                }
+            })
+            .map(Either::Right)
+            .boxed();
 
-        futures_util::stream_select!(broadcast_stream, address_stream).fuse()
+        Self {
+            inner: futures_util::stream_select!(broadcast_stream, address_stream).boxed(),
+        }
     }
+
+    pub async fn next(&mut self) -> Option<InboxMessage<A>> {
+        let inner = self.inner.next().await?;
+
+        Some(InboxMessage { inner })
+    }
+}
+
+struct InboxMessage<A> {
+    inner: Either<BroadcastMessage<A>, AddressMessage<A>>,
 }
 
 /// If and how to continue the manage loop
