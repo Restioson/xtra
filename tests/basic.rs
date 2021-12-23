@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures_util::future::{pending, FutureExt};
+use futures_util::future::FutureExt;
 use smol_timeout::TimeoutExt;
 
 use xtra::prelude::*;
