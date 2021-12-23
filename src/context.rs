@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::future::Future;
+use std::ops::ControlFlow;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -18,7 +19,6 @@ use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{AddressMessage, BroadcastMessage};
 use crate::refcount::{RefCounter, Strong, Weak};
 use crate::{Actor, Address, Handler, KeepRunning, Message};
-use std::ops::ControlFlow;
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
