@@ -206,13 +206,6 @@ impl<A: Actor> Context<A> {
     pub async fn run(mut self, mut actor: A) {
         actor.started(&mut self).await;
 
-        // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
-        // in the started method, otherwise it would kinda be a bug
-        if !self.check_running(&mut actor).await {
-            actor.stopped().await;
-            return;
-        }
-
         // Similar to above
         if let Some(BroadcastMessage::Shutdown) = self.broadcast_receiver.try_recv().unwrap() {
             actor.stopped().await;
@@ -234,6 +227,10 @@ impl<A: Actor> Context<A> {
     /// Handle a message and immediate notifications, returning whether to exit from the manage loop
     /// or not.
     async fn tick(&mut self, msg: InboxMessage<A>, actor: &mut A) -> ControlFlow<(), ()> {
+        if !self.check_running(actor).await {
+            return ControlFlow::Break(());
+        }
+
         match msg.inner {
             Either::Left(BroadcastMessage::Message(msg)) => msg.handle(actor, self).await,
             Either::Right(AddressMessage::Message(msg)) => msg.handle(actor, self).await,
@@ -404,6 +401,10 @@ impl<A: Actor> Context<A> {
     }
 
     fn inbox(&self) -> Inbox<A> {
+        if matches!(self.running, RunningState::Stopped | RunningState::Stopping) {
+            return Inbox::empty();
+        }
+
         Inbox::new(self.receiver.clone(), self.broadcast_receiver.clone())
     }
 }
@@ -416,6 +417,12 @@ impl<A> Inbox<A>
 where
     A: 'static,
 {
+    fn empty() -> Self {
+        Self {
+            inner: futures_util::stream::empty().boxed(),
+        }
+    }
+
     fn new(
         address_receiver: Receiver<AddressMessage<A>>,
         broadcast_receiver: barrage::SharedReceiver<BroadcastMessage<A>>,
