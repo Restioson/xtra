@@ -167,3 +167,45 @@ impl Actor for StopInStarted {
         ctx.stop();
     }
 }
+
+#[smol_potat::test]
+async fn stop_all_in_stopping_actor_stops_immediately() {
+    let (_address, mut ctx) = Context::new(None);
+
+    let fut1 = ctx.attach(InstantShutdownAll {
+        stop_self: true,
+        number: 1
+    });
+    let fut2 = ctx.attach(InstantShutdownAll {
+        stop_self: false,
+        number: 2
+    });
+    let fut3 = ctx.attach(InstantShutdownAll{
+        stop_self: false,
+        number: 3
+    });
+
+    fut1.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
+    fut2.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
+    fut3.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
+}
+
+struct InstantShutdownAll {
+    stop_self: bool,
+    number: u8
+}
+
+#[async_trait]
+impl Actor for InstantShutdownAll {
+    async fn started(&mut self, ctx: &mut Context<Self>) {
+        if self.stop_self {
+            ctx.stop();
+        }
+    }
+
+    async fn stopping(&mut self, _: &mut Context<Self>) -> KeepRunning {
+        println!("Actor {} stopping", self.number);
+
+        KeepRunning::StopAll
+    }
+}

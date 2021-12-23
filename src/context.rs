@@ -43,7 +43,7 @@ pub struct Context<A> {
     drop_notifier: DropNotifier,
 }
 
-#[derive(Eq, PartialEq, Copy, Clone)]
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
 enum RunningState {
     Running,
     Stopping,
@@ -206,11 +206,15 @@ impl<A: Actor> Context<A> {
     pub async fn run(mut self, mut actor: A) {
         actor.started(&mut self).await;
 
-        // Similar to above
-        if let Some(BroadcastMessage::Shutdown) = self.broadcast_receiver.try_recv().unwrap() {
-            actor.stopped().await;
+        if !self.check_running(&mut actor).await {
             return;
         }
+
+        // // Similar to above
+        // if let Some(BroadcastMessage::Shutdown) = self.broadcast_receiver.try_recv().unwrap() {
+        //     actor.stopped().await;
+        //     return;
+        // }
 
         let mut inbox = self.inbox();
 
