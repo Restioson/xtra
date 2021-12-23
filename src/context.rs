@@ -18,6 +18,7 @@ use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{AddressMessage, BroadcastMessage};
 use crate::refcount::{RefCounter, Strong, Weak};
 use crate::{Actor, Address, Handler, KeepRunning, Message};
+use std::ops::ControlFlow;
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -222,8 +223,8 @@ impl<A: Actor> Context<A> {
 
         while let Some(msg) = inbox.next().await {
             match self.tick(msg, &mut actor).await {
-                ContinueManageLoop::Yes => {}
-                ContinueManageLoop::ExitImmediately => break,
+                ControlFlow::Continue(()) => {}
+                ControlFlow::Break(()) => break,
             }
         }
 
@@ -232,7 +233,7 @@ impl<A: Actor> Context<A> {
 
     /// Handle a message and immediate notifications, returning whether to exit from the manage loop
     /// or not.
-    async fn tick(&mut self, msg: InboxMessage<A>, actor: &mut A) -> ContinueManageLoop {
+    async fn tick(&mut self, msg: InboxMessage<A>, actor: &mut A) -> ControlFlow<(), ()> {
         match msg.inner {
             Either::Left(BroadcastMessage::Message(msg)) => msg.handle(actor, self).await,
             Either::Right(AddressMessage::Message(msg)) => msg.handle(actor, self).await,
@@ -248,13 +249,13 @@ impl<A: Actor> Context<A> {
         }
 
         if !self.check_running(actor).await {
-            return ContinueManageLoop::ExitImmediately;
+            return ControlFlow::Break(());
         }
         if !self.handle_self_notifications(actor).await {
-            return ContinueManageLoop::ExitImmediately;
+            return ControlFlow::Break(());
         }
 
-        ContinueManageLoop::Yes
+        ControlFlow::Continue(())
     }
 
     /// Yields to the manager to handle one message.
@@ -453,13 +454,6 @@ where
 
 struct InboxMessage<A> {
     inner: Either<BroadcastMessage<A>, AddressMessage<A>>,
-}
-
-/// If and how to continue the manage loop
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
-enum ContinueManageLoop {
-    Yes,
-    ExitImmediately,
 }
 
 /// The operation failed because the actor is being shut down
