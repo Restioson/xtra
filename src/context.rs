@@ -224,9 +224,19 @@ impl<A: Actor> Context<A> {
         actor.stopped().await;
     }
 
-    /// Handle a message and immediate notifications, returning whether to exit from the manage loop
-    /// or not.
-    async fn tick(&mut self, msg: InboxMessage<A>, actor: &mut A) -> ControlFlow<(), ()> {
+    /// Returns the [`Inbox`] of all actors attached to this [`Context`].
+    ///
+    /// This is useful if you want to build your own, more sophisticated event-loop.
+    pub fn inbox(&self) -> Inbox<A> {
+        if matches!(self.running, RunningState::Stopped | RunningState::Stopping) {
+            return Inbox::empty();
+        }
+
+        Inbox::new(self.receiver.clone(), self.broadcast_receiver.clone())
+    }
+
+    /// Handle a message and immediate notifications, returning whether to continue the event loop.
+    pub async fn tick(&mut self, msg: InboxMessage<A>, actor: &mut A) -> ControlFlow<(), ()> {
         if !self.check_running(actor).await {
             return ControlFlow::Break(());
         }
@@ -399,17 +409,9 @@ impl<A: Actor> Context<A> {
 
         Ok(fut)
     }
-
-    fn inbox(&self) -> Inbox<A> {
-        if matches!(self.running, RunningState::Stopped | RunningState::Stopping) {
-            return Inbox::empty();
-        }
-
-        Inbox::new(self.receiver.clone(), self.broadcast_receiver.clone())
-    }
 }
 
-struct Inbox<A> {
+pub struct Inbox<A> {
     inner: BoxStream<'static, Either<BroadcastMessage<A>, AddressMessage<A>>>,
 }
 
@@ -459,7 +461,7 @@ where
     }
 }
 
-struct InboxMessage<A> {
+pub struct InboxMessage<A> {
     inner: Either<BroadcastMessage<A>, AddressMessage<A>>,
 }
 
