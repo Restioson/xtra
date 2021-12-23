@@ -24,24 +24,28 @@ impl Handler<Print> for Printer {
 
 #[tokio::main]
 async fn main() {
-    let (address, mut context) = Context::new(None);
-
     let mut actor = Printer::default();
 
-    tokio::spawn(async move {
-        actor.started(&mut context).await;
+    let address = {
+        let (address, mut context) = Context::new(None);
 
-        let mut inbox = context.inbox();
+        tokio::spawn(async move {
+            actor.started(&mut context).await;
 
-        while let Some(msg) = inbox.next().await {
-            match context.tick(msg, &mut actor).await {
-                ControlFlow::Continue(()) => continue,
-                ControlFlow::Break(()) => break,
+            let mut inbox = context.inbox();
+
+            while let Some(msg) = inbox.next().await {
+                match context.tick(msg, &mut actor).await {
+                    ControlFlow::Continue(()) => continue,
+                    ControlFlow::Break(()) => break,
+                }
             }
-        }
 
-        actor.stopped().await;
-    });
+            actor.stopped().await;
+        });
+
+        address
+    };
 
     loop {
         address
