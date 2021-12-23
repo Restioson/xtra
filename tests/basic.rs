@@ -174,15 +174,15 @@ async fn stop_all_in_stopping_actor_stops_immediately() {
 
     let fut1 = ctx.attach(InstantShutdownAll {
         stop_self: true,
-        number: 1
+        number: 1,
     });
     let fut2 = ctx.attach(InstantShutdownAll {
         stop_self: false,
-        number: 2
+        number: 2,
     });
-    let fut3 = ctx.attach(InstantShutdownAll{
+    let fut3 = ctx.attach(InstantShutdownAll {
         stop_self: false,
-        number: 3
+        number: 3,
     });
 
     fut1.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
@@ -192,7 +192,7 @@ async fn stop_all_in_stopping_actor_stops_immediately() {
 
 struct InstantShutdownAll {
     stop_self: bool,
-    number: u8
+    number: u8,
 }
 
 #[async_trait]
