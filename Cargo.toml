@@ -62,6 +62,10 @@ name = "basic_tokio"
 required-features = ["with-tokio-1", "tokio/full"]
 
 [[example]]
+name = "custom-event-loop"
+required-features = ["with-tokio-1", "tokio/full"]
+
+[[example]]
 name = "basic_async_std"
 required-features = ["with-async_std-1", "async-std/attributes"]
 
