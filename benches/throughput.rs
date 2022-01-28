@@ -1,6 +1,6 @@
-use criterion::{criterion_group, criterion_main, Criterion, Throughput, BatchSize, BenchmarkId};
-use xtra::{Actor, Address, Context, Handler, Message};
 use criterion::async_executor::SmolExecutor;
+use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
+use xtra::{Actor, Address, Context, Handler, Message};
 
 struct Counter(u64);
 
@@ -37,13 +37,17 @@ fn throughput(c: &mut Criterion) {
         let (address, task) = Counter(0).create(Some(num_messages)).run();
         let _task = smol::spawn(task);
 
-        group.bench_with_input(BenchmarkId::from_parameter(num_messages), &num_messages, |b, &num_messages| {
-            b.to_async(SmolExecutor).iter(|| async {
-                for _ in 0..num_messages {
-                    address.send(IncrementZst).await;
-                }
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(num_messages),
+            &num_messages,
+            |b, &num_messages| {
+                b.to_async(SmolExecutor).iter(|| async {
+                    for _ in 0..num_messages {
+                        address.send(IncrementZst).await;
+                    }
+                });
+            },
+        );
     }
 }
 
