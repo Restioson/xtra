@@ -40,12 +40,50 @@ pub(crate) enum ContinueManageLoop {
     ExitImmediately,
 }
 
+/// Extension trait for [`Actor`] to create an instance of [`ActorManager`].
+pub trait Create: Actor {
+    /// Returns the actor's address and manager in a ready-to-start state, given the cap for the
+    /// actor's mailbox. If `None` is passed, it will be of unbounded size. To spawn the actor,
+    /// the [`ActorManager::spawn`](struct.ActorManager.html#method.spawn) must be called, or
+    /// the [`ActorManager::run`](struct.ActorManager.html#method.run) method must be called
+    /// and the future it returns spawned onto an executor.
+    /// # Example
+    ///
+    /// ```rust
+    /// # use xtra::{KeepRunning, prelude::*};
+    /// # use std::time::Duration;
+    /// # use smol::Timer;
+    /// # struct MyActor;
+    /// # impl Actor for MyActor {}
+    /// smol::block_on(async {
+    ///     let (addr, fut) = MyActor.create(None).run();
+    ///     smol::spawn(fut).detach(); // Actually spawn the actor onto an executor
+    ///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
+    /// })
+    /// ```
+    fn create(self, message_cap: Option<usize>) -> ActorManager<Self>;
+}
+
+impl<A> Create for A
+where
+    A: Actor,
+{
+    fn create(self, message_cap: Option<usize>) -> ActorManager<Self> {
+        let (address, ctx) = Context::new(message_cap);
+        ActorManager {
+            address,
+            actor: self,
+            ctx,
+        }
+    }
+}
+
 /// A manager for the actor which handles incoming messages and stores the context. Its managing
 /// loop can be started with [`ActorManager::run`](struct.ActorManager.html#method.run).
 pub struct ActorManager<A: Actor> {
-    pub(crate) address: Address<A>,
-    pub(crate) actor: A,
-    pub(crate) ctx: Context<A>,
+    address: Address<A>,
+    actor: A,
+    ctx: Context<A>,
 }
 
 impl<A: Actor> ActorManager<A> {

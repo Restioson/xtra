@@ -31,7 +31,7 @@ pub mod prelude {
     #[cfg(feature = "with-tracing-0_1")]
     pub use crate::tracing::InstrumentedExt;
     #[doc(no_inline)]
-    pub use crate::{Actor, Handler, Message};
+    pub use crate::{manager::Create, Actor, Handler, Message};
 }
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
@@ -201,34 +201,6 @@ pub trait Actor: 'static + Send + Sized {
     /// the actor is dropped.
     #[allow(unused_variables)]
     async fn stopped(self) {}
-
-    /// Returns the actor's address and manager in a ready-to-start state, given the cap for the
-    /// actor's mailbox. If `None` is passed, it will be of unbounded size. To spawn the actor,
-    /// the [`ActorManager::spawn`](struct.ActorManager.html#method.spawn) must be called, or
-    /// the [`ActorManager::run`](struct.ActorManager.html#method.run) method must be called
-    /// and the future it returns spawned onto an executor.
-    /// # Example
-    ///
-    /// ```rust
-    /// # use xtra::{KeepRunning, prelude::*};
-    /// # use std::time::Duration;
-    /// # use smol::Timer;
-    /// # struct MyActor;
-    /// # impl Actor for MyActor {}
-    /// smol::block_on(async {
-    ///     let (addr, fut) = MyActor.create(None).run();
-    ///     smol::spawn(fut).detach(); // Actually spawn the actor onto an executor
-    ///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
-    /// })
-    /// ```
-    fn create(self, message_cap: Option<usize>) -> ActorManager<Self> {
-        let (address, ctx) = Context::new(message_cap);
-        ActorManager {
-            address,
-            actor: self,
-            ctx,
-        }
-    }
 }
 
 /// Whether to keep the actor running after it has been put into a stopping state.
