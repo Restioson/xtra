@@ -64,7 +64,7 @@ impl<A: Actor> Context<A> {
     /// #         MyActor
     /// #     }
     /// # }
-    /// # impl Actor for MyActor {}
+    /// # #[async_trait::async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
     /// # async {
     /// let (addr, mut ctx) = Context::new(Some(32));
     /// for n in 0..3 {
@@ -107,7 +107,7 @@ impl<A: Actor> Context<A> {
 
     /// Attaches an actor of the same type listening to the same address as this actor is.
     /// They will operate in a message-stealing fashion, with no message handled by two actors.
-    pub fn attach(&mut self, actor: A) -> impl Future<Output = ()> {
+    pub fn attach(&mut self, actor: A) -> impl Future<Output = A::Stop> {
         // Give the new context a new mailbox on the same broadcast channel, and then make this
         // receiver into a shared receiver.
         let broadcast_receiver = self.broadcast_receiver.clone().upgrade().into_shared();
@@ -200,21 +200,19 @@ impl<A: Actor> Context<A> {
     }
 
     /// Run the given actor's main loop, handling incoming messages to its mailbox.
-    pub async fn run(mut self, mut actor: A) {
+    pub async fn run(mut self, mut actor: A) -> A::Stop {
         actor.started(&mut self).await;
 
         // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
         // in the started method, otherwise it would kinda be a bug
         if !self.check_running(&mut actor).await {
             self.stop_all();
-            actor.stopped().await;
-            return;
+            return actor.stopped().await;
         }
 
         // Similar to above
         if let Some(BroadcastMessage::Shutdown) = self.broadcast_receiver.try_recv().unwrap() {
-            actor.stopped().await;
-            return;
+            return actor.stopped().await;
         }
 
         // Listen for any messages for the ActorManager
@@ -245,8 +243,7 @@ impl<A: Actor> Context<A> {
                 match self.tick(Either::Left(broadcast), &mut actor).await {
                     ContinueManageLoop::Yes => {}
                     ContinueManageLoop::ExitImmediately => {
-                        actor.stopped().await;
-                        break;
+                        return actor.stopped().await;
                     }
                 }
             }
@@ -254,8 +251,7 @@ impl<A: Actor> Context<A> {
             match self.tick(msg, &mut actor).await {
                 ContinueManageLoop::Yes => {}
                 ContinueManageLoop::ExitImmediately => {
-                    actor.stopped().await;
-                    break;
+                    return actor.stopped().await;
                 }
             }
         }

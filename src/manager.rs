@@ -48,14 +48,16 @@ pub struct ActorManager<A: Actor> {
     pub(crate) ctx: Context<A>,
 }
 
-impl<A: Actor> ActorManager<A> {
+impl<A: Actor<Stop = ()>> ActorManager<A> {
     /// Spawn the actor's main loop on the given runtime. This will allow it to handle messages.
     pub fn spawn<S: Spawner>(self, spawner: &mut S) -> Address<A> {
         let (addr, fut) = self.run();
         spawner.spawn(fut);
         addr
     }
+}
 
+impl<A: Actor> ActorManager<A> {
     /// Starts the manager loop, returning the actor's address and its manage future. This will
     /// start the actor and allow it to respond to messages.
     ///
@@ -64,14 +66,14 @@ impl<A: Actor> ActorManager<A> {
     /// ```no_run
     /// # use xtra::prelude::*;
     /// struct MyActor;
-    /// impl Actor for MyActor {}
+    /// # #[async_trait::async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
     ///
     /// smol::block_on(async {
     ///     let (addr, fut) = MyActor.create(None).run();
     ///     smol::spawn(fut).detach(); // Actually spawn the actor onto an executor
     /// });
     /// ```
-    pub fn run(self) -> (Address<A>, impl Future<Output = ()>) {
+    pub fn run(self) -> (Address<A>, impl Future<Output = A::Stop>) {
         (self.address, self.ctx.run(self.actor))
     }
 }

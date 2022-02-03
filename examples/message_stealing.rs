@@ -21,6 +21,8 @@ impl Printer {
 
 #[async_trait::async_trait]
 impl Actor for Printer {
+    type Stop = ();
+
     async fn stopped(self) {
         println!("Actor {} stopped", self.id);
     }

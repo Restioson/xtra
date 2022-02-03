@@ -14,7 +14,13 @@ impl Message for Hello {
 struct ActorA {
     actor_b: Address<ActorB>,
 }
-impl Actor for ActorA {}
+
+#[async_trait::async_trait]
+impl Actor for ActorA {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 #[async_trait::async_trait]
 impl Handler<Hello> for ActorA {
@@ -27,7 +33,13 @@ impl Handler<Hello> for ActorA {
 }
 
 struct ActorB;
-impl Actor for ActorB {}
+
+#[async_trait::async_trait]
+impl Actor for ActorB {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 #[async_trait::async_trait]
 impl Handler<Initialized> for ActorB {

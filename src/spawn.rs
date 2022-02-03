@@ -38,7 +38,7 @@ mod async_std_impl {
         fn spawn_global(self) -> Address<A>;
     }
 
-    impl<A: Actor> AsyncStdGlobalSpawnExt<A> for ActorManager<A> {
+    impl<A: Actor<Stop = ()>> AsyncStdGlobalSpawnExt<A> for ActorManager<A> {
         fn spawn_global(self) -> Address<A> {
             self.spawn(&mut AsyncStd)
         }
@@ -80,7 +80,7 @@ mod smol_impl {
         fn spawn_global(self) -> Address<A>;
     }
 
-    impl<A: Actor> SmolGlobalSpawnExt<A> for ActorManager<A> {
+    impl<A: Actor<Stop = ()>> SmolGlobalSpawnExt<A> for ActorManager<A> {
         fn spawn_global(self) -> Address<A> {
             self.spawn(&mut Smol::Global)
         }
@@ -121,7 +121,7 @@ mod tokio_impl {
         fn spawn_global(self) -> Address<A>;
     }
 
-    impl<A: Actor> TokioGlobalSpawnExt<A> for ActorManager<A> {
+    impl<A: Actor<Stop = ()>> TokioGlobalSpawnExt<A> for ActorManager<A> {
         fn spawn_global(self) -> Address<A> {
             self.spawn(&mut Tokio::Global)
         }
@@ -148,7 +148,7 @@ mod wasm_bindgen_impl {
         fn spawn_global(self) -> Address<A>;
     }
 
-    impl<A: Actor> WasmBindgenGlobalSpawnExt<A> for ActorManager<A> {
+    impl<A: Actor<Stop = ()>> WasmBindgenGlobalSpawnExt<A> for ActorManager<A> {
         fn spawn_global(self) -> Address<A> {
             self.spawn(&mut WasmBindgen)
         }

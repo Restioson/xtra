@@ -12,7 +12,12 @@ use xtra::KeepRunning;
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
 
-impl Actor for Accumulator {}
+#[async_trait::async_trait]
+impl Actor for Accumulator {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 struct Inc;
 impl Message for Inc {
@@ -58,6 +63,8 @@ impl Drop for DropTester {
 
 #[async_trait]
 impl Actor for DropTester {
+    type Stop = ();
+
     async fn stopping(&mut self, _ctx: &mut Context<Self>) -> KeepRunning {
         self.0.fetch_add(1, Ordering::SeqCst);
         KeepRunning::StopAll
@@ -123,7 +130,11 @@ impl Message for StreamCancelMessage {
 struct StreamCancelTester;
 
 #[async_trait]
-impl Actor for StreamCancelTester {}
+impl Actor for StreamCancelTester {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 #[async_trait]
 impl Handler<StreamCancelMessage> for StreamCancelTester {
