@@ -32,6 +32,8 @@ pub mod prelude {
     pub use crate::tracing::InstrumentedExt;
     #[doc(no_inline)]
     pub use crate::{Actor, Handler, Message};
+
+    pub use async_trait::async_trait;
 }
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
@@ -74,7 +76,7 @@ pub trait Message: Send + 'static {
 ///     type Result = u32;
 /// }
 ///
-/// #[async_trait::async_trait]
+/// #[async_trait]
 /// impl Handler<Msg> for MyActor {
 ///     async fn handle(&mut self, message: Msg, ctx: &mut Context<Self>) -> u32 {
 ///         20
@@ -115,7 +117,7 @@ pub trait Handler<M: Message>: Actor {
 /// # use smol::Timer;
 /// struct MyActor;
 ///
-/// #[async_trait::async_trait]
+/// #[async_trait]
 /// impl Actor for MyActor {
 ///     async fn started(&mut self, ctx: &mut Context<Self>) {
 ///         println!("Started!");
@@ -137,7 +139,7 @@ pub trait Handler<M: Message>: Actor {
 ///     type Result = ();
 /// }
 ///
-/// #[async_trait::async_trait]
+/// #[async_trait]
 /// impl Handler<Goodbye> for MyActor {
 ///     async fn handle(&mut self, _: Goodbye, ctx: &mut Context<Self>) {
 ///         println!("Goodbye!");
@@ -180,7 +182,7 @@ pub trait Actor: 'static + Send + Sized {
     /// # use xtra::prelude::*;
     /// # use xtra::KeepRunning;
     /// # struct MyActor { is_running: bool };
-    /// # #[async_trait::async_trait]
+    /// # #[async_trait]
     /// # impl Actor for MyActor {
     /// async fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
     ///     self.is_running.into() // bool can be converted to KeepRunning with Into

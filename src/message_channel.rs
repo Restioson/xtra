@@ -65,7 +65,7 @@ impl<M: Message> Future for SendFuture<M> {
 /// struct Alice;
 /// struct Bob;
 ///
-/// #[async_trait::async_trait]
+/// #[async_trait]
 /// impl Actor for Alice {
 ///     async fn stopped(self) {
 ///         println!("Oh no");
@@ -73,14 +73,14 @@ impl<M: Message> Future for SendFuture<M> {
 /// }
 /// impl Actor for Bob {}
 ///
-/// #[async_trait::async_trait]
+/// #[async_trait]
 /// impl Handler<WhatsYourName> for Alice {
 ///     async fn handle(&mut self, _: WhatsYourName, _ctx: &mut Context<Self>) -> &'static str {
 ///         "Alice"
 ///     }
 /// }
 ///
-/// #[async_trait::async_trait]
+/// #[async_trait]
 /// impl Handler<WhatsYourName> for Bob {
 ///     async fn handle(&mut self, _: WhatsYourName, _ctx: &mut Context<Self>) -> &'static str {
 ///         "Bob"

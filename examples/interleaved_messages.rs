@@ -16,7 +16,7 @@ struct ActorA {
 }
 impl Actor for ActorA {}
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Hello> for ActorA {
     async fn handle(&mut self, _: Hello, ctx: &mut Context<Self>) {
         println!("ActorA: Hello");
@@ -29,7 +29,7 @@ impl Handler<Hello> for ActorA {
 struct ActorB;
 impl Actor for ActorB {}
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Initialized> for ActorB {
     async fn handle(&mut self, m: Initialized, ctx: &mut Context<Self>) {
         println!("ActorB: Initialized");
@@ -38,7 +38,7 @@ impl Handler<Initialized> for ActorB {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Hello> for ActorB {
     async fn handle(&mut self, _: Hello, _: &mut Context<Self>) {
         println!("ActorB: Hello");
