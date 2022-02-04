@@ -15,7 +15,7 @@ impl Printer {
 impl Actor for Printer {
     type Stop = ();
 
-    async fn stopped(self) -> Self::Stop { }
+    async fn stopped(self) -> Self::Stop {}
 }
 
 struct Print(String);
