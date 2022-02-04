@@ -189,7 +189,7 @@ pub trait Actor: 'static + Send + Sized {
     /// ```
     #[allow(unused_variables)]
     async fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
-        KeepRunning::StopAll
+        KeepRunning::StopSelf
     }
 
     /// Called when the actor is in the process of stopping. This could be because
