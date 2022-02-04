@@ -9,8 +9,6 @@ pub use tokio_impl::*;
 #[cfg(feature = "with-wasm_bindgen-0_2")]
 pub use wasm_bindgen_impl::*;
 
-use crate::{Actor, ActorManager, Address};
-
 /// An `Spawner` represents anything that can spawn a future to be run in the background. This is
 /// used to spawn actors.
 pub trait Spawner {
@@ -21,6 +19,7 @@ pub trait Spawner {
 #[cfg(feature = "with-async_std-1")]
 mod async_std_impl {
     use super::*;
+    use crate::{Actor, ActorManager, Address};
 
     /// The async std runtime.
     #[derive(Copy, Clone, Debug, Default)]
@@ -48,6 +47,7 @@ mod async_std_impl {
 #[cfg(feature = "with-smol-1")]
 mod smol_impl {
     use super::*;
+    use crate::{Actor, ActorManager, Address};
 
     /// The smol runtime.
     #[derive(Copy, Clone, Debug)]
@@ -90,6 +90,7 @@ mod smol_impl {
 #[cfg(feature = "with-tokio-1")]
 mod tokio_impl {
     use super::*;
+    use crate::{Actor, ActorManager, Address};
 
     /// The Tokio runtime.
     #[derive(Copy, Clone, Debug)]
@@ -131,6 +132,7 @@ mod tokio_impl {
 #[cfg(feature = "with-wasm_bindgen-0_2")]
 mod wasm_bindgen_impl {
     use super::*;
+    use crate::{Actor, ActorManager, Address};
 
     /// Spawn rust futures in WASM on the current thread in the background.
     #[derive(Copy, Clone, Debug, Default)]
