@@ -19,7 +19,7 @@ impl Printer {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Actor for Printer {
     async fn stopped(self) {
         println!("Actor {} stopped", self.id);
@@ -31,7 +31,7 @@ impl Message for Print {
     type Result = ();
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Print> for Printer {
     async fn handle(&mut self, print: Print, ctx: &mut Context<Self>) {
         self.times += 1;

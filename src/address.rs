@@ -168,7 +168,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///     type Result = ();
     /// }
     ///
-    /// #[async_trait::async_trait]
+    /// #[async_trait]
     /// impl Handler<Shutdown> for MyActor {
     ///     async fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
     ///         ctx.stop();

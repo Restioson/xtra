@@ -12,7 +12,7 @@ impl Message for Echo {
     type Result = String;
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Echo> for Echoer {
     async fn handle(&mut self, echo: Echo, _ctx: &mut Context<Self>) -> String {
         echo.0
