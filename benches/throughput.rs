@@ -1,6 +1,6 @@
 use criterion::async_executor::SmolExecutor;
-use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
-use xtra::{Actor, Address, Context, Handler, Message};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use xtra::{Actor, Context, Handler, Message};
 
 struct Counter(u64);
 
@@ -43,7 +43,7 @@ fn throughput(c: &mut Criterion) {
             |b, &num_messages| {
                 b.to_async(SmolExecutor).iter(|| async {
                     for _ in 0..num_messages {
-                        address.send(IncrementZst).await;
+                        address.send(IncrementZst).await.unwrap();
                     }
                 });
             },
