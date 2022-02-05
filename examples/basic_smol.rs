@@ -11,7 +11,12 @@ impl Printer {
     }
 }
 
-impl Actor for Printer {}
+#[async_trait::async_trait]
+impl Actor for Printer {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 struct Print(String);
 impl Message for Print {
