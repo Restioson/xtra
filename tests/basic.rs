@@ -159,3 +159,32 @@ async fn test_stream_cancel_join() {
     // Join should also return right away
     assert!(jh.timeout(Duration::from_secs(2)).await.is_some());
 }
+
+#[smol_potat::test]
+async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
+    let address = ActorReturningStopSelf.create(None).spawn(&mut Smol::Global);
+
+    address.send(Stop).await.unwrap();
+
+    assert_eq!(address.is_connected(), false);
+}
+
+struct ActorReturningStopSelf;
+
+#[async_trait]
+impl Actor for ActorReturningStopSelf {
+    type Stop = ();
+
+    async fn stopping(&mut self, _: &mut Context<Self>) -> KeepRunning {
+        KeepRunning::StopSelf
+    }
+
+    async fn stopped(self) -> Self::Stop {}
+}
+
+#[async_trait]
+impl Handler<Stop> for ActorReturningStopSelf {
+    async fn handle(&mut self, _: Stop, ctx: &mut Context<Self>) {
+        ctx.stop();
+    }
+}
