@@ -166,7 +166,7 @@ async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
 
     address.send(Stop).await.unwrap();
 
-    assert_eq!(address.is_connected(), false);
+    assert!(!address.is_connected());
 }
 
 struct ActorReturningStopSelf;
