@@ -165,6 +165,7 @@ async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
     let address = ActorReturningStopSelf.create(None).spawn(&mut Smol::Global);
 
     address.send(Stop).await.unwrap();
+    smol::Timer::after(Duration::from_secs(1)).await;
 
     assert!(!address.is_connected());
 }
