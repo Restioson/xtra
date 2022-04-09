@@ -5,7 +5,7 @@ use std::time::Duration;
 use smol_timeout::TimeoutExt;
 
 use xtra::prelude::*;
-use xtra::spawn::Smol;
+use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::KeepRunning;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -44,7 +44,7 @@ impl Handler<Report> for Accumulator {
 
 #[tokio::test]
 async fn accumulate_to_ten() {
-    let addr = Accumulator(0).create(None).spawn(&mut Smol::Global);
+    let addr = Accumulator(0).create(None).spawn_global();
     for _ in 0..10 {
         addr.do_send(Inc).unwrap();
     }
@@ -146,7 +146,7 @@ impl Handler<StreamCancelMessage> for StreamCancelTester {
 async fn test_stream_cancel_join() {
     let (_tx, rx) = flume::unbounded::<StreamCancelMessage>();
     let stream = rx.into_stream();
-    let addr = StreamCancelTester {}.create(None).spawn(&mut Smol::Global);
+    let addr = StreamCancelTester {}.create(None).spawn_global();
     let jh = addr.join();
     let addr2 = addr.clone().downgrade();
     // attach a stream that blocks forever
@@ -162,7 +162,7 @@ async fn test_stream_cancel_join() {
 
 #[tokio::test]
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
-    let address = ActorReturningStopSelf.create(None).spawn(&mut Smol::Global);
+    let address = ActorReturningStopSelf.create(None).spawn_global();
 
     address.send(Stop).await.unwrap();
     smol::Timer::after(Duration::from_secs(1)).await;
