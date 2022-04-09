@@ -11,7 +11,7 @@ impl Printer {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Actor for Printer {
     type Stop = ();
 

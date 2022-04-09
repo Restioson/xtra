@@ -11,7 +11,7 @@ impl Printer {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Actor for Printer {
     type Stop = ();
 
@@ -20,7 +20,7 @@ impl Actor for Printer {
 
 struct Print(String);
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Print> for Printer {
     type Return = ();
 

@@ -379,8 +379,8 @@ impl<A: Actor> Context<A> {
     /// is only over other messages).
     pub fn notify<M>(&mut self, msg: M)
     where
-        A: Handler<M>,
         M: Send + 'static,
+        A: Handler<M>,
     {
         let envelope = Box::new(NonReturningEnvelope::<A, M>::new(msg));
         self.self_notifications.push(envelope);
@@ -411,8 +411,8 @@ impl<A: Actor> Context<A> {
     ) -> Result<impl Future<Output = ()>, ActorShutdown>
     where
         F: Send + 'static + Fn() -> M,
-        A: Handler<M>,
         M: Send + 'static,
+        A: Handler<M>,
     {
         let addr = self.address()?.downgrade();
         let mut stopped = self.drop_notifier.subscribe();
@@ -445,8 +445,8 @@ impl<A: Actor> Context<A> {
         notification: M,
     ) -> Result<impl Future<Output = ()>, ActorShutdown>
     where
-        A: Handler<M>,
         M: Send + 'static,
+        A: Handler<M>,
     {
         let addr = self.address()?.downgrade();
         let mut stopped = self.drop_notifier.subscribe();

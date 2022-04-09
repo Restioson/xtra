@@ -9,14 +9,14 @@ struct ActorA {
     actor_b: Address<ActorB>,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Actor for ActorA {
     type Stop = ();
 
     async fn stopped(self) -> Self::Stop {}
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Hello> for ActorA {
     type Return = ();
 
@@ -30,14 +30,14 @@ impl Handler<Hello> for ActorA {
 
 struct ActorB;
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Actor for ActorB {
     type Stop = ();
 
     async fn stopped(self) -> Self::Stop {}
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Initialized> for ActorB {
     type Return = ();
 
@@ -48,7 +48,7 @@ impl Handler<Initialized> for ActorB {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Hello> for ActorB {
     type Return = ();
 

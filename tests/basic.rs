@@ -11,7 +11,7 @@ use xtra::KeepRunning;
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Actor for Accumulator {
     type Stop = ();
 
@@ -22,7 +22,7 @@ struct Inc;
 
 struct Report;
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Inc> for Accumulator {
     type Return = ();
 
@@ -31,7 +31,7 @@ impl Handler<Inc> for Accumulator {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Report> for Accumulator {
     type Return = Self;
 
@@ -58,7 +58,7 @@ impl Drop for DropTester {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Actor for DropTester {
     type Stop = ();
 
@@ -74,7 +74,7 @@ impl Actor for DropTester {
 
 struct Stop;
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Stop> for DropTester {
     type Return = ();
 
@@ -120,14 +120,14 @@ struct StreamCancelMessage;
 
 struct StreamCancelTester;
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Actor for StreamCancelTester {
     type Stop = ();
 
     async fn stopped(self) -> Self::Stop {}
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<StreamCancelMessage> for StreamCancelTester {
     type Return = KeepRunning;
 

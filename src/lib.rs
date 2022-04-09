@@ -34,6 +34,8 @@ pub mod prelude {
     pub use crate::tracing::InstrumentedExt;
     #[doc(no_inline)]
     pub use crate::{Actor, Handler};
+
+    pub use async_trait::async_trait;
 }
 
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
@@ -69,7 +71,7 @@ pub mod prelude {
 ///     })
 /// }
 /// ```
-#[async_trait::async_trait]
+#[async_trait]
 pub trait Handler<M>: Actor {
     /// The return value of this handler.
     type Return: Send + 'static;
@@ -140,7 +142,7 @@ pub trait Handler<M>: Actor {
 /// ```
 ///
 /// For longer examples, see the `examples` directory.
-#[async_trait::async_trait]
+#[async_trait]
 pub trait Actor: 'static + Send + Sized {
     /// Value returned from the actor when [`Actor::stopped`] is called.
     type Stop: Send + 'static;
