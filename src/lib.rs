@@ -71,7 +71,7 @@ pub mod prelude {
 ///     })
 /// }
 /// ```
-#[async_trait]
+#[async_trait::async_trait]
 pub trait Handler<M>: Actor {
     /// The return value of this handler.
     type Return: Send + 'static;
