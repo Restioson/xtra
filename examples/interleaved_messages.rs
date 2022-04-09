@@ -15,7 +15,7 @@ struct ActorA {
     actor_b: Address<ActorB>,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Actor for ActorA {
     type Stop = ();
 
@@ -34,7 +34,7 @@ impl Handler<Hello> for ActorA {
 
 struct ActorB;
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Actor for ActorB {
     type Stop = ();
 
