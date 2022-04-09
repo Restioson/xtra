@@ -142,7 +142,7 @@ pub trait Handler<M>: Actor {
 /// ```
 ///
 /// For longer examples, see the `examples` directory.
-#[async_trait]
+#[async_trait::async_trait]
 pub trait Actor: 'static + Send + Sized {
     /// Value returned from the actor when [`Actor::stopped`] is called.
     type Stop: Send + 'static;
