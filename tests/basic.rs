@@ -11,7 +11,7 @@ use xtra::KeepRunning;
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Actor for Accumulator {
     type Stop = ();
 
