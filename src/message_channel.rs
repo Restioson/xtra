@@ -72,7 +72,7 @@ impl<M: Message> Future for SendFuture<M> {
 ///         println!("Oh no");
 ///     }
 /// }
-/// # #[async_trait::async_trait] impl Actor for Bob {type Stop = (); async fn stopped(self) -> Self::Stop {} }
+/// # #[async_trait] impl Actor for Bob {type Stop = (); async fn stopped(self) -> Self::Stop {} }
 ///
 /// #[async_trait]
 /// impl Handler<WhatsYourName> for Alice {

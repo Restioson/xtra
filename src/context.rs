@@ -55,7 +55,7 @@ impl<A: Actor> Context<A> {
     /// # Example
     ///
     /// ```rust
-    /// # use xtra::{Context, Actor};
+    /// # use xtra::prelude::*;
     /// #
     /// # struct MyActor;
     /// #
@@ -64,7 +64,7 @@ impl<A: Actor> Context<A> {
     /// #         MyActor
     /// #     }
     /// # }
-    /// # #[async_trait::async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
+    /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
     /// # async {
     /// let (addr, mut ctx) = Context::new(Some(32));
     /// for n in 0..3 {

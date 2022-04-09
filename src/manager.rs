@@ -66,7 +66,7 @@ impl<A: Actor> ActorManager<A> {
     /// ```no_run
     /// # use xtra::prelude::*;
     /// struct MyActor;
-    /// # #[async_trait::async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
+    /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
     ///
     /// smol::block_on(async {
     ///     let (addr, fut) = MyActor.create(None).run();
