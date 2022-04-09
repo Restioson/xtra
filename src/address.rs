@@ -184,7 +184,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// })
     /// ```
     pub fn is_connected(&self) -> bool {
-        self.ref_counter.is_connected()
+        !self.sender.is_disconnected()
     }
 
     /// Returns the number of messages in the actor's mailbox.
