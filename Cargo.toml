@@ -88,7 +88,7 @@ required-features = ["with-smol-1"]
 
 [[test]]
 name = "basic"
-required-features = ["with-smol-1"]
+required-features = ["with-tokio-1"]
 
 [workspace]
 members = ["examples/basic_wasm_bindgen"]

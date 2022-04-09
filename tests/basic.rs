@@ -42,7 +42,7 @@ impl Handler<Report> for Accumulator {
     }
 }
 
-#[smol_potat::test]
+#[tokio::test]
 async fn accumulate_to_ten() {
     let addr = Accumulator(0).create(None).spawn(&mut Smol::Global);
     for _ in 0..10 {
@@ -87,7 +87,7 @@ impl Handler<Stop> for DropTester {
     }
 }
 
-#[smol_potat::test]
+#[tokio::test]
 async fn test_stop_and_drop() {
     // Drop the address
     let drop_count = Arc::new(AtomicUsize::new(0));
@@ -142,7 +142,7 @@ impl Handler<StreamCancelMessage> for StreamCancelTester {
     }
 }
 
-#[smol_potat::test]
+#[tokio::test]
 async fn test_stream_cancel_join() {
     let (_tx, rx) = flume::unbounded::<StreamCancelMessage>();
     let stream = rx.into_stream();
@@ -160,7 +160,7 @@ async fn test_stream_cancel_join() {
     assert!(jh.timeout(Duration::from_secs(2)).await.is_some());
 }
 
-#[smol_potat::test]
+#[tokio::test]
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
     let address = ActorReturningStopSelf.create(None).spawn(&mut Smol::Global);
 
