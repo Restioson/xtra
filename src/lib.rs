@@ -7,8 +7,6 @@ pub use self::address::{Address, Disconnected, WeakAddress};
 pub use self::context::{ActorShutdown, Context};
 pub use self::manager::ActorManager;
 
-pub use async_trait::async_trait;
-
 pub mod address;
 mod context;
 mod drop_notice;
