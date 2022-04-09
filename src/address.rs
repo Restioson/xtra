@@ -160,7 +160,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// # use xtra::spawn::Smol;
     /// # use std::time::Duration;
     /// # struct MyActor;
-    /// # impl Actor for MyActor {}
+    /// # #[async_trait::async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
     /// # use smol::Timer;
     /// struct Shutdown;
     ///
@@ -168,7 +168,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///     type Result = ();
     /// }
     ///
-    /// #[async_trait::async_trait]
+    /// #[async_trait]
     /// impl Handler<Shutdown> for MyActor {
     ///     async fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
     ///         ctx.stop();

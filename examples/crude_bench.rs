@@ -27,21 +27,21 @@ impl Message for GetCount {
     type Result = usize;
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Increment> for Counter {
     async fn handle(&mut self, _: Increment, _ctx: &mut Context<Self>) {
         self.count += 1;
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<IncrementWithData> for Counter {
     async fn handle(&mut self, _: IncrementWithData, _ctx: &mut Context<Self>) {
         self.count += 1;
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<GetCount> for Counter {
     async fn handle(&mut self, _: GetCount, _ctx: &mut Context<Self>) -> usize {
         let count = self.count;
@@ -62,7 +62,7 @@ impl Message for GetTime {
     type Result = Duration;
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<GetTime> for SendTimer {
     async fn handle(&mut self, _time: GetTime, _ctx: &mut Context<Self>) -> Duration {
         self.time
@@ -79,7 +79,7 @@ impl Message for TimeReturn {
     type Result = Instant;
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<TimeReturn> for ReturnTimer {
     async fn handle(&mut self, _time: TimeReturn, _ctx: &mut Context<Self>) -> Instant {
         Instant::now()

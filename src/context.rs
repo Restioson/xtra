@@ -67,7 +67,7 @@ impl<A: Actor> Context<A> {
     /// #         MyActor
     /// #     }
     /// # }
-    /// # impl Actor for MyActor {}
+    /// # #[async_trait::async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
     /// # async {
     /// let (addr, mut ctx) = Context::new(Some(32));
     /// for n in 0..3 {
@@ -110,7 +110,7 @@ impl<A: Actor> Context<A> {
 
     /// Attaches an actor of the same type listening to the same address as this actor is.
     /// They will operate in a message-stealing fashion, with no message handled by two actors.
-    pub fn attach(&mut self, actor: A) -> impl Future<Output = ()> {
+    pub fn attach(&mut self, actor: A) -> impl Future<Output = A::Stop> {
         // Give the new context a new mailbox on the same broadcast channel, and then make this
         // receiver into a shared receiver.
         let broadcast_receiver = self.broadcast_receiver.clone().upgrade().into_shared();
@@ -203,11 +203,11 @@ impl<A: Actor> Context<A> {
     }
 
     /// Run the given actor's main loop, handling incoming messages to its mailbox.
-    pub async fn run(mut self, mut actor: A) {
+    pub async fn run(mut self, mut actor: A) -> A::Stop {
         actor.started(&mut self).await;
 
         if !self.check_running(&mut actor).await {
-            return;
+            return actor.stopped().await;
         }
 
         // // Similar to above
@@ -225,7 +225,7 @@ impl<A: Actor> Context<A> {
             }
         }
 
-        actor.stopped().await;
+        return actor.stopped().await;
     }
 
     /// Returns the [`Inbox`] of all actors attached to this [`Context`].
@@ -322,10 +322,10 @@ impl<A: Actor> Context<A> {
         }
     }
 
-    /// Notify this actor with a message that is handled before any other messages
-    /// from the general queue are processed (therefore, immediately). If multiple
-    /// `notify` messages are queued, they will still be processed in the order that they
-    /// are queued (i.e the immediate priority is only over other messages).
+    /// Notify this actor with a message that is handled before any other messages from the general
+    /// queue are processed (therefore, immediately). If multiple `notify` messages are queued,
+    /// they will still be processed in the order that they are queued (i.e the immediate priority
+    /// is only over other messages).
     pub fn notify<M>(&mut self, msg: M)
     where
         M: Message,
@@ -335,8 +335,9 @@ impl<A: Actor> Context<A> {
         self.self_notifications.push(envelope);
     }
 
-    /// Notify all actors on this address actor with a message that is handled after any other
-    /// messages from the general queue are processed.
+    /// Notify all actors on this address with a given message, in a broadcast fashion. The message
+    /// will be received once by all actors. Note that currently there is no message cap on the
+    /// broadcast channel (it is unbounded).
     pub fn notify_all<M>(&mut self, msg: M)
     where
         M: Message + Clone + Sync,
@@ -348,9 +349,9 @@ impl<A: Actor> Context<A> {
             .send(BroadcastMessage::Message(Box::new(envelope)));
     }
 
-    /// Notify the actor with a synchronously handled message every interval until it is stopped
-    /// (either directly with [`Context::stop`](struct.Context.html#method.stop), or for a lack of
-    /// strong [`Address`es](address/struct.Address.html)). This does not take priority over other messages.
+    /// Notify the actor with a message every interval until it is stopped (either directly with
+    /// [`Context::stop`](struct.Context.html#method.stop), or for a lack of strong
+    /// [`Address`es](address/struct.Address.html)). This does not take priority over other messages.
     #[cfg(feature = "timing")]
     pub fn notify_interval<F, M>(
         &mut self,
@@ -385,8 +386,8 @@ impl<A: Actor> Context<A> {
         Ok(fut)
     }
 
-    /// Notify the actor with a synchronously handled message after a certain duration has elapsed.
-    /// This does not take priority over other messages.
+    /// Notify the actor with a message after a certain duration has elapsed. This does not take
+    /// priority over other messages.
     pub fn notify_after<M>(
         &mut self,
         duration: Duration,

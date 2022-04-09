@@ -2,7 +2,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use futures_util::future::FutureExt;
 use smol_timeout::TimeoutExt;
 
@@ -13,7 +12,12 @@ use xtra::KeepRunning;
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
 
-impl Actor for Accumulator {}
+#[async_trait::async_trait]
+impl Actor for Accumulator {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 struct Inc;
 impl Message for Inc {
@@ -59,6 +63,8 @@ impl Drop for DropTester {
 
 #[async_trait]
 impl Actor for DropTester {
+    type Stop = ();
+
     async fn stopping(&mut self, _ctx: &mut Context<Self>) -> KeepRunning {
         self.0.fetch_add(1, Ordering::SeqCst);
         KeepRunning::StopAll
@@ -124,7 +130,11 @@ impl Message for StreamCancelMessage {
 struct StreamCancelTester;
 
 #[async_trait]
-impl Actor for StreamCancelTester {}
+impl Actor for StreamCancelTester {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 #[async_trait]
 impl Handler<StreamCancelMessage> for StreamCancelTester {
@@ -163,9 +173,13 @@ struct StopInStarted;
 
 #[async_trait]
 impl Actor for StopInStarted {
+    type Stop = ();
+
     async fn started(&mut self, ctx: &mut Context<Self>) {
         ctx.stop();
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
 
 #[smol_potat::test]
@@ -197,6 +211,8 @@ struct InstantShutdownAll {
 
 #[async_trait]
 impl Actor for InstantShutdownAll {
+    type Stop = ();
+
     async fn started(&mut self, ctx: &mut Context<Self>) {
         if self.stop_self {
             ctx.stop();
@@ -208,4 +224,6 @@ impl Actor for InstantShutdownAll {
 
         KeepRunning::StopAll
     }
+
+    async fn stopped(self) -> Self::Stop {}
 }
