@@ -15,7 +15,7 @@ use crate::drop_notice::DropNotifier;
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{AddressMessage, BroadcastMessage, ContinueManageLoop};
 use crate::refcount::{RefCounter, Strong, Weak};
-use crate::{Actor, Address, Handler, KeepRunning, Message};
+use crate::{Actor, Address, Handler, KeepRunning};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -379,8 +379,8 @@ impl<A: Actor> Context<A> {
     /// is only over other messages).
     pub fn notify<M>(&mut self, msg: M)
     where
-        M: Message,
         A: Handler<M>,
+        M: Send + 'static,
     {
         let envelope = Box::new(NonReturningEnvelope::<A, M>::new(msg));
         self.self_notifications.push(envelope);
@@ -391,7 +391,7 @@ impl<A: Actor> Context<A> {
     /// broadcast channel (it is unbounded).
     pub fn notify_all<M>(&mut self, msg: M)
     where
-        M: Message + Clone + Sync,
+        M: Clone + Sync + Send + 'static,
         A: Handler<M>,
     {
         let envelope = NonReturningEnvelope::<A, M>::new(msg);
@@ -411,8 +411,8 @@ impl<A: Actor> Context<A> {
     ) -> Result<impl Future<Output = ()>, ActorShutdown>
     where
         F: Send + 'static + Fn() -> M,
-        M: Message,
         A: Handler<M>,
+        M: Send + 'static,
     {
         let addr = self.address()?.downgrade();
         let mut stopped = self.drop_notifier.subscribe();
@@ -445,8 +445,8 @@ impl<A: Actor> Context<A> {
         notification: M,
     ) -> Result<impl Future<Output = ()>, ActorShutdown>
     where
-        M: Message,
         A: Handler<M>,
+        M: Send + 'static,
     {
         let addr = self.address()?.downgrade();
         let mut stopped = self.drop_notifier.subscribe();
