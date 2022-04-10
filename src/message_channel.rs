@@ -101,7 +101,10 @@ impl<R> Future for SendFuture<R> {
 ///     })
 /// }
 /// ```
-pub trait MessageChannel<M, R>: Sealed + Unpin + Send + Sync {
+pub trait MessageChannel<M>: Sealed + Unpin + Send + Sync {
+    /// The return value of the handler for `M`.
+    type Return: Send + 'static;
+
     /// Returns whether the actor referred to by this address is running and accepting messages.
     fn is_connected(&self) -> bool;
 
@@ -131,7 +134,7 @@ pub trait MessageChannel<M, R>: Sealed + Unpin + Send + Sync {
     /// returns `Err(Disconnected)`, then the actor is stopped and not accepting messages. This,
     /// unlike [`Address::send`](../address/struct.Address.html#method.send) will block if the actor's mailbox
     /// is full. If this is undesired, consider using a [`MessageSink`](../sink/trait.MessageSink.html).
-    fn send(&self, message: M) -> SendFuture<R>;
+    fn send(&self, message: M) -> SendFuture<Self::Return>;
 
     /// Attaches a stream to this channel such that all messages produced by it are forwarded to the
     /// actor. This could, for instance, be used to forward messages from a socket to the actor
@@ -145,17 +148,17 @@ pub trait MessageChannel<M, R>: Sealed + Unpin + Send + Sync {
     /// on [`WeakMessageChannel`](trait.WeakMessageChannel.html).
     fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
     where
-        R: Into<KeepRunning> + Send;
+        Self::Return: Into<KeepRunning> + Send;
 
     /// Clones this channel as a boxed trait object.
-    fn clone_channel(&self) -> Box<dyn MessageChannel<M, R>>;
+    fn clone_channel(&self) -> Box<dyn MessageChannel<M, Return = Self::Return>>;
 
     /// Use this message channel as [a futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
     /// and asynchronously send messages through it.
     fn sink(&self) -> Box<dyn MessageSink<M>>;
 
     /// Determines whether this and the other message channel address the same actor mailbox.
-    fn eq(&self, other: &dyn MessageChannel<M, R>) -> bool;
+    fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool;
 
     /// This is an internal method and should never be called manually.
     #[doc(hidden)]
@@ -168,22 +171,22 @@ pub trait MessageChannel<M, R>: Sealed + Unpin + Send + Sync {
 /// dropping of the actor. If this is undesirable, then the [`WeakMessageChannel`](trait.WeakMessageChannel.html)
 /// struct should be used instead. A `StrongMessageChannel` trait object is created by casting a
 /// strong [`Address`](../address/struct.Address.html).
-pub trait StrongMessageChannel<M, R>: MessageChannel<M, R> {
+pub trait StrongMessageChannel<M>: MessageChannel<M> {
     /// Create a weak message channel. Unlike with the strong variety of message channel (this kind),
     /// an actor will not be prevented from being dropped if only weak sinks, channels, and
     /// addresses exist.
-    fn downgrade(&self) -> Box<dyn WeakMessageChannel<M, R>>;
+    fn downgrade(&self) -> Box<dyn WeakMessageChannel<M, Return = Self::Return>>;
 
     /// Upcasts this strong message channel into a boxed generic
     /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast(self) -> Box<dyn MessageChannel<M, R>>;
+    fn upcast(self) -> Box<dyn MessageChannel<M, Return = Self::Return>>;
 
     /// Upcasts this strong message channel into a reference to the generic
     /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast_ref(&self) -> &dyn MessageChannel<M, R>;
+    fn upcast_ref(&self) -> &dyn MessageChannel<M, Return = Self::Return>;
 
     /// Clones this channel as a boxed trait object.
-    fn clone_channel(&self) -> Box<dyn StrongMessageChannel<M, R>>;
+    fn clone_channel(&self) -> Box<dyn StrongMessageChannel<M, Return = Self::Return>>;
 
     /// Use this message channel as [a futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
     /// and asynchronously send messages through it.
@@ -197,29 +200,31 @@ pub trait StrongMessageChannel<M, R>: MessageChannel<M, R> {
 /// should be used instead. A `WeakMessageChannel` trait object is created by calling
 /// [`StrongMessageChannel::downgrade`](trait.StrongMessageChannel.html#method.downgrade) or by
 /// casting a [`WeakAddress`](../address/type.WeakAddress.html).
-pub trait WeakMessageChannel<M, R>: MessageChannel<M, R> {
+pub trait WeakMessageChannel<M>: MessageChannel<M> {
     /// Upcasts this weak message channel into a boxed generic
     /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast(self) -> Box<dyn MessageChannel<M, R>>;
+    fn upcast(self) -> Box<dyn MessageChannel<M, Return = Self::Return>>;
 
     /// Upcasts this weak message channel into a reference to the generic
     /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast_ref(&self) -> &dyn MessageChannel<M, R>;
+    fn upcast_ref(&self) -> &dyn MessageChannel<M, Return = Self::Return>;
 
     /// Clones this channel as a boxed trait object.
-    fn clone_channel(&self) -> Box<dyn WeakMessageChannel<M, R>>;
+    fn clone_channel(&self) -> Box<dyn WeakMessageChannel<M, Return = Self::Return>>;
 
     /// Use this message channel as [a futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
     /// and asynchronously send messages through it.
     fn sink(&self) -> Box<dyn WeakMessageSink<M>>;
 }
 
-impl<A, R, M, Rc: RefCounter> MessageChannel<M, R> for Address<A, Rc>
+impl<A, R, M, Rc: RefCounter> MessageChannel<M> for Address<A, Rc>
 where
     A: Handler<M, Return = R>,
     M: Send + 'static,
     R: Send + 'static,
 {
+    type Return = R;
+
     fn is_connected(&self) -> bool {
         self.is_connected()
     }
@@ -255,7 +260,7 @@ where
         Box::pin(self.attach_stream(stream))
     }
 
-    fn clone_channel(&self) -> Box<dyn MessageChannel<M, R>> {
+    fn clone_channel(&self) -> Box<dyn MessageChannel<M, Return = Self::Return>> {
         Box::new(self.clone())
     }
 
@@ -266,7 +271,7 @@ where
         })
     }
 
-    fn eq(&self, other: &dyn MessageChannel<M, R>) -> bool {
+    fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
         other._ref_counter_eq(self.ref_counter.as_ptr())
     }
 
@@ -275,29 +280,29 @@ where
     }
 }
 
-impl<A, M, R> StrongMessageChannel<M, R> for Address<A, Strong>
+impl<A, M, R> StrongMessageChannel<M> for Address<A, Strong>
 where
     A: Handler<M, Return = R>,
     M: Send + 'static,
     R: Send + 'static,
 {
-    fn downgrade(&self) -> Box<dyn WeakMessageChannel<M, R>> {
+    fn downgrade(&self) -> Box<dyn WeakMessageChannel<M, Return = Self::Return>> {
         Box::new(self.downgrade())
     }
 
     /// Upcasts this strong message channel into a boxed generic
     /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast(self) -> Box<dyn MessageChannel<M, R>> {
+    fn upcast(self) -> Box<dyn MessageChannel<M, Return = Self::Return>> {
         Box::new(self)
     }
 
     /// Upcasts this strong message channel into a reference to the generic
     /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast_ref(&self) -> &dyn MessageChannel<M, R> {
+    fn upcast_ref(&self) -> &dyn MessageChannel<M, Return = Self::Return> {
         self
     }
 
-    fn clone_channel(&self) -> Box<dyn StrongMessageChannel<M, R>> {
+    fn clone_channel(&self) -> Box<dyn StrongMessageChannel<M, Return = Self::Return>> {
         Box::new(self.clone())
     }
 
@@ -309,7 +314,7 @@ where
     }
 }
 
-impl<A, M, R> WeakMessageChannel<M, R> for WeakAddress<A>
+impl<A, M, R> WeakMessageChannel<M> for WeakAddress<A>
 where
     A: Handler<M, Return = R>,
     M: Send + 'static,
@@ -317,17 +322,17 @@ where
 {
     /// Upcasts this weak message channel into a boxed generic
     /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast(self) -> Box<dyn MessageChannel<M, R>> {
+    fn upcast(self) -> Box<dyn MessageChannel<M, Return = Self::Return>> {
         Box::new(self)
     }
 
     /// Upcasts this weak message channel into a reference to the generic
     /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast_ref(&self) -> &dyn MessageChannel<M, R> {
+    fn upcast_ref(&self) -> &dyn MessageChannel<M, Return = Self::Return> {
         self
     }
 
-    fn clone_channel(&self) -> Box<dyn WeakMessageChannel<M, R>> {
+    fn clone_channel(&self) -> Box<dyn WeakMessageChannel<M, Return = Self::Return>> {
         Box::new(self.clone())
     }
 
