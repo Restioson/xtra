@@ -123,7 +123,12 @@ pub struct Address<A, Rc: RefCounter = Strong> {
 
 impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Address<{}, {}>", std::any::type_name::<A>(), std::any::type_name::<Rc>())
+        write!(
+            f,
+            "Address<{}, {}>",
+            std::any::type_name::<A>(),
+            std::any::type_name::<Rc>()
+        )
     }
 }
 
