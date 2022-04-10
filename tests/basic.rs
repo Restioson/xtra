@@ -179,6 +179,8 @@ impl Actor for ActorReturningStopSelf {
 
 #[async_trait]
 impl Handler<Stop> for ActorReturningStopSelf {
+    type Return = ();
+
     async fn handle(&mut self, _: Stop, ctx: &mut Context<Self>) {
         ctx.stop();
     }
