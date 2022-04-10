@@ -1,7 +1,7 @@
 //! An address to an actor is a way to send it a message. An address allows an actor to be sent any
 //! kind of message that it can receive.
 
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{self, Debug, Display, Formatter};
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
@@ -119,6 +119,12 @@ impl Error for Disconnected {}
 pub struct Address<A, Rc: RefCounter = Strong> {
     pub(crate) sender: Sender<AddressMessage<A>>,
     pub(crate) ref_counter: Rc,
+}
+
+impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "Address<{}, {}>", std::any::type_name::<A>(), std::any::type_name::<Rc>())
+    }
 }
 
 /// A `WeakAddress` is a reference to an actor through which [`Message`s](../trait.Message.html) can be
