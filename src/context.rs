@@ -55,7 +55,7 @@ impl<A: Actor> Context<A> {
     /// # Example
     ///
     /// ```rust
-    /// # use xtra::{Context, Actor};
+    /// # use xtra::prelude::*;
     /// #
     /// # struct MyActor;
     /// #
@@ -64,7 +64,7 @@ impl<A: Actor> Context<A> {
     /// #         MyActor
     /// #     }
     /// # }
-    /// # impl Actor for MyActor {}
+    /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
     /// # async {
     /// let (addr, mut ctx) = Context::new(Some(32));
     /// for n in 0..3 {
@@ -107,7 +107,7 @@ impl<A: Actor> Context<A> {
 
     /// Attaches an actor of the same type listening to the same address as this actor is.
     /// They will operate in a message-stealing fashion, with no message handled by two actors.
-    pub fn attach(&mut self, actor: A) -> impl Future<Output = ()> {
+    pub fn attach(&mut self, actor: A) -> impl Future<Output = A::Stop> {
         // Give the new context a new mailbox on the same broadcast channel, and then make this
         // receiver into a shared receiver.
         let broadcast_receiver = self.broadcast_receiver.clone().upgrade().into_shared();
@@ -200,48 +200,58 @@ impl<A: Actor> Context<A> {
     }
 
     /// Run the given actor's main loop, handling incoming messages to its mailbox.
-    pub async fn run(mut self, mut actor: A) {
+    pub async fn run(mut self, mut actor: A) -> A::Stop {
         actor.started(&mut self).await;
 
         // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
         // in the started method, otherwise it would kinda be a bug
         if !self.check_running(&mut actor).await {
-            actor.stopped().await;
-            return;
+            self.stop_all();
+            return actor.stopped().await;
         }
 
         // Similar to above
         if let Some(BroadcastMessage::Shutdown) = self.broadcast_receiver.try_recv().unwrap() {
-            actor.stopped().await;
-            return;
+            return actor.stopped().await;
         }
 
         // Listen for any messages for the ActorManager
         let addr_rx = self.receiver.clone();
         let broadcast_rx = self.broadcast_receiver.clone();
 
-        let mut addr_recv = addr_rx.recv_async().fuse();
-        let mut broadcast_recv = broadcast_rx.recv_async().fuse();
+        let mut addr_recv = addr_rx.recv_async();
+        let mut broadcast_recv = broadcast_rx.recv_async();
 
         loop {
-            let msg = futures_util::select! {
-                msg = addr_recv => {
-                    addr_recv = addr_rx.recv_async().fuse();
+            let next = future::select(addr_recv, broadcast_recv).await;
 
-                    Either::Right(msg.unwrap())
+            let msg = match next {
+                Either::Left((res, other)) => {
+                    broadcast_recv = other;
+                    addr_recv = addr_rx.recv_async();
+                    Either::Right(res.unwrap())
                 }
-                msg = broadcast_recv => {
-                    broadcast_recv = broadcast_rx.recv_async().fuse();
-
-                    Either::Left(msg.unwrap())
+                Either::Right((res, other)) => {
+                    addr_recv = other;
+                    broadcast_recv = broadcast_rx.recv_async();
+                    Either::Left(res.unwrap())
                 }
             };
+
+            // To avoid broadcast starvation, try receive a broadcast here
+            if let Ok(Some(broadcast)) = broadcast_rx.try_recv() {
+                match self.tick(Either::Left(broadcast), &mut actor).await {
+                    ContinueManageLoop::Yes => {}
+                    ContinueManageLoop::ExitImmediately => {
+                        return actor.stopped().await;
+                    }
+                }
+            }
 
             match self.tick(msg, &mut actor).await {
                 ContinueManageLoop::Yes => {}
                 ContinueManageLoop::ExitImmediately => {
-                    actor.stopped().await;
-                    break;
+                    return actor.stopped().await;
                 }
             }
         }
@@ -283,15 +293,17 @@ impl<A: Actor> Context<A> {
     }
 
     /// This is a combinator to avoid holding !Sync references across await points
-    async fn recv_once(&self) -> Either<BroadcastMessage<A>, AddressMessage<A>> {
-        futures_util::select! {
-            msg = self.broadcast_receiver.recv_async().fuse() => {
-                Either::Left(msg.unwrap())
-            }
-            msg = self.receiver.recv_async().fuse() => {
-                Either::Right(msg.unwrap())
-            }
-        }
+    fn recv_once(
+        &self,
+    ) -> impl Future<Output = Either<BroadcastMessage<A>, AddressMessage<A>>> + '_ {
+        future::select(
+            self.broadcast_receiver.recv_async(),
+            self.receiver.recv_async(),
+        )
+        .map(|next| match next {
+            Either::Left((res, _)) => Either::Left(res.unwrap()),
+            Either::Right((res, _)) => Either::Right(res.unwrap()),
+        })
     }
 
     /// Yields to the manager to handle one message.
@@ -325,28 +337,39 @@ impl<A: Actor> Context<A> {
 
         let addr_rx = self.receiver.clone();
         let broadcast_rx = self.broadcast_receiver.clone();
-        let mut addr_recv = addr_rx.recv_async().fuse();
-        let mut broadcast_recv = broadcast_rx.recv_async().fuse();
-        let mut fut = fut.fuse();
+        let mut addr_recv = addr_rx.recv_async();
+        let mut broadcast_recv = broadcast_rx.recv_async();
 
         loop {
-            let msg = futures_util::select! {
-                msg = addr_recv => {
-                    addr_recv = addr_rx.recv_async().fuse();
-
-                    Either::Right(msg.unwrap())
-                }
-                msg = broadcast_recv => {
-                    broadcast_recv = broadcast_rx.recv_async().fuse();
-
-                    Either::Left(msg.unwrap())
-                }
-                result = fut => {
-                    return result
+            let (next_msg, unfinished) = {
+                let next_msg = future::select(addr_recv, broadcast_recv);
+                futures_util::pin_mut!(next_msg);
+                match future::select(fut, next_msg).await {
+                    Either::Left((future_res, _)) => break future_res,
+                    Either::Right(tuple) => tuple,
                 }
             };
 
+            let msg = match next_msg {
+                Either::Left((res, other)) => {
+                    broadcast_recv = other;
+                    addr_recv = addr_rx.recv_async();
+                    Either::Right(res.unwrap())
+                }
+                Either::Right((res, other)) => {
+                    addr_recv = other;
+                    broadcast_recv = broadcast_rx.recv_async();
+                    Either::Left(res.unwrap())
+                }
+            };
+
+            // To avoid broadcast starvation, try receive a broadcast here
+            if let Ok(Some(broadcast)) = broadcast_rx.try_recv() {
+                self.tick(Either::Left(broadcast), actor).await;
+            }
+
             self.tick(msg, actor).await;
+            fut = unfinished;
         }
     }
 

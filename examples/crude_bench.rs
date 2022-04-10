@@ -7,7 +7,12 @@ struct Counter {
     count: usize,
 }
 
-impl Actor for Counter {}
+#[async_trait]
+impl Actor for Counter {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 struct Increment;
 
@@ -27,21 +32,21 @@ impl Message for GetCount {
     type Result = usize;
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<Increment> for Counter {
     async fn handle(&mut self, _: Increment, _ctx: &mut Context<Self>) {
         self.count += 1;
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<IncrementWithData> for Counter {
     async fn handle(&mut self, _: IncrementWithData, _ctx: &mut Context<Self>) {
         self.count += 1;
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<GetCount> for Counter {
     async fn handle(&mut self, _: GetCount, _ctx: &mut Context<Self>) -> usize {
         let count = self.count;
@@ -54,7 +59,12 @@ struct SendTimer {
     time: Duration,
 }
 
-impl Actor for SendTimer {}
+#[async_trait]
+impl Actor for SendTimer {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 struct GetTime;
 
@@ -62,7 +72,7 @@ impl Message for GetTime {
     type Result = Duration;
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<GetTime> for SendTimer {
     async fn handle(&mut self, _time: GetTime, _ctx: &mut Context<Self>) -> Duration {
         self.time
@@ -71,7 +81,12 @@ impl Handler<GetTime> for SendTimer {
 
 struct ReturnTimer;
 
-impl Actor for ReturnTimer {}
+#[async_trait]
+impl Actor for ReturnTimer {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 struct TimeReturn;
 
@@ -79,7 +94,7 @@ impl Message for TimeReturn {
     type Result = Instant;
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Handler<TimeReturn> for ReturnTimer {
     async fn handle(&mut self, _time: TimeReturn, _ctx: &mut Context<Self>) -> Instant {
         Instant::now()

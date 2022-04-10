@@ -21,7 +21,6 @@ result on my development machine with an AMD Ryzen 3 3200G.
 ```rust
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
-use async_trait::async_trait;
 
 struct Printer {
     times: usize,

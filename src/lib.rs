@@ -32,6 +32,8 @@ pub mod prelude {
     pub use crate::tracing::InstrumentedExt;
     #[doc(no_inline)]
     pub use crate::{Actor, Handler, Message};
+
+    pub use async_trait::async_trait;
 }
 
 /// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
@@ -67,14 +69,14 @@ pub trait Message: Send + 'static {
 /// # use xtra::prelude::*;
 /// # use xtra::spawn::Smol;
 /// # struct MyActor;
-/// # impl Actor for MyActor {}
+/// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
 /// struct Msg;
 ///
 /// impl Message for Msg {
 ///     type Result = u32;
 /// }
 ///
-/// #[async_trait::async_trait]
+/// #[async_trait]
 /// impl Handler<Msg> for MyActor {
 ///     async fn handle(&mut self, message: Msg, ctx: &mut Context<Self>) -> u32 {
 ///         20
@@ -115,8 +117,9 @@ pub trait Handler<M: Message>: Actor {
 /// # use smol::Timer;
 /// struct MyActor;
 ///
-/// #[async_trait::async_trait]
+/// #[async_trait]
 /// impl Actor for MyActor {
+///     type Stop = ();
 ///     async fn started(&mut self, ctx: &mut Context<Self>) {
 ///         println!("Started!");
 ///     }
@@ -126,7 +129,7 @@ pub trait Handler<M: Message>: Actor {
 ///         KeepRunning::StopAll
 ///     }
 ///
-///     async fn stopped(self) {
+///     async fn stopped(self) -> Self::Stop {
 ///         println!("Finally stopping.");
 ///     }
 /// }
@@ -137,7 +140,7 @@ pub trait Handler<M: Message>: Actor {
 ///     type Result = ();
 /// }
 ///
-/// #[async_trait::async_trait]
+/// #[async_trait]
 /// impl Handler<Goodbye> for MyActor {
 ///     async fn handle(&mut self, _: Goodbye, ctx: &mut Context<Self>) {
 ///         println!("Goodbye!");
@@ -157,6 +160,9 @@ pub trait Handler<M: Message>: Actor {
 /// For longer examples, see the `examples` directory.
 #[async_trait::async_trait]
 pub trait Actor: 'static + Send + Sized {
+    /// Value returned from the actor when [`Actor::stopped`] is called.
+    type Stop: Send + 'static;
+
     /// Called as soon as the actor has been started.
     #[allow(unused_variables)]
     async fn started(&mut self, ctx: &mut Context<Self>) {}
@@ -180,11 +186,13 @@ pub trait Actor: 'static + Send + Sized {
     /// # use xtra::prelude::*;
     /// # use xtra::KeepRunning;
     /// # struct MyActor { is_running: bool };
-    /// # #[async_trait::async_trait]
+    /// # #[async_trait]
     /// # impl Actor for MyActor {
+    /// #    type Stop = ();
     /// async fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
     ///     self.is_running.into() // bool can be converted to KeepRunning with Into
     /// }
+    /// # async fn stopped(self) -> Self::Stop { }
     /// # }
     /// ```
     #[allow(unused_variables)]
@@ -200,7 +208,7 @@ pub trait Actor: 'static + Send + Sized {
     /// [`WeakAddress`](address/type.WeakAddress.html). This should be used for any final cleanup before
     /// the actor is dropped.
     #[allow(unused_variables)]
-    async fn stopped(self) {}
+    async fn stopped(self) -> Self::Stop;
 
     /// Returns the actor's address and manager in a ready-to-start state, given the cap for the
     /// actor's mailbox. If `None` is passed, it will be of unbounded size. To spawn the actor,
@@ -214,7 +222,7 @@ pub trait Actor: 'static + Send + Sized {
     /// # use std::time::Duration;
     /// # use smol::Timer;
     /// # struct MyActor;
-    /// # impl Actor for MyActor {}
+    /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
     /// smol::block_on(async {
     ///     let (addr, fut) = MyActor.create(None).run();
     ///     smol::spawn(fut).detach(); // Actually spawn the actor onto an executor
