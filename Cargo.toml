@@ -47,6 +47,7 @@ smol = "1.1"
 smol-potat = "1.1"
 smol-timeout = "0.6"
 waker-fn = "1.1"
+tokio = { version = "1.0", features = ["macros"] }
 
 [features]
 default = ["timing"]
@@ -88,7 +89,7 @@ required-features = ["with-smol-1"]
 
 [[test]]
 name = "basic"
-required-features = ["with-smol-1"]
+required-features = ["with-tokio-1"]
 
 [workspace]
 members = ["examples/basic_wasm_bindgen"]

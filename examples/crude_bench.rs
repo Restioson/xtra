@@ -7,7 +7,12 @@ struct Counter {
     count: usize,
 }
 
-impl Actor for Counter {}
+#[async_trait]
+impl Actor for Counter {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 struct Increment;
 
@@ -54,7 +59,12 @@ struct SendTimer {
     time: Duration,
 }
 
-impl Actor for SendTimer {}
+#[async_trait]
+impl Actor for SendTimer {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 struct GetTime;
 
@@ -71,7 +81,12 @@ impl Handler<GetTime> for SendTimer {
 
 struct ReturnTimer;
 
-impl Actor for ReturnTimer {}
+#[async_trait]
+impl Actor for ReturnTimer {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 struct TimeReturn;
 

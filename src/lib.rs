@@ -7,8 +7,6 @@ pub use self::address::{Address, Disconnected, WeakAddress};
 pub use self::context::{ActorShutdown, Context};
 pub use self::manager::ActorManager;
 
-pub use async_trait::async_trait;
-
 pub mod address;
 mod context;
 mod drop_notice;
@@ -50,7 +48,7 @@ pub mod prelude {
 /// # use xtra::prelude::*;
 /// # use xtra::spawn::Smol;
 /// # struct MyActor;
-/// # #[async_trait::async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
+/// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
 /// struct Msg;
 ///
 /// impl Message for Msg {
@@ -206,7 +204,7 @@ pub trait Actor: 'static + Send + Sized {
     /// # use std::time::Duration;
     /// # use smol::Timer;
     /// # struct MyActor;
-    /// # #[async_trait::async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
+    /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
     /// smol::block_on(async {
     ///     let (addr, fut) = MyActor.create(None).run();
     ///     smol::spawn(fut).detach(); // Actually spawn the actor onto an executor
