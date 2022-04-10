@@ -49,9 +49,11 @@ fn throughput(c: &mut Criterion) {
             &num_messages,
             |b, &num_messages| {
                 b.to_async(&runtime).iter(|| async {
-                    for _ in 0..num_messages {
-                        address.send(IncrementZst).await.unwrap();
+                    for _ in 0..num_messages - 1 {
+                        address.do_send(IncrementZst).unwrap();
                     }
+
+                    address.send(IncrementZst).await.unwrap()
                 });
             },
         );
