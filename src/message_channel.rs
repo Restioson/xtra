@@ -280,11 +280,10 @@ where
     }
 }
 
-impl<A, M, R> StrongMessageChannel<M> for Address<A, Strong>
+impl<A, M> StrongMessageChannel<M> for Address<A, Strong>
 where
-    A: Handler<M, Return = R>,
+    A: Handler<M>,
     M: Send + 'static,
-    R: Send + 'static,
 {
     fn downgrade(&self) -> Box<dyn WeakMessageChannel<M, Return = Self::Return>> {
         Box::new(self.downgrade())
@@ -314,11 +313,10 @@ where
     }
 }
 
-impl<A, M, R> WeakMessageChannel<M> for WeakAddress<A>
+impl<A, M> WeakMessageChannel<M> for WeakAddress<A>
 where
-    A: Handler<M, Return = R>,
+    A: Handler<M>,
     M: Send + 'static,
-    R: Send + 'static,
 {
     /// Upcasts this weak message channel into a boxed generic
     /// [`MessageChannel`](trait.MessageChannel.html) trait object
