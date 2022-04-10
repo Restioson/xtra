@@ -9,8 +9,6 @@ pub use tokio_impl::*;
 #[cfg(feature = "with-wasm_bindgen-0_2")]
 pub use wasm_bindgen_impl::*;
 
-use crate::{Actor, ActorManager, Address};
-
 /// An `Spawner` represents anything that can spawn a future to be run in the background. This is
 /// used to spawn actors.
 pub trait Spawner {
@@ -21,6 +19,7 @@ pub trait Spawner {
 #[cfg(feature = "with-async_std-1")]
 mod async_std_impl {
     use super::*;
+    use crate::{Actor, ActorManager, Address};
 
     /// The async std runtime.
     #[derive(Copy, Clone, Debug, Default)]
@@ -38,7 +37,7 @@ mod async_std_impl {
         fn spawn_global(self) -> Address<A>;
     }
 
-    impl<A: Actor> AsyncStdGlobalSpawnExt<A> for ActorManager<A> {
+    impl<A: Actor<Stop = ()>> AsyncStdGlobalSpawnExt<A> for ActorManager<A> {
         fn spawn_global(self) -> Address<A> {
             self.spawn(&mut AsyncStd)
         }
@@ -48,6 +47,7 @@ mod async_std_impl {
 #[cfg(feature = "with-smol-1")]
 mod smol_impl {
     use super::*;
+    use crate::{Actor, ActorManager, Address};
 
     /// The smol runtime.
     #[derive(Copy, Clone, Debug)]
@@ -80,7 +80,7 @@ mod smol_impl {
         fn spawn_global(self) -> Address<A>;
     }
 
-    impl<A: Actor> SmolGlobalSpawnExt<A> for ActorManager<A> {
+    impl<A: Actor<Stop = ()>> SmolGlobalSpawnExt<A> for ActorManager<A> {
         fn spawn_global(self) -> Address<A> {
             self.spawn(&mut Smol::Global)
         }
@@ -90,6 +90,7 @@ mod smol_impl {
 #[cfg(feature = "with-tokio-1")]
 mod tokio_impl {
     use super::*;
+    use crate::{Actor, ActorManager, Address};
 
     /// The Tokio runtime.
     #[derive(Copy, Clone, Debug)]
@@ -121,7 +122,7 @@ mod tokio_impl {
         fn spawn_global(self) -> Address<A>;
     }
 
-    impl<A: Actor> TokioGlobalSpawnExt<A> for ActorManager<A> {
+    impl<A: Actor<Stop = ()>> TokioGlobalSpawnExt<A> for ActorManager<A> {
         fn spawn_global(self) -> Address<A> {
             self.spawn(&mut Tokio::Global)
         }
@@ -131,6 +132,7 @@ mod tokio_impl {
 #[cfg(feature = "with-wasm_bindgen-0_2")]
 mod wasm_bindgen_impl {
     use super::*;
+    use crate::{Actor, ActorManager, Address};
 
     /// Spawn rust futures in WASM on the current thread in the background.
     #[derive(Copy, Clone, Debug, Default)]
@@ -148,7 +150,7 @@ mod wasm_bindgen_impl {
         fn spawn_global(self) -> Address<A>;
     }
 
-    impl<A: Actor> WasmBindgenGlobalSpawnExt<A> for ActorManager<A> {
+    impl<A: Actor<Stop = ()>> WasmBindgenGlobalSpawnExt<A> for ActorManager<A> {
         fn spawn_global(self) -> Address<A> {
             self.spawn(&mut WasmBindgen)
         }

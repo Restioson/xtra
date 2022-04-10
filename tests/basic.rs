@@ -2,17 +2,21 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use smol_timeout::TimeoutExt;
 
 use xtra::prelude::*;
-use xtra::spawn::Smol;
+use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::KeepRunning;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
 
-impl Actor for Accumulator {}
+#[async_trait]
+impl Actor for Accumulator {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 struct Inc;
 impl Message for Inc {
@@ -38,9 +42,9 @@ impl Handler<Report> for Accumulator {
     }
 }
 
-#[smol_potat::test]
+#[tokio::test]
 async fn accumulate_to_ten() {
-    let addr = Accumulator(0).create(None).spawn(&mut Smol::Global);
+    let addr = Accumulator(0).create(None).spawn_global();
     for _ in 0..10 {
         addr.do_send(Inc).unwrap();
     }
@@ -58,6 +62,8 @@ impl Drop for DropTester {
 
 #[async_trait]
 impl Actor for DropTester {
+    type Stop = ();
+
     async fn stopping(&mut self, _ctx: &mut Context<Self>) -> KeepRunning {
         self.0.fetch_add(1, Ordering::SeqCst);
         KeepRunning::StopAll
@@ -81,7 +87,7 @@ impl Handler<Stop> for DropTester {
     }
 }
 
-#[smol_potat::test]
+#[tokio::test]
 async fn test_stop_and_drop() {
     // Drop the address
     let drop_count = Arc::new(AtomicUsize::new(0));
@@ -123,7 +129,11 @@ impl Message for StreamCancelMessage {
 struct StreamCancelTester;
 
 #[async_trait]
-impl Actor for StreamCancelTester {}
+impl Actor for StreamCancelTester {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
 
 #[async_trait]
 impl Handler<StreamCancelMessage> for StreamCancelTester {
@@ -132,11 +142,11 @@ impl Handler<StreamCancelMessage> for StreamCancelTester {
     }
 }
 
-#[smol_potat::test]
+#[tokio::test]
 async fn test_stream_cancel_join() {
     let (_tx, rx) = flume::unbounded::<StreamCancelMessage>();
     let stream = rx.into_stream();
-    let addr = StreamCancelTester {}.create(None).spawn(&mut Smol::Global);
+    let addr = StreamCancelTester {}.create(None).spawn_global();
     let jh = addr.join();
     let addr2 = addr.clone().downgrade();
     // attach a stream that blocks forever
@@ -148,4 +158,34 @@ async fn test_stream_cancel_join() {
 
     // Join should also return right away
     assert!(jh.timeout(Duration::from_secs(2)).await.is_some());
+}
+
+#[tokio::test]
+async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
+    let address = ActorReturningStopSelf.create(None).spawn_global();
+
+    address.send(Stop).await.unwrap();
+    smol::Timer::after(Duration::from_secs(1)).await;
+
+    assert!(!address.is_connected());
+}
+
+struct ActorReturningStopSelf;
+
+#[async_trait]
+impl Actor for ActorReturningStopSelf {
+    type Stop = ();
+
+    async fn stopping(&mut self, _: &mut Context<Self>) -> KeepRunning {
+        KeepRunning::StopSelf
+    }
+
+    async fn stopped(self) -> Self::Stop {}
+}
+
+#[async_trait]
+impl Handler<Stop> for ActorReturningStopSelf {
+    async fn handle(&mut self, _: Stop, ctx: &mut Context<Self>) {
+        ctx.stop();
+    }
 }
