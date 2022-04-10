@@ -1,10 +1,15 @@
-use criterion::async_executor::SmolExecutor;
+use async_trait::async_trait;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use tokio::runtime::Runtime;
 use xtra::{Actor, Context, Handler, Message};
 
 struct Counter(u64);
 
-impl Actor for Counter {}
+#[async_trait]
+impl Actor for Counter {
+    type Stop = ();
+    async fn stopped(self) {}
+}
 
 struct IncrementZst;
 impl Message for IncrementZst {
@@ -32,6 +37,8 @@ impl Handler<Finish> for Counter {
 
 fn throughput(c: &mut Criterion) {
     let mut group = c.benchmark_group("send_zst");
+    let runtime = Runtime::new().unwrap();
+    let _g = runtime.enter();
 
     for num_messages in [1, 10, 100, 1000] {
         let (address, task) = Counter(0).create(Some(num_messages)).run();
@@ -41,7 +48,7 @@ fn throughput(c: &mut Criterion) {
             BenchmarkId::from_parameter(num_messages),
             &num_messages,
             |b, &num_messages| {
-                b.to_async(SmolExecutor).iter(|| async {
+                b.to_async(&runtime).iter(|| async {
                     for _ in 0..num_messages {
                         address.send(IncrementZst).await.unwrap();
                     }
