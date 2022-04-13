@@ -13,7 +13,7 @@ use crate::envelope::NonReturningEnvelope;
 use crate::manager::AddressMessage;
 use crate::private::Sealed;
 use crate::refcount::{RefCounter, Strong, Weak};
-use crate::{Actor, Handler, Message};
+use crate::{Actor, Handler};
 
 /// An `AddressSink` is the [futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
 /// returned by [`Address::into_sink`](../address/struct.Address.html#method.into_sink). Similarly to with
@@ -65,9 +65,10 @@ impl<A, Rc: RefCounter> Drop for AddressSink<A, Rc> {
     }
 }
 
-impl<A, Rc: RefCounter, M: Message> Sink<M> for AddressSink<A, Rc>
+impl<A, Rc: RefCounter, M> Sink<M> for AddressSink<A, Rc>
 where
     A: Handler<M>,
+    M: Send + 'static,
 {
     type Error = Disconnected;
 
@@ -99,7 +100,7 @@ where
 
 /// A `MessageSink` is similar to a [`MessageChannel`](../message_channel/trait.MessageChannel.html),
 /// but it is a sink and operates asynchronously.
-pub trait MessageSink<M: Message>: Sealed + Sink<M, Error = Disconnected> + Unpin + Send {
+pub trait MessageSink<M>: Sealed + Sink<M, Error = Disconnected> + Unpin + Send {
     /// Returns whether the actor referred to by this message sink is running and accepting messages.
     fn is_connected(&self) -> bool;
 
@@ -124,7 +125,7 @@ pub trait MessageSink<M: Message>: Sealed + Sink<M, Error = Disconnected> + Unpi
 
 /// A `WeakMessageSink` is a [`MessageSink`](trait.MessageSink.html) which does not inhibit the actor
 /// from being dropped while it exists.
-pub trait WeakMessageSink<M: Message>: MessageSink<M> {
+pub trait WeakMessageSink<M>: MessageSink<M> {
     /// Upcasts this weak message sink into a boxed generic
     /// [`MessageSink`](trait.MessageSink.html) trait object
     fn upcast(self) -> Box<dyn MessageSink<M>>;
@@ -139,7 +140,7 @@ pub trait WeakMessageSink<M: Message>: MessageSink<M> {
 
 /// A `StrongMessageSink` is a [`MessageSink`](trait.MessageSink.html) which does inhibit the actor
 /// from being dropped while it exists.
-pub trait StrongMessageSink<M: Message>: MessageSink<M> {
+pub trait StrongMessageSink<M>: MessageSink<M> {
     /// Create a weak message sink. Unlike with the strong variety of message sink (this kind),
     /// an actor will not be prevented from being dropped if only weak sinks, channels, and
     /// addresses exist.
@@ -157,9 +158,10 @@ pub trait StrongMessageSink<M: Message>: MessageSink<M> {
     fn clone_message_sink(&self) -> Box<dyn StrongMessageSink<M>>;
 }
 
-impl<A: Actor, M: Message, Rc: RefCounter> MessageSink<M> for AddressSink<A, Rc>
+impl<A: Actor, M, Rc: RefCounter> MessageSink<M> for AddressSink<A, Rc>
 where
     A: Handler<M>,
+    M: Send + 'static,
 {
     fn is_connected(&self) -> bool {
         self.ref_counter.is_connected()
@@ -178,9 +180,10 @@ where
     }
 }
 
-impl<A: Actor, M: Message> StrongMessageSink<M> for AddressSink<A, Strong>
+impl<A: Actor, M> StrongMessageSink<M> for AddressSink<A, Strong>
 where
     A: Handler<M>,
+    M: Send + 'static,
 {
     fn downgrade(self) -> Box<dyn WeakMessageSink<M>> {
         Box::new(AddressSink::downgrade(&self))
@@ -199,9 +202,10 @@ where
     }
 }
 
-impl<A: Actor, M: Message> WeakMessageSink<M> for AddressSink<A, Weak>
+impl<A: Actor, M> WeakMessageSink<M> for AddressSink<A, Weak>
 where
     A: Handler<M>,
+    M: Send + 'static,
 {
     fn upcast(self) -> Box<dyn MessageSink<M, Error = Disconnected>> {
         Box::new(self)

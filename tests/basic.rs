@@ -19,17 +19,13 @@ impl Actor for Accumulator {
 }
 
 struct Inc;
-impl Message for Inc {
-    type Result = ();
-}
 
 struct Report;
-impl Message for Report {
-    type Result = Accumulator;
-}
 
 #[async_trait]
 impl Handler<Inc> for Accumulator {
+    type Return = ();
+
     async fn handle(&mut self, _: Inc, _ctx: &mut Context<Self>) {
         self.0 += 1;
     }
@@ -37,6 +33,8 @@ impl Handler<Inc> for Accumulator {
 
 #[async_trait]
 impl Handler<Report> for Accumulator {
+    type Return = Self;
+
     async fn handle(&mut self, _: Report, _ctx: &mut Context<Self>) -> Self {
         self.clone()
     }
@@ -76,12 +74,10 @@ impl Actor for DropTester {
 
 struct Stop;
 
-impl Message for Stop {
-    type Result = ();
-}
-
 #[async_trait]
 impl Handler<Stop> for DropTester {
+    type Return = ();
+
     async fn handle(&mut self, _: Stop, ctx: &mut Context<Self>) {
         ctx.stop();
     }
@@ -122,10 +118,6 @@ async fn test_stop_and_drop() {
 
 struct StreamCancelMessage;
 
-impl Message for StreamCancelMessage {
-    type Result = KeepRunning;
-}
-
 struct StreamCancelTester;
 
 #[async_trait]
@@ -137,6 +129,8 @@ impl Actor for StreamCancelTester {
 
 #[async_trait]
 impl Handler<StreamCancelMessage> for StreamCancelTester {
+    type Return = KeepRunning;
+
     async fn handle(&mut self, _: StreamCancelMessage, _: &mut Context<Self>) -> KeepRunning {
         KeepRunning::Yes
     }
@@ -185,6 +179,8 @@ impl Actor for ActorReturningStopSelf {
 
 #[async_trait]
 impl Handler<Stop> for ActorReturningStopSelf {
+    type Return = ();
+
     async fn handle(&mut self, _: Stop, ctx: &mut Context<Self>) {
         ctx.stop();
     }

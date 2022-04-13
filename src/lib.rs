@@ -31,30 +31,9 @@ pub mod prelude {
     #[cfg(feature = "with-tracing-0_1")]
     pub use crate::tracing::InstrumentedExt;
     #[doc(no_inline)]
-    pub use crate::{Actor, Handler, Message};
+    pub use crate::{Actor, Handler};
 
     pub use async_trait::async_trait;
-}
-
-/// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
-/// one at a time. Only actors implementing the corresponding [`Handler<M>`](trait.Handler.html)
-/// trait can be sent a given message.
-///
-/// # Example
-///
-/// ```no_run
-/// # use xtra::Message;
-/// struct MyResult;
-/// struct MyMessage;
-///
-/// impl Message for MyMessage {
-///     type Result = MyResult;
-/// }
-/// ```
-pub trait Message: Send + 'static {
-    /// The return type of the message. It will be returned when the [`Address::send`](address/struct.Address.html#method.send)
-    /// method is called.
-    type Result: Send;
 }
 
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
@@ -91,12 +70,15 @@ pub trait Message: Send + 'static {
 /// }
 /// ```
 #[async_trait::async_trait]
-pub trait Handler<M: Message>: Actor {
+pub trait Handler<M>: Actor {
+    /// The return value of this handler.
+    type Return: Send + 'static;
+
     /// Handle a given message, returning its result.
     ///
     /// This is an [`async_trait`](https://docs.rs/async-trait).
     /// See the trait documentation to see an example of how this method can be declared.
-    async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result;
+    async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::Return;
 }
 
 /// An actor which can handle [`Message`s](trait.Message.html) one at a time. Actors can only be
