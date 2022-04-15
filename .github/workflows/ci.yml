@@ -29,6 +29,8 @@ jobs:
           override: true
           component: rustfmt, clippy
 
+      - uses: Swatinem/rust-cache@v1
+
       - name: Check Code Format
         uses: actions-rs/cargo@v1.0.3
         with:
