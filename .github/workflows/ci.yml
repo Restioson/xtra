@@ -11,11 +11,10 @@ jobs:
       matrix:
         platform: [ubuntu-latest]
         toolchain: [stable]
-        runtime:
-          - with-async_std-1
-          - with-smol-1
-          - with-tokio-1
-          - with-wasm_bindgen-0_2
+        args: [
+          --all-features,
+          --no-default-features
+        ]
     runs-on: ${{ matrix.platform }}
 
     steps:
@@ -40,16 +39,16 @@ jobs:
         uses: actions-rs/cargo@v1.0.3
         with:
           command: clippy
-          args: --all-features --all-targets -- -D warnings
+          args: --all-targets ${{ matrix.args }} -- -D warnings
 
       - name: Build Examples
         uses: actions-rs/cargo@v1.0.3
         with:
           command: build
-          args: --verbose --examples --features ${{ matrix.runtime }}
+          args: --verbose --examples ${{ matrix.args }}
 
       - name: Test
         uses: actions-rs/cargo@v1.0.3
         with:
           command: test
-          args: --lib --tests --features ${{ matrix.runtime }}
+          args: --lib --tests ${{ matrix.args }}
