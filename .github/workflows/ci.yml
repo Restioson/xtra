@@ -31,7 +31,7 @@ jobs:
           profile: minimal
           toolchain: ${{ matrix.toolchain }}
           override: true
-          component: rustfmt, clippy
+          components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v1
         if: ${{ matrix.toolchain }} != 'nightly'
