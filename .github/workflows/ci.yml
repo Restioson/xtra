@@ -9,7 +9,6 @@ jobs:
   ci:
     strategy:
       matrix:
-        platform: [ubuntu-latest]
         toolchain: [
           stable,
           beta,
@@ -20,7 +19,7 @@ jobs:
           --all-features,
           --no-default-features
         ]
-    runs-on: ${{ matrix.platform }}
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Sources
