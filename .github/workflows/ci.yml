@@ -49,12 +49,6 @@ jobs:
           command: clippy
           args: --all-targets ${{ matrix.args }} -- -D warnings
 
-      - name: Build Examples
-        uses: actions-rs/cargo@v1.0.3
-        with:
-          command: build
-          args: --verbose --examples ${{ matrix.args }}
-
       - name: Test
         uses: actions-rs/cargo@v1.0.3
         with:
