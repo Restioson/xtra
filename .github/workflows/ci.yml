@@ -53,4 +53,4 @@ jobs:
         uses: actions-rs/cargo@v1.0.3
         with:
           command: test
-          args: --lib --tests ${{ matrix.args }}
+          args: ${{ matrix.args }}
