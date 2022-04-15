@@ -37,7 +37,7 @@ pub struct Context<A> {
     shared_drop_notifier: Arc<DropNotifier>,
     /// Activates when this context is dropped. Used in [`Context::notify_interval`] and [`Context::notify_after`]
     /// to shutdown the tasks as soon as the context stops.
-    #[cfg_attr(feature = "timing", allow(dead_code))]
+    #[cfg_attr(not(feature = "timing"), allow(dead_code))]
     drop_notifier: DropNotifier,
 }
 
