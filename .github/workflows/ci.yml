@@ -10,7 +10,12 @@ jobs:
     strategy:
       matrix:
         platform: [ubuntu-latest]
-        toolchain: [stable]
+        toolchain: [
+          stable,
+          beta,
+          nightly,
+          1.54.0 # MSRV
+        ]
         args: [
           --all-features,
           --no-default-features
@@ -30,6 +35,7 @@ jobs:
           component: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v1
+        if: ${{ matrix.toolchain }} != 'nightly'
 
       - name: Check Code Format
         uses: actions-rs/cargo@v1.0.3
