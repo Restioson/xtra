@@ -153,6 +153,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// Returns whether the actor referred to by this address is running and accepting messages.
     ///
     /// ```rust
+    /// # #![cfg(feature = "with-smol-1")]
     /// # use xtra::prelude::*;
     /// # use xtra::spawn::Smol;
     /// # use std::time::Duration;
@@ -161,12 +162,10 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// # use smol::Timer;
     /// struct Shutdown;
     ///
-    /// impl Message for Shutdown {
-    ///     type Result = ();
-    /// }
-    ///
     /// #[async_trait]
     /// impl Handler<Shutdown> for MyActor {
+    ///     type Return = ();
+    ///
     ///     async fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
     ///         ctx.stop();
     ///     }

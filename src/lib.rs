@@ -44,19 +44,18 @@ pub mod prelude {
 ///
 /// # Example
 ///
-/// ```
+/// ```rust
+/// #![cfg(feature = "with-smol-1")]
 /// # use xtra::prelude::*;
 /// # use xtra::spawn::Smol;
 /// # struct MyActor;
 /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
 /// struct Msg;
 ///
-/// impl Message for Msg {
-///     type Result = u32;
-/// }
-///
 /// #[async_trait]
 /// impl Handler<Msg> for MyActor {
+///     type Return = u32;
+///
 ///     async fn handle(&mut self, message: Msg, ctx: &mut Context<Self>) -> u32 {
 ///         20
 ///     }
@@ -93,6 +92,7 @@ pub trait Handler<M>: Actor {
 /// # Example
 ///
 /// ```rust
+/// #![cfg(feature = "with-smol-1")]
 /// # use xtra::{KeepRunning, prelude::*};
 /// # use xtra::spawn::Smol;
 /// # use std::time::Duration;
@@ -118,12 +118,10 @@ pub trait Handler<M>: Actor {
 ///
 /// struct Goodbye;
 ///
-/// impl Message for Goodbye {
-///     type Result = ();
-/// }
-///
 /// #[async_trait]
 /// impl Handler<Goodbye> for MyActor {
+///     type Return = ();
+///
 ///     async fn handle(&mut self, _: Goodbye, ctx: &mut Context<Self>) {
 ///         println!("Goodbye!");
 ///         ctx.stop();
