@@ -34,7 +34,7 @@ jobs:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v1
-        if: ${{ matrix.toolchain }} != 'nightly'
+        if: ${{ matrix.toolchain }} != 'nightly' # Caching on nightly is useless because it changes daily.
 
       - name: Check Code Format
         uses: actions-rs/cargo@v1.0.3
