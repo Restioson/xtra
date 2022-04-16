@@ -44,27 +44,25 @@ pub mod prelude {
 ///
 /// # Example
 ///
-/// ```
+/// ```rust
 /// # use xtra::prelude::*;
-/// # use xtra::spawn::Smol;
 /// # struct MyActor;
 /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
 /// struct Msg;
 ///
-/// impl Message for Msg {
-///     type Result = u32;
-/// }
-///
 /// #[async_trait]
 /// impl Handler<Msg> for MyActor {
+///     type Return = u32;
+///
 ///     async fn handle(&mut self, message: Msg, ctx: &mut Context<Self>) -> u32 {
 ///         20
 ///     }
 /// }
 ///
 /// fn main() {
+/// #   #[cfg(feature = "with-smol-1")]
 ///     smol::block_on(async {
-///         let addr = MyActor.create(None).spawn(&mut Smol::Global);
+///         let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///         assert_eq!(addr.send(Msg).await, Ok(20));
 ///     })
 /// }
@@ -94,9 +92,7 @@ pub trait Handler<M>: Actor {
 ///
 /// ```rust
 /// # use xtra::{KeepRunning, prelude::*};
-/// # use xtra::spawn::Smol;
 /// # use std::time::Duration;
-/// # use smol::Timer;
 /// struct MyActor;
 ///
 /// #[async_trait]
@@ -118,12 +114,10 @@ pub trait Handler<M>: Actor {
 ///
 /// struct Goodbye;
 ///
-/// impl Message for Goodbye {
-///     type Result = ();
-/// }
-///
 /// #[async_trait]
 /// impl Handler<Goodbye> for MyActor {
+///     type Return = ();
+///
 ///     async fn handle(&mut self, _: Goodbye, ctx: &mut Context<Self>) {
 ///         println!("Goodbye!");
 ///         ctx.stop();
@@ -131,11 +125,12 @@ pub trait Handler<M>: Actor {
 /// }
 ///
 /// // Will print "Started!", "Goodbye!", "Decided not to keep running", and then "Finally stopping."
+/// # #[cfg(feature = "with-smol-1")]
 /// smol::block_on(async {
-///     let addr = MyActor.create(None).spawn(&mut Smol::Global);
+///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///     addr.send(Goodbye).await;
 ///
-///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
+///     smol::Timer::after(Duration::from_secs(1)).await; // Give it time to run
 /// })
 /// ```
 ///
