@@ -341,3 +341,17 @@ where
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn message_channel_is_send_and_sync() {
+        assert_send_sync::<Box<dyn MessageChannel<Foobar, Return = ()>>>()
+    }
+
+    struct Foobar;
+
+    fn assert_send_sync<T: Send + Sync>() {}
+}
