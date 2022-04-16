@@ -32,6 +32,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v1
         if: ${{ matrix.toolchain }} != 'nightly' # Caching on nightly is useless because it changes daily.
+        with:
+          key: ${{ matrix.args }}
 
       - run: cargo fmt -- --check
 
