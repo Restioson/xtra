@@ -20,13 +20,10 @@ jobs:
           --no-default-features
         ]
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Sources
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Install Rust Toolchain
-        uses: actions-rs/toolchain@v1.0.7
+      - uses: actions-rs/toolchain@v1.0.7
         with:
           profile: minimal
           toolchain: ${{ matrix.toolchain }}
@@ -36,20 +33,8 @@ jobs:
       - uses: Swatinem/rust-cache@v1
         if: ${{ matrix.toolchain }} != 'nightly' # Caching on nightly is useless because it changes daily.
 
-      - name: Check Code Format
-        uses: actions-rs/cargo@v1.0.3
-        with:
-          command: fmt
-          args: -- --check
+      - run: cargo fmt -- --check
 
-      - name: Check Code Lint
-        uses: actions-rs/cargo@v1.0.3
-        with:
-          command: clippy
-          args: --all-targets ${{ matrix.args }} -- -D warnings
+      - run: cargo clippy --all-targets ${{ matrix.args }} -- -D warnings
 
-      - name: Test
-        uses: actions-rs/cargo@v1.0.3
-        with:
-          command: test
-          args: ${{ matrix.args }}
+      - run: cargo test ${{ matrix.args }}
