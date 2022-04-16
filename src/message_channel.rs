@@ -52,10 +52,8 @@ impl<R> Future for SendFuture<R> {
 /// # Example
 ///
 /// ```rust
-/// #![cfg(feature = "with-smol-1")]
 /// # use xtra::prelude::*;
 /// # use smol::Timer;
-/// # use xtra::spawn::Smol;
 /// # use std::time::Duration;
 /// struct WhatsYourName;
 ///
@@ -90,10 +88,11 @@ impl<R> Future for SendFuture<R> {
 /// }
 ///
 /// fn main() {
+/// # #[cfg(feature = "with-smol-1")]
 /// smol::block_on(async {
 ///         let channels: [Box<dyn StrongMessageChannel<WhatsYourName, Return = &'static str>>; 2] = [
-///             Box::new(Alice.create(None).spawn(&mut Smol::Global)),
-///             Box::new(Bob.create(None).spawn(&mut Smol::Global))
+///             Box::new(Alice.create(None).spawn(&mut xtra::spawn::Smol::Global)),
+///             Box::new(Bob.create(None).spawn(&mut xtra::spawn::Smol::Global))
 ///         ];
 ///         let name = ["Alice", "Bob"];
 ///         for (channel, name) in channels.iter().zip(&name) {
