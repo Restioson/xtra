@@ -35,12 +35,11 @@ impl Printer {
 impl Actor for Printer {}
 
 struct Print(String);
-impl Message for Print {
-    type Result = ();
-}
 
 #[async_trait]
 impl Handler<Print> for Printer {
+    type Return = ();
+
     async fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) {
         self.times += 1; // no ActorFuture or anything just to access `self`
         println!("Printing {}. Printed {} times so far.", print.0, self.times);
