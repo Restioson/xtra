@@ -403,47 +403,6 @@ impl<A: Actor> Context<A> {
             .send(BroadcastMessage::Message(Box::new(envelope)));
     }
 
-    /// Notify the actor with a message every interval until it is stopped (either directly with
-    /// [`Context::stop`](struct.Context.html#method.stop), or for a lack of strong
-    /// [`Address`es](address/struct.Address.html)). This does not take priority over other messages.
-    ///
-    /// This function is subject to back-pressure by the actor's mailbox. Thus, if the mailbox is full
-    /// the loop will wait until a slot is available. It is therefore not guaranteed that a message
-    /// will be delivered at exactly `duration` intervals.
-    #[cfg(feature = "timing")]
-    pub fn notify_interval<F, M>(
-        &mut self,
-        duration: Duration,
-        constructor: F,
-    ) -> Result<impl Future<Output = ()>, ActorShutdown>
-    where
-        F: Send + 'static + Fn() -> M,
-        M: Send + 'static,
-        A: Handler<M>,
-    {
-        let addr = self.address()?.downgrade();
-        let mut stopped = self.drop_notifier.subscribe();
-
-        let fut = async move {
-            loop {
-                let delay = Delay::new(duration);
-                match future::select(delay, &mut stopped).await {
-                    Either::Left(_) => {
-                        if addr.send(constructor()).await.is_err() {
-                            break;
-                        }
-                    }
-                    Either::Right(_) => {
-                        // Context stopped before the end of the delay was reached
-                        break;
-                    }
-                }
-            }
-        };
-
-        Ok(fut)
-    }
-
     /// Notify the actor with a message after a certain duration has elapsed. This does not take
     /// priority over other messages.
     ///
