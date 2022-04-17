@@ -63,12 +63,6 @@ enum SendFutureInner<A: Actor, R> {
     Done,
 }
 
-impl<A: Actor, R> Default for SendFutureInner<A, R> {
-    fn default() -> Self {
-        SendFutureInner::Disconnected
-    }
-}
-
 pub(crate) fn poll_rx<T>(rx: &mut Receiver<T>, ctx: &mut Context) -> Poll<Result<T, Disconnected>> {
     rx.poll_unpin(ctx).map_err(|_| Disconnected)
 }
@@ -78,7 +72,8 @@ impl<A: Actor, R> Future for SendFuture<A, R, ReceiveSync> {
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
-        let (poll, new) = match mem::take(&mut this.inner) {
+
+        let (poll, new) = match mem::replace(&mut this.inner, SendFutureInner::Done) {
             SendFutureInner::Disconnected => {
                 (Poll::Ready(Err(Disconnected)), SendFutureInner::Done)
             }
@@ -107,7 +102,8 @@ impl<A: Actor, R: Send + 'static> Future for SendFuture<A, R, ReceiveAsync> {
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
-        let (poll, new) = match mem::take(&mut this.inner) {
+
+        let (poll, new) = match mem::replace(&mut this.inner, SendFutureInner::Done) {
             SendFutureInner::Disconnected => (
                 Poll::Ready(future::ready(Err(Disconnected)).boxed()),
                 SendFutureInner::Done,
