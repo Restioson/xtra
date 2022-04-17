@@ -68,30 +68,39 @@ impl<A: Actor, R> Future for SendFuture<A, R, ReceiveSync> {
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
 
-        let (poll, new) = match mem::replace(&mut this.inner, SendFutureInner::Done) {
+        match mem::replace(&mut this.inner, SendFutureInner::Done) {
             SendFutureInner::Disconnected => {
-                (Poll::Ready(Err(Disconnected)), SendFutureInner::Done)
+                this.inner = SendFutureInner::Done;
+                Poll::Ready(Err(Disconnected))
             }
-            SendFutureInner::Sending(mut tx, mut rx) => match tx.poll_unpin(ctx) {
-                Poll::Ready(Ok(())) => match rx.poll_unpin(ctx) {
-                    Poll::Ready(item) => (Poll::Ready(item), SendFutureInner::Done),
-                    Poll::Pending => (Poll::Pending, SendFutureInner::Receiving(rx)),
-                },
-                Poll::Ready(Err(_)) => {
-                    (Poll::Ready(Err(Disconnected)), SendFutureInner::Done)
+            SendFutureInner::Sending(mut tx, rx) => match tx.poll_unpin(ctx) {
+                Poll::Ready(Ok(())) => {
+                    this.inner = SendFutureInner::Receiving(rx);
+                    this.poll_unpin(ctx)
                 }
-                Poll::Pending => (Poll::Pending, SendFutureInner::Sending(tx, rx)),
+                Poll::Ready(Err(_)) => {
+                    this.inner = SendFutureInner::Done;
+                    Poll::Ready(Err(Disconnected))
+                }
+                Poll::Pending => {
+                    this.inner = SendFutureInner::Sending(tx, rx);
+                    Poll::Pending
+                }
             },
-            SendFutureInner::Receiving(mut rx) => {
-                (rx.poll_unpin(ctx), SendFutureInner::Receiving(rx))
-            }
+            SendFutureInner::Receiving(mut rx) => match rx.poll_unpin(ctx) {
+                Poll::Ready(item) => {
+                    this.inner = SendFutureInner::Done;
+                    Poll::Ready(item)
+                }
+                Poll::Pending => {
+                    this.inner = SendFutureInner::Receiving(rx);
+                    Poll::Pending
+                }
+            },
             SendFutureInner::Done => {
                 panic!("Polled after completion")
             }
-        };
-
-        this.inner = new;
-        poll
+        }
     }
 }
 
@@ -101,25 +110,33 @@ impl<A: Actor, R: Send + 'static> Future for SendFuture<A, R, ReceiveAsync> {
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
 
-        let (poll, new) = match mem::replace(&mut this.inner, SendFutureInner::Done) {
+        match mem::replace(&mut this.inner, SendFutureInner::Done) {
             SendFutureInner::Disconnected => {
-                (Poll::Ready(Receiver::disconnected()), SendFutureInner::Done)
+                this.inner = SendFutureInner::Done;
+                Poll::Ready(Receiver::disconnected())
             }
             SendFutureInner::Sending(mut tx, rx) => match tx.poll_unpin(ctx) {
-                Poll::Ready(Ok(())) => (Poll::Ready(rx), SendFutureInner::Done),
-                Poll::Ready(Err(_)) => {
-                    (Poll::Ready(Receiver::disconnected()), SendFutureInner::Done)
+                Poll::Ready(Ok(())) => {
+                    this.inner = SendFutureInner::Receiving(rx);
+                    this.poll_unpin(ctx)
                 }
-                Poll::Pending => (Poll::Pending, SendFutureInner::Sending(tx, rx)),
+                Poll::Ready(Err(_)) => {
+                    this.inner = SendFutureInner::Done;
+                    Poll::Ready(Receiver::disconnected())
+                }
+                Poll::Pending => {
+                    this.inner = SendFutureInner::Sending(tx, rx);
+                    Poll::Pending
+                }
             },
-            SendFutureInner::Receiving(rx) => (Poll::Ready(rx), SendFutureInner::Done),
+            SendFutureInner::Receiving(rx) => {
+                this.inner = SendFutureInner::Done;
+                Poll::Ready(rx)
+            },
             SendFutureInner::Done => {
                 panic!("Polled after completion")
             }
-        };
-
-        this.inner = new;
-        poll
+        }
     }
 }
 
