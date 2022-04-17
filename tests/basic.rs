@@ -3,8 +3,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use smol_timeout::TimeoutExt;
-
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::KeepRunning;
@@ -135,24 +133,6 @@ impl Handler<StreamCancelMessage> for StreamCancelTester {
     async fn handle(&mut self, _: StreamCancelMessage, _: &mut Context<Self>) -> KeepRunning {
         KeepRunning::Yes
     }
-}
-
-#[tokio::test]
-async fn test_stream_cancel_join() {
-    let (_tx, rx) = flume::unbounded::<StreamCancelMessage>();
-    let stream = rx.into_stream();
-    let addr = StreamCancelTester {}.create(None).spawn_global();
-    let jh = addr.join();
-    let addr2 = addr.clone().downgrade();
-    // attach a stream that blocks forever
-    let handle = smol::spawn(async move { addr2.attach_stream(stream).await });
-    drop(addr); // stop the actor
-
-    // Attach stream should return immediately
-    assert!(handle.timeout(Duration::from_secs(2)).await.is_some()); // None == timeout
-
-    // Join should also return right away
-    assert!(jh.timeout(Duration::from_secs(2)).await.is_some());
 }
 
 #[tokio::test]
