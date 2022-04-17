@@ -8,18 +8,20 @@ use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use catty::Receiver;
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
+use futures_util::future::MapErr;
 use futures_util::{FutureExt, TryFutureExt};
 
-use crate::address::{self, Address, Disconnected, WeakAddress};
+use crate::address::{Address, Disconnected, WeakAddress};
 use crate::envelope::ReturningEnvelope;
 use crate::manager::AddressMessage;
 use crate::private::Sealed;
 use crate::refcount::{RefCounter, Shared, Strong};
 use crate::sink::{AddressSink, MessageSink, StrongMessageSink, WeakMessageSink};
 use crate::{Handler, KeepRunning, ReceiveAsync, ReceiveSync};
+
+type Receiver<R> = MapErr<catty::Receiver<R>, fn(catty::Disconnected) -> Disconnected>;
 
 /// The future returned [`MessageChannel::send`](trait.MessageChannel.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -50,7 +52,7 @@ impl<R> Future for SendFuture<R, ReceiveSync> {
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         match &mut self.get_mut().inner {
             SendFutureInner::Disconnected => Poll::Ready(Err(Disconnected)),
-            SendFutureInner::Result(rx) => address::poll_rx(rx, ctx),
+            SendFutureInner::Result(rx) => rx.poll_unpin(ctx),
         }
     }
 }
@@ -274,7 +276,7 @@ where
                 .sender
                 .send(AddressMessage::Message(Box::new(envelope)));
             SendFuture {
-                inner: SendFutureInner::Result(rx),
+                inner: SendFutureInner::Result(rx.map_err(|_| Disconnected)),
                 phantom: PhantomData,
             }
         } else {
