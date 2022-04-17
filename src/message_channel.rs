@@ -77,7 +77,7 @@ use crate::{Handler, KeepRunning};
 ///     })
 /// }
 /// ```
-pub trait MessageChannel<M>: Sealed + Unpin + Send + Sync {
+pub trait MessageChannel<M>: Sealed + Unpin + Send {
     /// The return value of the handler for `M`.
     type Return: Send + 'static;
 
@@ -328,11 +328,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn message_channel_is_send_and_sync() {
+    fn message_channel_is_send() {
         assert_send_sync::<Box<dyn MessageChannel<Foobar, Return = ()>>>()
     }
 
     struct Foobar;
 
-    fn assert_send_sync<T: Send + Sync>() {}
+    fn assert_send_sync<T: Send>() {}
 }
