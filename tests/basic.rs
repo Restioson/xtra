@@ -63,12 +63,12 @@ impl Actor for DropTester {
     type Stop = ();
 
     async fn stopping(&mut self, _ctx: &mut Context<Self>) -> KeepRunning {
-        self.0.fetch_add(1, Ordering::SeqCst);
+        self.0.fetch_add(2, Ordering::SeqCst);
         KeepRunning::StopAll
     }
 
     async fn stopped(self) {
-        self.0.fetch_add(1, Ordering::SeqCst);
+        self.0.fetch_add(5, Ordering::SeqCst);
     }
 }
 
@@ -91,7 +91,7 @@ async fn test_stop_and_drop() {
     let handle = smol::spawn(fut);
     drop(addr);
     handle.await;
-    assert_eq!(drop_count.load(Ordering::SeqCst), 2);
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
 
     // Send a stop message
     let drop_count = Arc::new(AtomicUsize::new(0));
@@ -99,21 +99,21 @@ async fn test_stop_and_drop() {
     let handle = smol::spawn(fut);
     addr.do_send(Stop).unwrap();
     handle.await;
-    assert_eq!(drop_count.load(Ordering::SeqCst), 3);
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 2 + 5);
 
     // Drop address before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
     drop(addr);
     smol::spawn(fut).await;
-    assert_eq!(drop_count.load(Ordering::SeqCst), 2);
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
 
     // Send a stop message before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
     addr.do_send(Stop).unwrap();
     smol::spawn(fut).await;
-    assert_eq!(drop_count.load(Ordering::SeqCst), 3);
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 2 + 5);
 }
 
 struct StreamCancelMessage;
