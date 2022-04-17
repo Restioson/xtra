@@ -4,7 +4,6 @@
 
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
-use futures_sink::Sink;
 
 use crate::address::{Address, WeakAddress};
 use crate::envelope::ReturningEnvelope;
@@ -13,7 +12,7 @@ use crate::private::Sealed;
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Shared, Strong};
 use crate::send_future::{ResolveToHandlerReturn, SendFuture};
-use crate::{Disconnected, Handler, KeepRunning};
+use crate::{Handler, KeepRunning};
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
@@ -77,7 +76,7 @@ use crate::{Disconnected, Handler, KeepRunning};
 ///     })
 /// }
 /// ```
-pub trait MessageChannel<M>: Sealed + Unpin + Send + Sink<M, Error = Disconnected> {
+pub trait MessageChannel<M>: Sealed + Unpin + Send {
     /// The return value of the handler for `M`.
     type Return: Send + 'static;
 
