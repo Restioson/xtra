@@ -114,26 +114,6 @@ async fn test_stop_and_drop() {
     assert_eq!(drop_count.load(Ordering::SeqCst), 3);
 }
 
-struct StreamCancelMessage;
-
-struct StreamCancelTester;
-
-#[async_trait]
-impl Actor for StreamCancelTester {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
-}
-
-#[async_trait]
-impl Handler<StreamCancelMessage> for StreamCancelTester {
-    type Return = KeepRunning;
-
-    async fn handle(&mut self, _: StreamCancelMessage, _: &mut Context<Self>) -> KeepRunning {
-        KeepRunning::Yes
-    }
-}
-
 #[tokio::test]
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
     let address = ActorReturningStopSelf.create(None).spawn_global();
