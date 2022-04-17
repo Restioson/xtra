@@ -10,14 +10,15 @@ use std::{cmp::Ordering, error::Error, hash::Hash};
 
 use catty::Receiver;
 use flume::r#async::SendFut as ChannelSendFuture;
+use flume::r#async::SendSink;
 use flume::Sender;
 use futures_core::Stream;
+use futures_sink::Sink;
 use futures_util::{future, FutureExt, StreamExt};
 
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::AddressMessage;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
-use crate::sink::AddressSink;
 use crate::{Actor, Handler, KeepRunning};
 
 /// The future returned [`Address::send`](struct.Address.html#method.send).
@@ -113,8 +114,9 @@ impl Error for Disconnected {}
 /// should be used instead. An address is created by calling the
 /// [`Actor::create`](../trait.Actor.html#method.create) or
 /// [`Context::run`](../struct.Context.html#method.run) methods, or by cloning another `Address`.
-pub struct Address<A, Rc: RefCounter = Strong> {
+pub struct Address<A: 'static, Rc: RefCounter = Strong> {
     pub(crate) sender: Sender<AddressMessage<A>>,
+    pub(crate) sink: SendSink<'static, AddressMessage<A>>,
     pub(crate) ref_counter: Rc,
 }
 
@@ -132,6 +134,7 @@ impl<A> Address<A, Strong> {
     pub fn downgrade(&self) -> WeakAddress<A> {
         WeakAddress {
             sender: self.sender.clone(),
+            sink: self.sink.clone(),
             ref_counter: self.ref_counter.downgrade(),
         }
     }
@@ -143,6 +146,7 @@ impl<A> Address<A, Either> {
     pub fn downgrade(&self) -> WeakAddress<A> {
         WeakAddress {
             sender: self.sender.clone(),
+            sink: self.sink.clone(),
             ref_counter: self.ref_counter.clone().into_weak(),
         }
     }
@@ -201,6 +205,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         Address {
             ref_counter: self.ref_counter.clone().into_either(),
             sender: self.sender.clone(),
+            sink: self.sink.clone(),
         }
     }
 
@@ -301,14 +306,6 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         }
     }
 
-    /// Converts this address into a [futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html).
-    pub fn into_sink(self) -> AddressSink<A, Rc> {
-        AddressSink {
-            sink: self.sender.clone().into_sink(),
-            ref_counter: self.ref_counter.clone(),
-        }
-    }
-
     /// Waits until this address becomes disconnected.
     pub fn join(&self) -> impl Future<Output = ()> + Send + Unpin {
         self.ref_counter.disconnect_notice()
@@ -320,6 +317,7 @@ impl<A, Rc: RefCounter> Clone for Address<A, Rc> {
     fn clone(&self) -> Self {
         Address {
             sender: self.sender.clone(),
+            sink: self.sink.clone(),
             ref_counter: self.ref_counter.clone(),
         }
     }
@@ -358,5 +356,38 @@ impl<A, Rc: RefCounter> Ord for Address<A, Rc> {
 impl<A, Rc: RefCounter> Hash for Address<A, Rc> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         Hash::hash(&self.ref_counter.as_ptr(), state)
+    }
+}
+
+impl<A, Rc: RefCounter, M> Sink<M> for Address<A, Rc>
+where
+    A: Handler<M>,
+    M: Send + 'static,
+{
+    type Error = Disconnected;
+
+    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Pin::new(&mut self.sink)
+            .poll_ready(cx)
+            .map_err(|_| Disconnected)
+    }
+
+    fn start_send(mut self: Pin<&mut Self>, item: M) -> Result<(), Self::Error> {
+        let item = AddressMessage::Message(Box::new(NonReturningEnvelope::new(item)));
+        Pin::new(&mut self.sink)
+            .start_send(item)
+            .map_err(|_| Disconnected)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Pin::new(&mut self.sink)
+            .poll_flush(cx)
+            .map_err(|_| Disconnected)
+    }
+
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Pin::new(&mut self.sink)
+            .poll_close(cx)
+            .map_err(|_| Disconnected)
     }
 }

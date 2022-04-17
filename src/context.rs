@@ -89,6 +89,7 @@ impl<A: Actor> Context<A> {
 
         let addr = Address {
             sender: sender.clone(),
+            sink: sender.clone().into_sink(),
             ref_counter: strong,
         };
 
@@ -137,6 +138,7 @@ impl<A: Actor> Context<A> {
     pub fn address(&self) -> Result<Address<A>, ActorShutdown> {
         Ok(Address {
             sender: self.sender.clone(),
+            sink: self.sender.clone().into_sink(),
             ref_counter: self.ref_counter.upgrade().ok_or(ActorShutdown)?,
         })
     }
