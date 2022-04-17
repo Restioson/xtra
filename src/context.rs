@@ -422,7 +422,7 @@ impl<A: Actor> Context<A> {
                 let delay = Delay::new(duration);
                 match future::select(delay, &mut stopped).await {
                     Either::Left(_) => {
-                        if addr.do_send(constructor()).is_err() {
+                        if addr.send(constructor()).await.is_err() {
                             break;
                         }
                     }
@@ -455,7 +455,7 @@ impl<A: Actor> Context<A> {
             let delay = Delay::new(duration);
             match future::select(delay, &mut stopped).await {
                 Either::Left(_) => {
-                    let _ = addr.do_send(notification);
+                    let _ = addr.send(notification).await;
                 }
                 Either::Right(_) => {
                     // Context stopped before the end of the delay was reached

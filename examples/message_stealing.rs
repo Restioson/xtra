@@ -48,13 +48,14 @@ impl Handler<Print> for Printer {
     }
 }
 
-fn main() {
+#[smol_potat::main]
+async fn main() {
     let (addr, mut ctx) = Context::new(Some(32));
     for n in 0..4 {
         smol::spawn(ctx.attach(Printer::new(n))).detach();
     }
 
-    while addr.do_send(Print("hello".to_string())).is_ok() {}
+    while addr.send(Print("hello".to_string())).await.is_ok() {}
     println!("Stopping to send");
 
     // Give a second for everything to shut down

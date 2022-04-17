@@ -3,12 +3,15 @@
 //! the message type rather than the actor type.
 
 use std::future::Future;
+use std::marker::PhantomData;
+use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use catty::Receiver;
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
+use futures_util::{FutureExt, TryFutureExt};
 
 use crate::address::{self, Address, Disconnected, WeakAddress};
 use crate::envelope::ReturningEnvelope;
@@ -16,25 +19,55 @@ use crate::manager::AddressMessage;
 use crate::private::Sealed;
 use crate::refcount::{RefCounter, Shared, Strong};
 use crate::sink::{AddressSink, MessageSink, StrongMessageSink, WeakMessageSink};
-use crate::{Handler, KeepRunning};
+use crate::{Handler, KeepRunning, ReceiveAsync, ReceiveSync};
 
 /// The future returned [`MessageChannel::send`](trait.MessageChannel.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
 #[must_use]
-pub struct SendFuture<R>(SendFutureInner<R>);
+pub struct SendFuture<R, TSyncness>(SendFutureInner<R, TSyncness>);
 
-enum SendFutureInner<R> {
-    Disconnected,
+impl<R, TSyncness> SendFuture<R, TSyncness> {
+    /// TODO: docs
+    pub fn recv_async(self) -> SendFuture<R, ReceiveAsync> {
+        let inner = match self.0 {
+            SendFutureInner::Disconnected(_) => SendFutureInner::Disconnected(PhantomData),
+            SendFutureInner::Result(receiver) => SendFutureInner::Result(receiver),
+        };
+
+        SendFuture(inner)
+    }
+}
+
+enum SendFutureInner<R, TSyncness> {
+    Disconnected(PhantomData<TSyncness>),
     Result(Receiver<R>),
 }
 
-impl<R> Future for SendFuture<R> {
+impl<R> Future for SendFuture<R, ReceiveSync> {
     type Output = Result<R, Disconnected>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         match &mut self.get_mut().0 {
-            SendFutureInner::Disconnected => Poll::Ready(Err(Disconnected)),
+            SendFutureInner::Disconnected(_) => Poll::Ready(Err(Disconnected)),
             SendFutureInner::Result(rx) => address::poll_rx(rx, ctx),
+        }
+    }
+}
+
+impl<R: Send + 'static> Future for SendFuture<R, ReceiveAsync> {
+    type Output = BoxFuture<'static, Result<R, Disconnected>>;
+
+    fn poll(self: Pin<&mut Self>, _: &mut Context) -> Poll<Self::Output> {
+        match mem::replace(
+            self.get_mut(),
+            SendFuture(SendFutureInner::Disconnected(PhantomData)),
+        )
+        .0
+        {
+            SendFutureInner::Disconnected(_) => {
+                Poll::Ready(futures_util::future::ready(Err(Disconnected)).boxed())
+            }
+            SendFutureInner::Result(rx) => Poll::Ready(rx.map_err(|_| Disconnected).boxed()),
         }
     }
 }
@@ -123,18 +156,11 @@ pub trait MessageChannel<M>: Sealed + Unpin + Send + Sync {
         self.len() == 0
     }
 
-    /// Send a [`Message`](../trait.Message.html) to the actor without waiting for a response.
-    /// If this returns `Err(Disconnected)`, then the actor is stopped and not accepting messages.
-    /// If this returns `Ok(())`, the will be delivered, but may not be handled in the event that the
-    /// actor stops itself (by calling [`Context::stop`](../struct.Context.html#method.stop))
-    /// before it was handled.
-    fn do_send(&self, message: M) -> Result<(), Disconnected>;
-
     /// Send a [`Message`](../trait.Message.html) to the actor and asynchronously wait for a response. If this
     /// returns `Err(Disconnected)`, then the actor is stopped and not accepting messages. This,
     /// unlike [`Address::send`](../address/struct.Address.html#method.send) will block if the actor's mailbox
     /// is full. If this is undesired, consider using a [`MessageSink`](../sink/trait.MessageSink.html).
-    fn send(&self, message: M) -> SendFuture<Self::Return>;
+    fn send(&self, message: M) -> SendFuture<Self::Return, ReceiveSync>;
 
     /// Attaches a stream to this channel such that all messages produced by it are forwarded to the
     /// actor. This could, for instance, be used to forward messages from a socket to the actor
@@ -237,11 +263,7 @@ where
         self.capacity()
     }
 
-    fn do_send(&self, message: M) -> Result<(), Disconnected> {
-        self.do_send(message)
-    }
-
-    fn send(&self, message: M) -> SendFuture<R> {
+    fn send(&self, message: M) -> SendFuture<R, ReceiveSync> {
         if self.is_connected() {
             let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
             let _ = self
@@ -249,7 +271,7 @@ where
                 .send(AddressMessage::Message(Box::new(envelope)));
             SendFuture(SendFutureInner::Result(rx))
         } else {
-            SendFuture(SendFutureInner::Disconnected)
+            SendFuture(SendFutureInner::Disconnected(PhantomData))
         }
     }
 

@@ -36,6 +36,12 @@ pub mod prelude {
     pub use async_trait::async_trait;
 }
 
+/// TODO: docs
+pub enum ReceiveSync {}
+
+/// TODO: docs
+pub enum ReceiveAsync {}
+
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
 /// asynchronously, and the logic to handle the message.
 ///
