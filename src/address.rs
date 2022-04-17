@@ -32,9 +32,12 @@ pub struct SendFuture<A: Actor, R, TRecvSyncMarker> {
 }
 
 impl<A: Actor, R> SendFuture<A, R, ReceiveSync> {
-    fn new(inner: SendFutureInner<A, R>) -> Self {
+    fn sending(
+        send_fut: ChannelSendFuture<'static, AddressMessage<A>>,
+        receiver: catty::Receiver<R>,
+    ) -> Self {
         Self {
-            inner,
+            inner: SendFutureInner::Sending(send_fut, Receiver::new(receiver)),
             phantom: PhantomData,
         }
     }
@@ -132,7 +135,7 @@ impl<A: Actor, R: Send + 'static> Future for SendFuture<A, R, ReceiveAsync> {
             SendFutureInner::Receiving(rx) => {
                 this.inner = SendFutureInner::Done;
                 Poll::Ready(rx)
-            },
+            }
             SendFutureInner::Done => {
                 panic!("Polled after completion")
             }
@@ -271,7 +274,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
                 .sender
                 .clone()
                 .into_send_async(AddressMessage::Message(Box::new(envelope)));
-            SendFuture::new(SendFutureInner::Sending(tx, Receiver::new(rx)))
+            SendFuture::sending(tx, rx)
         } else {
             SendFuture::disconnected()
         }
