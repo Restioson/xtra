@@ -273,10 +273,10 @@ mod tests {
 
     #[test]
     fn message_channel_is_send() {
-        assert_send_sync::<Box<dyn MessageChannel<Foobar, Return = ()>>>()
+        assert_send::<Box<dyn MessageChannel<Foobar, Return = ()>>>()
     }
 
     struct Foobar;
 
-    fn assert_send_sync<T: Send>() {}
+    fn assert_send<T: Send>() {}
 }
