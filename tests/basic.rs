@@ -1,10 +1,13 @@
+use futures_core::Stream;
+use futures_util::stream::repeat;
+use futures_util::StreamExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::KeepRunning;
+use xtra::{Disconnected, KeepRunning};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
@@ -144,4 +147,44 @@ impl Handler<Stop> for ActorReturningStopSelf {
     async fn handle(&mut self, _: Stop, ctx: &mut Context<Self>) {
         ctx.stop();
     }
+}
+
+#[derive(Default)]
+struct Greeter;
+
+#[async_trait]
+impl Actor for Greeter {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
+
+struct Greet;
+
+#[async_trait]
+impl Handler<Greet> for Greeter {
+    type Return = ();
+
+    async fn handle(&mut self, _: Greet, _ctx: &mut Context<Self>) {
+        eprintln!("Hello!");
+    }
+}
+
+#[tokio::test]
+async fn dropping_last_strong_address_stops_greeter_stream() {
+    let addr = Greeter::default().create(None).spawn_global();
+
+    let weak_addr = addr.downgrade();
+    let handle = tokio::spawn(greeter_stream(100).forward(weak_addr));
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    drop(addr);
+
+    let _disconnected = handle.await.unwrap().unwrap_err();
+}
+
+fn greeter_stream(delay: u64) -> impl Stream<Item = Result<Greet, Disconnected>> {
+    repeat(Duration::from_millis(delay))
+        .then(tokio::time::sleep)
+        .map(|_| Ok(Greet))
 }
