@@ -12,14 +12,13 @@ use catty::Receiver;
 use flume::r#async::SendFut as ChannelSendFuture;
 use flume::r#async::SendSink;
 use flume::Sender;
-use futures_core::Stream;
 use futures_sink::Sink;
-use futures_util::{future, FutureExt, StreamExt};
+use futures_util::FutureExt;
 
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::AddressMessage;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
-use crate::{Actor, Handler, KeepRunning};
+use crate::{Actor, Handler};
 
 /// The future returned [`Address::send`](struct.Address.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -269,40 +268,6 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
             SendFuture(SendFutureInner::Sending(tx, rx))
         } else {
             SendFuture(SendFutureInner::Disconnected)
-        }
-    }
-
-    /// Attaches a stream to this actor such that all messages produced by it are forwarded to the
-    /// actor. This could, for instance, be used to forward messages from a socket to the actor
-    /// (after the messages have been appropriately `map`ped). This is a convenience method over
-    /// explicitly forwarding a stream to this address and checking when to stop forwarding.
-    ///
-    /// Often, this should be spawned onto an executor to run in the background. **Do not await this
-    /// inside of an actor** - this will cause it to await forever and never receive any messages.
-    ///
-    /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
-    /// method should be called on [`Address`](struct.Address.html). Otherwise, it should be called
-    /// on [`WeakAddress`](type.WeakAddress.html).
-    pub async fn attach_stream<S, M, K>(self, stream: S)
-    where
-        K: Into<KeepRunning> + Send,
-        M: Send + 'static,
-        A: Handler<M, Return = K>,
-        S: Stream<Item = M> + Send,
-    {
-        let mut stopped = self.ref_counter.disconnect_notice();
-        futures_util::pin_mut!(stream);
-
-        loop {
-            if let future::Either::Left((Some(m), _)) =
-                future::select(&mut stream.next(), &mut stopped).await
-            {
-                let res = self.send(m); // Bound to make it Sync
-                if matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
-                    continue;
-                }
-            }
-            break;
         }
     }
 

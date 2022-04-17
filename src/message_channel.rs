@@ -7,15 +7,13 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use catty::Receiver;
-use futures_core::future::BoxFuture;
-use futures_core::stream::BoxStream;
 
 use crate::address::{self, Address, Disconnected, WeakAddress};
 use crate::envelope::ReturningEnvelope;
 use crate::manager::AddressMessage;
 use crate::private::Sealed;
 use crate::refcount::{RefCounter, Shared, Strong};
-use crate::{Handler, KeepRunning};
+use crate::Handler;
 
 /// The future returned [`MessageChannel::send`](trait.MessageChannel.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -135,20 +133,6 @@ pub trait MessageChannel<M>: Sealed + Unpin + Send {
     /// is full. If this is undesired, consider using a [`MessageSink`](../sink/trait.MessageSink.html).
     fn send(&self, message: M) -> SendFuture<Self::Return>;
 
-    /// Attaches a stream to this channel such that all messages produced by it are forwarded to the
-    /// actor. This could, for instance, be used to forward messages from a socket to the actor
-    /// (after the messages have been appropriately `map`ped). This is a convenience method over
-    /// explicitly forwarding a stream to this address, spawning that future onto the executor,
-    /// and mapping the error away (because disconnects are expected and will simply mean that the
-    /// stream is no longer being forwarded).
-    ///
-    /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
-    /// method should be called on [`MessageChannel`](trait.MessageChannel.html). Otherwise, it should be called
-    /// on [`WeakMessageChannel`](trait.WeakMessageChannel.html).
-    fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
-    where
-        Self::Return: Into<KeepRunning> + Send;
-
     /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn MessageChannel<M, Return = Self::Return>>;
 
@@ -238,13 +222,6 @@ where
         } else {
             SendFuture(SendFutureInner::Disconnected)
         }
-    }
-
-    fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
-    where
-        R: Into<KeepRunning> + Send,
-    {
-        Box::pin(self.attach_stream(stream))
     }
 
     fn clone_channel(&self) -> Box<dyn MessageChannel<M, Return = Self::Return>> {
