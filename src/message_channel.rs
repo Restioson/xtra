@@ -9,7 +9,7 @@ use std::task::{Context, Poll};
 
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
-use futures_util::{FutureExt};
+use futures_util::FutureExt;
 
 use crate::address::{Address, Disconnected, WeakAddress};
 use crate::envelope::ReturningEnvelope;

@@ -72,13 +72,16 @@ impl<A: Actor, R> Future for SendFuture<A, R, ReceiveSync> {
             SendFutureInner::Disconnected => {
                 (Poll::Ready(Err(Disconnected)), SendFutureInner::Done)
             }
-            SendFutureInner::Sending(mut tx, mut rx) => {
-                if tx.poll_unpin(ctx).is_ready() {
-                    (rx.poll_unpin(ctx), SendFutureInner::Receiving(rx))
-                } else {
-                    (Poll::Pending, SendFutureInner::Sending(tx, rx))
+            SendFutureInner::Sending(mut tx, mut rx) => match tx.poll_unpin(ctx) {
+                Poll::Ready(Ok(())) => match rx.poll_unpin(ctx) {
+                    Poll::Ready(item) => (Poll::Ready(item), SendFutureInner::Done),
+                    Poll::Pending => (Poll::Pending, SendFutureInner::Receiving(rx)),
+                },
+                Poll::Ready(Err(_)) => {
+                    (Poll::Ready(Err(Disconnected)), SendFutureInner::Done)
                 }
-            }
+                Poll::Pending => (Poll::Pending, SendFutureInner::Sending(tx, rx)),
+            },
             SendFutureInner::Receiving(mut rx) => {
                 (rx.poll_unpin(ctx), SendFutureInner::Receiving(rx))
             }
