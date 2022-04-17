@@ -39,16 +39,16 @@ impl<R> Future for Receiver<R> {
         match mem::replace(&mut this.inner, Inner::Done) {
             Inner::Disconnected => {
                 this.inner = Inner::Done;
-                return Poll::Ready(Err(Disconnected));
+                Poll::Ready(Err(Disconnected))
             }
             Inner::Receiving(mut rx) => match rx.poll_unpin(cx) {
                 Poll::Ready(item) => {
                     this.inner = Inner::Done;
-                    return Poll::Ready(item);
+                    Poll::Ready(item)
                 }
                 Poll::Pending => {
                     this.inner = Inner::Receiving(rx);
-                    return Poll::Pending;
+                    Poll::Pending
                 }
             },
             Inner::Done => panic!("Polled after completion"),
