@@ -92,6 +92,10 @@ required-features = ["with-smol-1"]
 name = "address_is_sink"
 required-features = ["with-tokio-1", "tokio/full"]
 
+[[example]]
+name = "send_interval"
+required-features = ["with-tokio-1", "tokio/full"]
+
 [[test]]
 name = "basic"
 required-features = ["with-tokio-1"]
