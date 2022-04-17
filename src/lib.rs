@@ -13,6 +13,7 @@ mod drop_notice;
 mod envelope;
 mod manager;
 pub mod message_channel;
+mod receiver;
 /// This module contains types representing the strength of an address's reference counting, which
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount;

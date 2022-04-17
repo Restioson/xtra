@@ -11,18 +11,15 @@ use std::{cmp::Ordering, error::Error, hash::Hash};
 
 use flume::r#async::SendFut as ChannelSendFuture;
 use flume::Sender;
-use futures_core::future::BoxFuture;
 use futures_core::Stream;
-use futures_util::future::MapErr;
-use futures_util::{future, FutureExt, StreamExt, TryFutureExt};
+use futures_util::{future, FutureExt, StreamExt};
 
 use crate::envelope::ReturningEnvelope;
 use crate::manager::AddressMessage;
+use crate::receiver::Receiver;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::sink::AddressSink;
 use crate::{Actor, Handler, KeepRunning, ReceiveAsync, ReceiveSync};
-
-type Receiver<R> = MapErr<catty::Receiver<R>, fn(catty::Disconnected) -> Disconnected>;
 
 /// The future returned [`Address::send`](struct.Address.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
@@ -96,25 +93,23 @@ impl<A: Actor, R> Future for SendFuture<A, R, ReceiveSync> {
 }
 
 impl<A: Actor, R: Send + 'static> Future for SendFuture<A, R, ReceiveAsync> {
-    type Output = BoxFuture<'static, Result<R, Disconnected>>;
+    type Output = Receiver<R>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
 
         let (poll, new) = match mem::replace(&mut this.inner, SendFutureInner::Done) {
-            SendFutureInner::Disconnected => (
-                Poll::Ready(future::ready(Err(Disconnected)).boxed()),
-                SendFutureInner::Done,
-            ),
+            SendFutureInner::Disconnected => {
+                (Poll::Ready(Receiver::disconnected()), SendFutureInner::Done)
+            }
             SendFutureInner::Sending(mut tx, rx) => match tx.poll_unpin(ctx) {
-                Poll::Ready(Ok(())) => (Poll::Ready(rx.boxed()), SendFutureInner::Done),
-                Poll::Ready(Err(_)) => (
-                    Poll::Ready(future::ready(Err(Disconnected)).boxed()),
-                    SendFutureInner::Done,
-                ),
+                Poll::Ready(Ok(())) => (Poll::Ready(rx), SendFutureInner::Done),
+                Poll::Ready(Err(_)) => {
+                    (Poll::Ready(Receiver::disconnected()), SendFutureInner::Done)
+                }
                 Poll::Pending => (Poll::Pending, SendFutureInner::Sending(tx, rx)),
             },
-            SendFutureInner::Receiving(rx) => (Poll::Ready(rx.boxed()), SendFutureInner::Done),
+            SendFutureInner::Receiving(rx) => (Poll::Ready(rx), SendFutureInner::Done),
             SendFutureInner::Done => {
                 panic!("Polled after completion")
             }
@@ -256,7 +251,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
                 .sender
                 .clone()
                 .into_send_async(AddressMessage::Message(Box::new(envelope)));
-            SendFuture::new(SendFutureInner::Sending(tx, rx.map_err(|_| Disconnected)))
+            SendFuture::new(SendFutureInner::Sending(tx, Receiver::new(rx)))
         } else {
             SendFuture::disconnected()
         }

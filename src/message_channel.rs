@@ -4,77 +4,73 @@
 
 use std::future::Future;
 use std::marker::PhantomData;
-use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
-use futures_util::future::MapErr;
-use futures_util::{FutureExt, TryFutureExt};
+use futures_util::{FutureExt};
 
 use crate::address::{Address, Disconnected, WeakAddress};
 use crate::envelope::ReturningEnvelope;
 use crate::manager::AddressMessage;
 use crate::private::Sealed;
+use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Shared, Strong};
 use crate::sink::{AddressSink, MessageSink, StrongMessageSink, WeakMessageSink};
 use crate::{Handler, KeepRunning, ReceiveAsync, ReceiveSync};
-
-type Receiver<R> = MapErr<catty::Receiver<R>, fn(catty::Disconnected) -> Disconnected>;
 
 /// The future returned [`MessageChannel::send`](trait.MessageChannel.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
 #[must_use]
 pub struct SendFuture<R, TRecvSyncMarker> {
-    inner: SendFutureInner<R>,
+    receiver: Option<Receiver<R>>,
     phantom: PhantomData<TRecvSyncMarker>,
 }
 
-impl<R, TSyncness> SendFuture<R, TSyncness> {
-    /// TODO: docs
-    pub fn recv_async(self) -> SendFuture<R, ReceiveAsync> {
-        SendFuture {
-            inner: self.inner,
+impl<R> SendFuture<R, ReceiveSync> {
+    fn new(receiver: catty::Receiver<R>) -> Self {
+        Self {
+            receiver: Some(Receiver::new(receiver)),
             phantom: PhantomData,
         }
     }
-}
 
-enum SendFutureInner<R> {
-    Disconnected,
-    Result(Receiver<R>),
+    fn disconnected() -> Self {
+        Self {
+            receiver: Some(Receiver::disconnected()),
+            phantom: PhantomData,
+        }
+    }
+
+    /// TODO: docs
+    pub fn recv_async(self) -> SendFuture<R, ReceiveAsync> {
+        SendFuture {
+            receiver: self.receiver,
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<R> Future for SendFuture<R, ReceiveSync> {
     type Output = Result<R, Disconnected>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-        match &mut self.get_mut().inner {
-            SendFutureInner::Disconnected => Poll::Ready(Err(Disconnected)),
-            SendFutureInner::Result(rx) => rx.poll_unpin(ctx),
-        }
+        let this = self.get_mut();
+        let receiver = this.receiver.as_mut().expect("polled after completion");
+
+        receiver.poll_unpin(ctx)
     }
 }
 
 impl<R: Send + 'static> Future for SendFuture<R, ReceiveAsync> {
-    type Output = BoxFuture<'static, Result<R, Disconnected>>;
+    type Output = Receiver<R>;
 
     fn poll(self: Pin<&mut Self>, _: &mut Context) -> Poll<Self::Output> {
-        match mem::replace(
-            self.get_mut(),
-            SendFuture {
-                inner: SendFutureInner::Disconnected,
-                phantom: PhantomData,
-            },
-        )
-        .inner
-        {
-            SendFutureInner::Disconnected => {
-                Poll::Ready(futures_util::future::ready(Err(Disconnected)).boxed())
-            }
-            SendFutureInner::Result(rx) => Poll::Ready(rx.map_err(|_| Disconnected).boxed()),
-        }
+        let this = self.get_mut();
+        let receiver = this.receiver.take().expect("polled after completion");
+
+        Poll::Ready(receiver)
     }
 }
 
@@ -275,15 +271,9 @@ where
             let _ = self
                 .sender
                 .send(AddressMessage::Message(Box::new(envelope)));
-            SendFuture {
-                inner: SendFutureInner::Result(rx.map_err(|_| Disconnected)),
-                phantom: PhantomData,
-            }
+            SendFuture::new(rx)
         } else {
-            SendFuture {
-                inner: SendFutureInner::Disconnected,
-                phantom: PhantomData,
-            }
+            SendFuture::disconnected()
         }
     }
 
