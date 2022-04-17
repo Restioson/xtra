@@ -361,7 +361,7 @@ impl<A, Rc: RefCounter> Hash for Address<A, Rc> {
 
 impl<A, Rc: RefCounter, M> Sink<M> for Address<A, Rc>
 where
-    A: Handler<M>,
+    A: Handler<M, Return = ()>,
     M: Send + 'static,
 {
     type Error = Disconnected;

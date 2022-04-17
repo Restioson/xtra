@@ -9,7 +9,6 @@ use std::task::{Context, Poll};
 use catty::Receiver;
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
-use futures_sink::Sink;
 
 use crate::address::{self, Address, Disconnected, WeakAddress};
 use crate::envelope::ReturningEnvelope;
@@ -101,7 +100,7 @@ impl<R> Future for SendFuture<R> {
 ///     })
 /// }
 /// ```
-pub trait MessageChannel<M>: Sealed + Unpin + Send + Sink<M, Error = Disconnected> {
+pub trait MessageChannel<M>: Sealed + Unpin + Send {
     /// The return value of the handler for `M`.
     type Return: Send + 'static;
 
