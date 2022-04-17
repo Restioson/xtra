@@ -79,7 +79,9 @@ impl<A: Actor, R> Future for SendFuture<A, R, ReceiveSync> {
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
         let (poll, new) = match mem::take(&mut this.inner) {
-            old @ SendFutureInner::Disconnected => (Poll::Ready(Err(Disconnected)), old),
+            SendFutureInner::Disconnected => {
+                (Poll::Ready(Err(Disconnected)), SendFutureInner::Done)
+            }
             SendFutureInner::Sending(mut tx, mut rx) => {
                 if tx.poll_unpin(ctx).is_ready() {
                     (poll_rx(&mut rx, ctx), SendFutureInner::Receiving(rx))
@@ -106,26 +108,21 @@ impl<A: Actor, R: Send + 'static> Future for SendFuture<A, R, ReceiveAsync> {
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
         let (poll, new) = match mem::take(&mut this.inner) {
-            old @ SendFutureInner::Disconnected => {
-                (Poll::Ready(future::ready(Err(Disconnected)).boxed()), old)
-            }
-            SendFutureInner::Sending(mut tx, rx) => {
-                if tx.poll_unpin(ctx).is_ready() {
-                    match tx.poll_unpin(ctx) {
-                        Poll::Ready(Ok(())) => (
-                            Poll::Ready(rx.map_err(|_| Disconnected).boxed()),
-                            SendFutureInner::Done,
-                        ),
-                        Poll::Ready(Err(_)) => (
-                            Poll::Ready(future::ready(Err(Disconnected)).boxed()),
-                            SendFutureInner::Done,
-                        ),
-                        Poll::Pending => (Poll::Pending, SendFutureInner::Sending(tx, rx)),
-                    }
-                } else {
-                    (Poll::Pending, SendFutureInner::Sending(tx, rx))
-                }
-            }
+            SendFutureInner::Disconnected => (
+                Poll::Ready(future::ready(Err(Disconnected)).boxed()),
+                SendFutureInner::Done,
+            ),
+            SendFutureInner::Sending(mut tx, rx) => match tx.poll_unpin(ctx) {
+                Poll::Ready(Ok(())) => (
+                    Poll::Ready(rx.map_err(|_| Disconnected).boxed()),
+                    SendFutureInner::Done,
+                ),
+                Poll::Ready(Err(_)) => (
+                    Poll::Ready(future::ready(Err(Disconnected)).boxed()),
+                    SendFutureInner::Done,
+                ),
+                Poll::Pending => (Poll::Pending, SendFutureInner::Sending(tx, rx)),
+            },
             SendFutureInner::Receiving(rx) => (
                 Poll::Ready(rx.map_err(|_| Disconnected).boxed()),
                 SendFutureInner::Done,
