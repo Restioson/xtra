@@ -24,22 +24,23 @@ use crate::{Handler, KeepRunning, ReceiveAsync, ReceiveSync};
 /// The future returned [`MessageChannel::send`](trait.MessageChannel.html#method.send).
 /// It resolves to `Result<M::Result, Disconnected>`.
 #[must_use]
-pub struct SendFuture<R, TSyncness>(SendFutureInner<R, TSyncness>);
+pub struct SendFuture<R, TRecvSyncMarker> {
+    inner: SendFutureInner<R>,
+    phantom: PhantomData<TRecvSyncMarker>,
+}
 
 impl<R, TSyncness> SendFuture<R, TSyncness> {
     /// TODO: docs
     pub fn recv_async(self) -> SendFuture<R, ReceiveAsync> {
-        let inner = match self.0 {
-            SendFutureInner::Disconnected(_) => SendFutureInner::Disconnected(PhantomData),
-            SendFutureInner::Result(receiver) => SendFutureInner::Result(receiver),
-        };
-
-        SendFuture(inner)
+        SendFuture {
+            inner: self.inner,
+            phantom: PhantomData,
+        }
     }
 }
 
-enum SendFutureInner<R, TSyncness> {
-    Disconnected(PhantomData<TSyncness>),
+enum SendFutureInner<R> {
+    Disconnected,
     Result(Receiver<R>),
 }
 
@@ -47,8 +48,8 @@ impl<R> Future for SendFuture<R, ReceiveSync> {
     type Output = Result<R, Disconnected>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-        match &mut self.get_mut().0 {
-            SendFutureInner::Disconnected(_) => Poll::Ready(Err(Disconnected)),
+        match &mut self.get_mut().inner {
+            SendFutureInner::Disconnected => Poll::Ready(Err(Disconnected)),
             SendFutureInner::Result(rx) => address::poll_rx(rx, ctx),
         }
     }
@@ -60,11 +61,14 @@ impl<R: Send + 'static> Future for SendFuture<R, ReceiveAsync> {
     fn poll(self: Pin<&mut Self>, _: &mut Context) -> Poll<Self::Output> {
         match mem::replace(
             self.get_mut(),
-            SendFuture(SendFutureInner::Disconnected(PhantomData)),
+            SendFuture {
+                inner: SendFutureInner::Disconnected,
+                phantom: PhantomData,
+            },
         )
-        .0
+        .inner
         {
-            SendFutureInner::Disconnected(_) => {
+            SendFutureInner::Disconnected => {
                 Poll::Ready(futures_util::future::ready(Err(Disconnected)).boxed())
             }
             SendFutureInner::Result(rx) => Poll::Ready(rx.map_err(|_| Disconnected).boxed()),
@@ -269,9 +273,15 @@ where
             let _ = self
                 .sender
                 .send(AddressMessage::Message(Box::new(envelope)));
-            SendFuture(SendFutureInner::Result(rx))
+            SendFuture {
+                inner: SendFutureInner::Result(rx),
+                phantom: PhantomData,
+            }
         } else {
-            SendFuture(SendFutureInner::Disconnected(PhantomData))
+            SendFuture {
+                inner: SendFutureInner::Disconnected,
+                phantom: PhantomData,
+            }
         }
     }
 

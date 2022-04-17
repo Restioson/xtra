@@ -27,34 +27,45 @@ use crate::{Actor, Handler, KeepRunning, ReceiveAsync, ReceiveSync};
 // This simply wraps the enum in order to hide the implementation details of the inner future
 // while still leaving outer future nameable.
 #[must_use]
-pub struct SendFuture<A: Actor, R, TSyncness>(SendFutureInner<A, R, TSyncness>);
+pub struct SendFuture<A: Actor, R, TRecvSyncMarker> {
+    inner: SendFutureInner<A, R>,
+    phantom: PhantomData<TRecvSyncMarker>,
+}
 
 impl<A: Actor, R> SendFuture<A, R, ReceiveSync> {
+    fn new(inner: SendFutureInner<A, R>) -> Self {
+        Self {
+            inner,
+            phantom: PhantomData,
+        }
+    }
+
+    fn disconnected() -> Self {
+        Self {
+            inner: SendFutureInner::Disconnected,
+            phantom: PhantomData,
+        }
+    }
+
     /// TODO: docs
     pub fn recv_async(self) -> SendFuture<A, R, ReceiveAsync> {
-        let inner = match self.0 {
-            SendFutureInner::Disconnected(_) => SendFutureInner::Disconnected(PhantomData),
-            SendFutureInner::Sending(future, receiver) => {
-                SendFutureInner::Sending(future, receiver)
-            }
-            SendFutureInner::Receiving(receiver) => SendFutureInner::Receiving(receiver),
-            SendFutureInner::Done => SendFutureInner::Done,
-        };
-
-        SendFuture(inner)
+        SendFuture {
+            inner: self.inner,
+            phantom: PhantomData,
+        }
     }
 }
 
-enum SendFutureInner<A: Actor, R, TSyncness> {
-    Disconnected(PhantomData<TSyncness>),
+enum SendFutureInner<A: Actor, R> {
+    Disconnected,
     Sending(ChannelSendFuture<'static, AddressMessage<A>>, Receiver<R>),
     Receiving(Receiver<R>),
     Done,
 }
 
-impl<A: Actor, R, TSyncness> Default for SendFutureInner<A, R, TSyncness> {
+impl<A: Actor, R> Default for SendFutureInner<A, R> {
     fn default() -> Self {
-        SendFutureInner::Disconnected(PhantomData)
+        SendFutureInner::Disconnected
     }
 }
 
@@ -67,8 +78,8 @@ impl<A: Actor, R> Future for SendFuture<A, R, ReceiveSync> {
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
-        let (poll, new) = match mem::take(&mut this.0) {
-            old @ SendFutureInner::Disconnected(_) => (Poll::Ready(Err(Disconnected)), old),
+        let (poll, new) = match mem::take(&mut this.inner) {
+            old @ SendFutureInner::Disconnected => (Poll::Ready(Err(Disconnected)), old),
             SendFutureInner::Sending(mut tx, mut rx) => {
                 if tx.poll_unpin(ctx).is_ready() {
                     (poll_rx(&mut rx, ctx), SendFutureInner::Receiving(rx))
@@ -84,7 +95,7 @@ impl<A: Actor, R> Future for SendFuture<A, R, ReceiveSync> {
             }
         };
 
-        this.0 = new;
+        this.inner = new;
         poll
     }
 }
@@ -94,8 +105,8 @@ impl<A: Actor, R: Send + 'static> Future for SendFuture<A, R, ReceiveAsync> {
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
-        let (poll, new) = match mem::take(&mut this.0) {
-            old @ SendFutureInner::Disconnected(_) => {
+        let (poll, new) = match mem::take(&mut this.inner) {
+            old @ SendFutureInner::Disconnected => {
                 (Poll::Ready(future::ready(Err(Disconnected)).boxed()), old)
             }
             SendFutureInner::Sending(mut tx, rx) => {
@@ -124,7 +135,7 @@ impl<A: Actor, R: Send + 'static> Future for SendFuture<A, R, ReceiveAsync> {
             }
         };
 
-        this.0 = new;
+        this.inner = new;
         poll
     }
 }
@@ -260,9 +271,9 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
                 .sender
                 .clone()
                 .into_send_async(AddressMessage::Message(Box::new(envelope)));
-            SendFuture(SendFutureInner::Sending(tx, rx))
+            SendFuture::new(SendFutureInner::Sending(tx, rx))
         } else {
-            SendFuture(SendFutureInner::default())
+            SendFuture::disconnected()
         }
     }
 
