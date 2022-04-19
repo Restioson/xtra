@@ -31,6 +31,13 @@ pub struct SendFuture<A: Actor, R, TRecvSyncMarker> {
     phantom: PhantomData<TRecvSyncMarker>,
 }
 
+enum SendFutureInner<A: Actor, R> {
+    Disconnected,
+    Sending(ChannelSendFuture<'static, AddressMessage<A>>, Receiver<R>),
+    Receiving(Receiver<R>),
+    Done,
+}
+
 impl<A: Actor, R> SendFuture<A, R, ReceiveSync> {
     fn sending(
         send_fut: ChannelSendFuture<'static, AddressMessage<A>>,
@@ -56,13 +63,6 @@ impl<A: Actor, R> SendFuture<A, R, ReceiveSync> {
             phantom: PhantomData,
         }
     }
-}
-
-enum SendFutureInner<A: Actor, R> {
-    Disconnected,
-    Sending(ChannelSendFuture<'static, AddressMessage<A>>, Receiver<R>),
-    Receiving(Receiver<R>),
-    Done,
 }
 
 impl<A: Actor, R> Future for SendFuture<A, R, ReceiveSync> {
