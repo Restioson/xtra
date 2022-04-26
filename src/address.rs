@@ -137,6 +137,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// Send a [`Message`](../trait.Message.html) to the actor and asynchronously wait for a response. If this
     /// returns `Err(Disconnected)`, then the actor is stopped and not accepting messages. Like most
     /// futures, this must be polled to actually send the message.
+    #[allow(clippy::type_complexity)] // TODO: Actually fix this
     pub fn send<M>(
         &self,
         message: M,
