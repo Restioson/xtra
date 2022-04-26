@@ -234,7 +234,7 @@ where
     where
         R: Into<KeepRunning> + Send,
     {
-        Box::pin(self.attach_stream(stream))
+        Box::pin(Address::attach_stream(self, stream))
     }
 
     fn clone_channel(&self) -> Box<dyn MessageChannel<M, Return = Self::Return>> {
