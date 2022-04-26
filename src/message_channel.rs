@@ -2,77 +2,18 @@
 //! any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
 //! the message type rather than the actor type.
 
-use std::future::Future;
-use std::marker::PhantomData;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
-use futures_util::FutureExt;
 
-use crate::address::{Address, Disconnected, WeakAddress};
+use crate::address::{Address, WeakAddress};
 use crate::envelope::ReturningEnvelope;
 use crate::manager::AddressMessage;
 use crate::private::Sealed;
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Shared, Strong};
+use crate::send_future::SendFuture;
 use crate::sink::{AddressSink, MessageSink, StrongMessageSink, WeakMessageSink};
-use crate::{Handler, KeepRunning, ReceiveAsync, ReceiveSync};
-
-/// The future returned [`MessageChannel::send`](trait.MessageChannel.html#method.send).
-/// It resolves to `Result<M::Result, Disconnected>`.
-#[must_use]
-pub struct SendFuture<R, TRecvSyncMarker> {
-    receiver: Option<Receiver<R>>,
-    phantom: PhantomData<TRecvSyncMarker>,
-}
-
-impl<R> SendFuture<R, ReceiveSync> {
-    fn new(receiver: catty::Receiver<R>) -> Self {
-        Self {
-            receiver: Some(Receiver::new(receiver)),
-            phantom: PhantomData,
-        }
-    }
-
-    fn disconnected() -> Self {
-        Self {
-            receiver: Some(Receiver::disconnected()),
-            phantom: PhantomData,
-        }
-    }
-
-    /// TODO: docs
-    pub fn recv_async(self) -> SendFuture<R, ReceiveAsync> {
-        SendFuture {
-            receiver: self.receiver,
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<R> Future for SendFuture<R, ReceiveSync> {
-    type Output = Result<R, Disconnected>;
-
-    fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        let receiver = this.receiver.as_mut().expect("polled after completion");
-
-        receiver.poll_unpin(ctx)
-    }
-}
-
-impl<R: Send + 'static> Future for SendFuture<R, ReceiveAsync> {
-    type Output = Receiver<R>;
-
-    fn poll(self: Pin<&mut Self>, _: &mut Context) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        let receiver = this.receiver.take().expect("polled after completion");
-
-        Poll::Ready(receiver)
-    }
-}
+use crate::{Handler, KeepRunning, ReceiveSync};
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
@@ -158,11 +99,15 @@ pub trait MessageChannel<M>: Sealed + Unpin + Send + Sync {
         self.len() == 0
     }
 
+    // TODO: Revise these docs.
     /// Send a [`Message`](../trait.Message.html) to the actor and asynchronously wait for a response. If this
     /// returns `Err(Disconnected)`, then the actor is stopped and not accepting messages. This,
     /// unlike [`Address::send`](../address/struct.Address.html#method.send) will block if the actor's mailbox
     /// is full. If this is undesired, consider using a [`MessageSink`](../sink/trait.MessageSink.html).
-    fn send(&self, message: M) -> SendFuture<Self::Return, ReceiveSync>;
+    fn send(
+        &self,
+        message: M,
+    ) -> SendFuture<Self::Return, BoxFuture<'static, Receiver<Self::Return>>, ReceiveSync>;
 
     /// Attaches a stream to this channel such that all messages produced by it are forwarded to the
     /// actor. This could, for instance, be used to forward messages from a socket to the actor
@@ -265,13 +210,21 @@ where
         self.capacity()
     }
 
-    fn send(&self, message: M) -> SendFuture<R, ReceiveSync> {
+    fn send(&self, message: M) -> SendFuture<R, BoxFuture<'static, Receiver<R>>, ReceiveSync> {
         if self.is_connected() {
             let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
-            let _ = self
+            let sending = self
                 .sender
-                .send(AddressMessage::Message(Box::new(envelope)));
-            SendFuture::new(rx)
+                .clone()
+                .into_send_async(AddressMessage::Message(Box::new(envelope)));
+
+            #[allow(clippy::async_yields_async)] // We only want to await the sending.
+            SendFuture::sending_boxed(async move {
+                match sending.await {
+                    Ok(()) => Receiver::new(rx),
+                    Err(_) => Receiver::disconnected(),
+                }
+            })
         } else {
             SendFuture::disconnected()
         }
