@@ -253,11 +253,22 @@ impl Handler<Hello> for Greeter {
 async fn address_send_exercises_backpressure() {
     let (address, mut context) = Context::new(Some(1));
 
-    address.send(Hello("world")).recv_async().now_or_never().expect("be able to queue 1 message because the mailbox is empty");
+    address
+        .send(Hello("world"))
+        .recv_async()
+        .now_or_never()
+        .expect("be able to queue 1 message because the mailbox is empty");
     let handler2 = address.send(Hello("world")).recv_async().now_or_never();
-    assert!(handler2.is_none(), "Fail to queue 2nd message because mailbox is full");
+    assert!(
+        handler2.is_none(),
+        "Fail to queue 2nd message because mailbox is full"
+    );
 
     context.yield_once(&mut Greeter).await; // process one message
 
-    address.send(Hello("world")).recv_async().now_or_never().expect("be able to queue another message because the mailbox is empty again");
+    address
+        .send(Hello("world"))
+        .recv_async()
+        .now_or_never()
+        .expect("be able to queue another message because the mailbox is empty again");
 }
