@@ -146,16 +146,11 @@ impl<A: Actor> Context<A> {
         self.receiver.drain();
     }
 
-    /// Check if the Context is still set to running, returning whether to continue the manage loop
-    async fn check_running(&mut self) -> bool {
-        self.running
-    }
-
     /// Handles a single self notification, returning whether to continue the manage loop
     async fn handle_self_notification(&mut self, actor: &mut A) -> Option<bool> {
         if let Some(notification) = self.self_notifications.pop() {
             notification.handle(actor, self).await;
-            return Some(self.check_running().await);
+            return Some(self.running);
         }
         None
     }
@@ -177,7 +172,7 @@ impl<A: Actor> Context<A> {
 
         // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
         // in the started method, otherwise it would kinda be a bug
-        if !self.check_running().await {
+        if !self.running {
             self.stop_all();
             return actor.stopped().await;
         }
@@ -254,7 +249,7 @@ impl<A: Actor> Context<A> {
             }
         }
 
-        if !self.check_running().await {
+        if !self.running {
             return ContinueManageLoop::ExitImmediately;
         }
         if !self.handle_self_notifications(actor).await {
