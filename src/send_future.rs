@@ -16,7 +16,7 @@ use std::task::{Context, Poll};
 /// This behaviour can be changed by calling [`recv_async`](SendFuture::recv_async).
 ///
 /// When toggled to receive the return value asynchronously, this future will not resolve until the message is successfully queued into the actor's mailbox. If the actors mailbox is bounded, this future will yield until there is space in the mailbox.
-#[must_use]
+#[must_use = "Futures do nothing unless polled"]
 pub struct SendFuture<R, F, TRecvSyncMarker> {
     inner: SendFutureInner<R, F>,
     phantom: PhantomData<TRecvSyncMarker>,
