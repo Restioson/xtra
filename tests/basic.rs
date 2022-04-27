@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::{Disconnected, KeepRunning};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
@@ -63,11 +62,6 @@ impl Drop for DropTester {
 impl Actor for DropTester {
     type Stop = ();
 
-    async fn stopping(&mut self, _ctx: &mut Context<Self>) -> KeepRunning {
-        self.0.fetch_add(1, Ordering::SeqCst);
-        KeepRunning::StopAll
-    }
-
     async fn stopped(self) {
         self.0.fetch_add(1, Ordering::SeqCst);
     }
@@ -100,7 +94,7 @@ async fn test_stop_and_drop() {
     let handle = smol::spawn(fut);
     addr.do_send(Stop).unwrap();
     handle.await;
-    assert_eq!(drop_count.load(Ordering::SeqCst), 3);
+    assert_eq!(drop_count.load(Ordering::SeqCst), 2);
 
     // Drop address before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
@@ -114,7 +108,7 @@ async fn test_stop_and_drop() {
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
     addr.do_send(Stop).unwrap();
     smol::spawn(fut).await;
-    assert_eq!(drop_count.load(Ordering::SeqCst), 3);
+    assert_eq!(drop_count.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]
@@ -132,10 +126,6 @@ struct ActorReturningStopSelf;
 #[async_trait]
 impl Actor for ActorReturningStopSelf {
     type Stop = ();
-
-    async fn stopping(&mut self, _: &mut Context<Self>) -> KeepRunning {
-        KeepRunning::StopSelf
-    }
 
     async fn stopped(self) -> Self::Stop {}
 }

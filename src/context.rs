@@ -15,7 +15,7 @@ use crate::drop_notice::DropNotifier;
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{AddressMessage, BroadcastMessage, ContinueManageLoop};
 use crate::refcount::{RefCounter, Strong, Weak};
-use crate::{Actor, Address, Handler, KeepRunning};
+use crate::{Actor, Address, Handler};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -160,23 +160,8 @@ impl<A: Actor> Context<A> {
         match self.running {
             RunningState::Running => true,
             RunningState::Stopping => {
-                let keep_running = actor.stopping(self).await;
-
-                match keep_running {
-                    KeepRunning::Yes => {
-                        self.running = RunningState::Running;
-                        true
-                    }
-                    KeepRunning::StopSelf => {
-                        self.running = RunningState::Stopped;
-                        false
-                    }
-                    KeepRunning::StopAll => {
-                        self.stop_all();
-                        self.running = RunningState::Stopped;
-                        false
-                    }
-                }
+                self.running = RunningState::Stopped;
+                false
             }
             RunningState::Stopped => false,
         }
