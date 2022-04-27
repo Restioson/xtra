@@ -12,9 +12,9 @@ use futures_util::{future, StreamExt};
 use crate::envelope::ReturningEnvelope;
 use crate::manager::AddressMessage;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
-use crate::send_future::{NameableSending, SendFuture};
+use crate::send_future::{NameableSending, ReceiveSync, SendFuture};
 use crate::sink::AddressSink;
-use crate::{Handler, KeepRunning, ReceiveSync};
+use crate::{Handler, KeepRunning};
 
 /// The actor is no longer running and disconnected from the sending address. For why this could
 /// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and

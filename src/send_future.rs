@@ -1,6 +1,6 @@
 use crate::manager::AddressMessage;
 use crate::receiver::Receiver;
-use crate::{Disconnected, ReceiveAsync, ReceiveSync};
+use crate::Disconnected;
 use flume::r#async::SendFut;
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
@@ -16,6 +16,12 @@ pub struct SendFuture<R, F, TRecvSyncMarker> {
     inner: SendFutureInner<R, F>,
     phantom: PhantomData<TRecvSyncMarker>,
 }
+
+/// TODO: docs
+pub enum ReceiveSync {}
+
+/// TODO: docs
+pub enum ReceiveAsync {}
 
 enum SendFutureInner<R, F> {
     Disconnected,

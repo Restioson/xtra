@@ -11,9 +11,9 @@ use crate::manager::AddressMessage;
 use crate::private::Sealed;
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Shared, Strong};
-use crate::send_future::SendFuture;
+use crate::send_future::{ReceiveSync, SendFuture};
 use crate::sink::{AddressSink, MessageSink, StrongMessageSink, WeakMessageSink};
-use crate::{Handler, KeepRunning, ReceiveSync};
+use crate::{Handler, KeepRunning};
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
