@@ -65,7 +65,7 @@ async fn main() {
     let address = Greeter.create(mailbox_capacity).spawn_global();
 
     for _ in 0..100 {
-        let name = format!("world!");
+        let name = "world!".to_owned();
 
         println!("Greeting {name}");
         address.send(Hello(name)).recv_async().await;
