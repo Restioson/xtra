@@ -170,13 +170,6 @@ impl<A: Actor> Context<A> {
     pub async fn run(mut self, mut actor: A) -> A::Stop {
         actor.started(&mut self).await;
 
-        // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
-        // in the started method, otherwise it would kinda be a bug
-        if !self.running {
-            self.stop_all();
-            return actor.stopped().await;
-        }
-
         // Similar to above
         if let Some(BroadcastMessage::Shutdown) = self.broadcast_receiver.try_recv().unwrap() {
             return actor.stopped().await;
