@@ -139,7 +139,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///
     /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
     /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
-    #[allow(clippy::type_complexity)] // TODO: Actually fix this
+    #[allow(clippy::type_complexity)]
     pub fn send<M>(
         &self,
         message: M,
