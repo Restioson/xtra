@@ -9,6 +9,7 @@ use std::task::{Context, Poll};
 /// A [`Future`] that resolves to the [`Return`](crate::Handler::Return) value of a [`Handler`](crate::Handler).
 ///
 /// In case the actor becomes disconnected during the execution of the handler, this future will resolve to [`Disconnected`].
+#[must_use = "Futures do nothing unless polled"]
 pub struct Receiver<R> {
     inner: Inner<R>,
 }

@@ -253,7 +253,7 @@ impl Handler<Hello> for Greeter {
 async fn address_send_exercises_backpressure() {
     let (address, mut context) = Context::new(Some(1));
 
-    address
+    let _ = address
         .send(Hello("world"))
         .recv_async()
         .now_or_never()
@@ -266,7 +266,7 @@ async fn address_send_exercises_backpressure() {
 
     context.yield_once(&mut Greeter).await; // process one message
 
-    address
+    let _ = address
         .send(Hello("world"))
         .recv_async()
         .now_or_never()

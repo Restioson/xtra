@@ -68,6 +68,6 @@ async fn main() {
         let name = "world!".to_owned();
 
         println!("Greeting {}", name);
-        address.send(Hello(name)).recv_async().await;
+        let _ = address.send(Hello(name)).recv_async().await;
     }
 }
