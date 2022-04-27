@@ -44,7 +44,6 @@ pub struct Context<A> {
 #[derive(Eq, PartialEq, Copy, Clone)]
 enum RunningState {
     Running,
-    Stopping,
     Stopped,
 }
 
@@ -131,7 +130,7 @@ impl<A: Actor> Context<A> {
     /// Stop the actor as soon as it has finished processing current message. This will mean that the
     /// [`Actor::stopping`](trait.Actor.html#method.stopping) method will be called.
     pub fn stop(&mut self) {
-        self.running = RunningState::Stopping;
+        self.running = RunningState::Stopped;
     }
 
     /// Get an address to the current actor if there are still external addresses to the actor.
@@ -154,15 +153,11 @@ impl<A: Actor> Context<A> {
     }
 
     /// Check if the Context is still set to running, returning whether to continue the manage loop
-    async fn check_running(&mut self, actor: &mut A) -> bool {
+    async fn check_running(&mut self) -> bool {
         // Check if the context was stopped, and if so return, thereby dropping the
         // manager and calling `stopped` on the actor
         match self.running {
             RunningState::Running => true,
-            RunningState::Stopping => {
-                self.running = RunningState::Stopped;
-                false
-            }
             RunningState::Stopped => false,
         }
     }
@@ -171,7 +166,7 @@ impl<A: Actor> Context<A> {
     async fn handle_self_notification(&mut self, actor: &mut A) -> Option<bool> {
         if let Some(notification) = self.self_notifications.pop() {
             notification.handle(actor, self).await;
-            return Some(self.check_running(actor).await);
+            return Some(self.check_running().await);
         }
         None
     }
@@ -193,7 +188,7 @@ impl<A: Actor> Context<A> {
 
         // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
         // in the started method, otherwise it would kinda be a bug
-        if !self.check_running(&mut actor).await {
+        if !self.check_running().await {
             self.stop_all();
             return actor.stopped().await;
         }
@@ -270,7 +265,7 @@ impl<A: Actor> Context<A> {
             }
         }
 
-        if !self.check_running(actor).await {
+        if !self.check_running().await {
             return ContinueManageLoop::ExitImmediately;
         }
         if !self.handle_self_notifications(actor).await {
