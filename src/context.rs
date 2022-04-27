@@ -22,7 +22,7 @@ use crate::{Actor, Address, Handler};
 pub struct Context<A> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
     /// for it to call the `stopping` method on the actor
-    running: RunningState,
+    running: bool,
     /// Channel sender kept by the context to allow for the `Context::address` method to work
     sender: Sender<AddressMessage<A>>,
     /// Broadcast sender kept by the context to allow for the `Context::notify_all` method to work
@@ -39,12 +39,6 @@ pub struct Context<A> {
     /// to shutdown the tasks as soon as the context stops.
     #[cfg_attr(not(feature = "timing"), allow(dead_code))]
     drop_notifier: DropNotifier,
-}
-
-#[derive(Eq, PartialEq, Copy, Clone)]
-enum RunningState {
-    Running,
-    Stopped,
 }
 
 impl<A: Actor> Context<A> {
@@ -93,7 +87,7 @@ impl<A: Actor> Context<A> {
         };
 
         let context = Context {
-            running: RunningState::Running,
+            running: true,
             sender,
             broadcaster,
             ref_counter: weak,
@@ -114,7 +108,7 @@ impl<A: Actor> Context<A> {
         let broadcast_receiver = self.broadcast_receiver.clone().upgrade().into_shared();
 
         let ctx = Context {
-            running: RunningState::Running,
+            running: true,
             sender: self.sender.clone(),
             broadcaster: self.broadcaster.clone(),
             ref_counter: self.ref_counter.clone(),
@@ -130,7 +124,7 @@ impl<A: Actor> Context<A> {
     /// Stop the actor as soon as it has finished processing current message. This will mean that the
     /// [`Actor::stopping`](trait.Actor.html#method.stopping) method will be called.
     pub fn stop(&mut self) {
-        self.running = RunningState::Stopped;
+        self.running = false;
     }
 
     /// Get an address to the current actor if there are still external addresses to the actor.
@@ -154,12 +148,7 @@ impl<A: Actor> Context<A> {
 
     /// Check if the Context is still set to running, returning whether to continue the manage loop
     async fn check_running(&mut self) -> bool {
-        // Check if the context was stopped, and if so return, thereby dropping the
-        // manager and calling `stopped` on the actor
-        match self.running {
-            RunningState::Running => true,
-            RunningState::Stopped => false,
-        }
+        self.running
     }
 
     /// Handles a single self notification, returning whether to continue the manage loop
@@ -250,7 +239,7 @@ impl<A: Actor> Context<A> {
         match msg {
             Either::Left(BroadcastMessage::Message(msg)) => msg.handle(actor, self).await,
             Either::Left(BroadcastMessage::Shutdown) => {
-                self.running = RunningState::Stopped;
+                self.running = false;
                 return ContinueManageLoop::ExitImmediately;
             }
             Either::Right(AddressMessage::Message(msg)) => {
@@ -259,7 +248,7 @@ impl<A: Actor> Context<A> {
             Either::Right(AddressMessage::LastAddress) => {
                 if self.ref_counter.strong_count() == 0 {
                     self.stop_all();
-                    self.running = RunningState::Stopped;
+                    self.running = false;
                     return ContinueManageLoop::ExitImmediately;
                 }
             }
