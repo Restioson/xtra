@@ -133,10 +133,12 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         }
     }
 
-    // TODO: Revise these docs.
-    /// Send a [`Message`](../trait.Message.html) to the actor and asynchronously wait for a response. If this
-    /// returns `Err(Disconnected)`, then the actor is stopped and not accepting messages. Like most
-    /// futures, this must be polled to actually send the message.
+    /// Send a message to the actor.
+    ///
+    /// The actor must implement [`Handler<Message>`] for this to work.
+    ///
+    /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
+    /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
     #[allow(clippy::type_complexity)] // TODO: Actually fix this
     pub fn send<M>(
         &self,

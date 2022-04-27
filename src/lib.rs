@@ -6,6 +6,8 @@
 pub use self::address::{Address, Disconnected, WeakAddress};
 pub use self::context::{ActorShutdown, Context};
 pub use self::manager::ActorManager;
+pub use self::receiver::Receiver;
+pub use self::send_future::SendFuture;
 
 pub mod address;
 mod context;

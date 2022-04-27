@@ -99,11 +99,12 @@ pub trait MessageChannel<M>: Sealed + Unpin + Send + Sync {
         self.len() == 0
     }
 
-    // TODO: Revise these docs.
-    /// Send a [`Message`](../trait.Message.html) to the actor and asynchronously wait for a response. If this
-    /// returns `Err(Disconnected)`, then the actor is stopped and not accepting messages. This,
-    /// unlike [`Address::send`](../address/struct.Address.html#method.send) will block if the actor's mailbox
-    /// is full. If this is undesired, consider using a [`MessageSink`](../sink/trait.MessageSink.html).
+    /// Send a message to the actor.
+    ///
+    /// The actor must implement [`Handler<Message>`] for this to work.
+    ///
+    /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
+    /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
     fn send(
         &self,
         message: M,
