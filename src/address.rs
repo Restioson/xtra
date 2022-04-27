@@ -91,8 +91,7 @@ impl<A: Actor> Future for DoSendFuture<A> {
 }
 
 /// The actor is no longer running and disconnected from the sending address. For why this could
-/// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and
-/// [`Actor::stopped`](../trait.Actor.html#method.stopped) methods.
+/// occur, see [`Actor::stopped`](../trait.Actor.html#method.stopped) methods.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Disconnected;
 

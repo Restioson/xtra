@@ -118,7 +118,7 @@ pub trait Handler<M>: Actor {
 ///     }
 /// }
 ///
-/// // Will print "Started!", "Goodbye!", "Decided not to keep running", and then "Finally stopping."
+/// // Will print "Started!", "Goodbye!" and then "Finally stopping."
 /// # #[cfg(feature = "with-smol-1")]
 /// smol::block_on(async {
 ///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
@@ -138,13 +138,12 @@ pub trait Actor: 'static + Send + Sized {
     #[allow(unused_variables)]
     async fn started(&mut self, ctx: &mut Context<Self>) {}
 
-    /// Called when the actor is in the process of stopping. This could be because
-    /// [`KeepRunning::StopAll`](enum.KeepRunning.html#variant.StopAll) or
-    /// [`KeepRunning::StopSelf`](enum.KeepRunning.html#variant.StopSelf) was returned from the
-    /// [`Actor::stopping`](trait.Actor.html#method.stopping) method, or because there are no more
-    /// strong addresses ([`Address`](address/struct.Address.html), as opposed to
-    /// [`WeakAddress`](address/type.WeakAddress.html). This should be used for any final cleanup before
-    /// the actor is dropped.
+    /// Called when the actor has completely stopped.
+    ///
+    /// This could be because there are no more strong addresses ([`Address`](address/struct.Address.html),
+    /// as opposed to [`WeakAddress`](address/type.WeakAddress.html) or [`Context::stop`] was called.
+    ///
+    /// This should be used for any final cleanup before the actor is dropped.
     #[allow(unused_variables)]
     async fn stopped(self) -> Self::Stop;
 

@@ -20,8 +20,9 @@ use crate::{Actor, Address, Handler};
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
 pub struct Context<A> {
-    /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
-    /// for it to call the `stopping` method on the actor
+    /// Whether the actor is running.
+    ///
+    /// Starts out with `true` and is set to `false` by calling [`Context::stop`].
     running: bool,
     /// Channel sender kept by the context to allow for the `Context::address` method to work
     sender: Sender<AddressMessage<A>>,
@@ -121,8 +122,7 @@ impl<A: Actor> Context<A> {
         ctx.run(actor)
     }
 
-    /// Stop the actor as soon as it has finished processing current message. This will mean that the
-    /// [`Actor::stopping`](trait.Actor.html#method.stopping) method will be called.
+    /// Stop the actor as soon as it has finished processing current message.
     pub fn stop(&mut self) {
         self.running = false;
     }
