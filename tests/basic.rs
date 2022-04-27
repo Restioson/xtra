@@ -228,3 +228,77 @@ async fn receiving_async_on_message_channel_returns_immediately_after_dispatch()
 
     handler_future.await.unwrap();
 }
+
+struct Greeter;
+
+#[async_trait]
+impl Actor for Greeter {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
+
+struct Hello(&'static str);
+
+#[async_trait]
+impl Handler<Hello> for Greeter {
+    type Return = String;
+
+    async fn handle(&mut self, Hello(name): Hello, _: &mut Context<Self>) -> Self::Return {
+        format!("Hello {name}")
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")] // Needs to be multi-threaded to work.
+async fn address_send_exercises_backpressure() {
+    let address = Greeter.create(Some(1)).spawn_global();
+
+    let handler1 = address.send(Hello("world")).recv_async().now_or_never();
+    let handler2 = address.send(Hello("world")).recv_async().now_or_never();
+    let handler3 = address.send(Hello("world")).recv_async().now_or_never();
+
+    assert!(
+        handler1.is_some(),
+        "handler1 should succeed because actor is not busy"
+    );
+    assert!(
+        handler2.is_some(),
+        "handler2 should succeed because we got space to queue 1 message"
+    );
+    assert!(
+        handler3.is_none(),
+        "handler3 should be pending because the mailbox is full"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")] // Needs to be multi-threaded to work.
+async fn message_channel_send_exercises_backpressure() {
+    let address = Greeter.create(Some(1)).spawn_global();
+    let message_channel = MessageChannel::clone_channel(&address);
+
+    let handler1 = message_channel
+        .send(Hello("world"))
+        .recv_async()
+        .now_or_never();
+    let handler2 = message_channel
+        .send(Hello("world"))
+        .recv_async()
+        .now_or_never();
+    let handler3 = message_channel
+        .send(Hello("world"))
+        .recv_async()
+        .now_or_never();
+
+    assert!(
+        handler1.is_some(),
+        "handler1 should succeed because actor is not busy"
+    );
+    assert!(
+        handler2.is_some(),
+        "handler2 should succeed because we got space to queue 1 message"
+    );
+    assert!(
+        handler3.is_none(),
+        "handler3 should be pending because the mailbox is full"
+    );
+}
