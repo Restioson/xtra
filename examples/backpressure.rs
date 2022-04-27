@@ -17,7 +17,7 @@ impl Handler<Hello> for Greeter {
     type Return = ();
 
     async fn handle(&mut self, Hello(name): Hello, _: &mut Context<Self>) -> Self::Return {
-        println!("Hello {name}")
+        println!("Hello {}", name)
     }
 }
 
@@ -67,7 +67,7 @@ async fn main() {
     for _ in 0..100 {
         let name = "world!".to_owned();
 
-        println!("Greeting {name}");
+        println!("Greeting {}", name);
         address.send(Hello(name)).recv_async().await;
     }
 }

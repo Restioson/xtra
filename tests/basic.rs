@@ -245,7 +245,7 @@ impl Handler<Hello> for Greeter {
     type Return = String;
 
     async fn handle(&mut self, Hello(name): Hello, _: &mut Context<Self>) -> Self::Return {
-        format!("Hello {name}")
+        format!("Hello {}", name)
     }
 }
 
