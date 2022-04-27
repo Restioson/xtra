@@ -249,56 +249,15 @@ impl Handler<Hello> for Greeter {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")] // Needs to be multi-threaded to work.
+#[tokio::test]
 async fn address_send_exercises_backpressure() {
-    let address = Greeter.create(Some(1)).spawn_global();
+    let (address, mut context) = Context::new(Some(1));
 
-    let handler1 = address.send(Hello("world")).recv_async().now_or_never();
+    address.send(Hello("world")).recv_async().now_or_never().expect("be able to queue 1 message because the mailbox is empty");
     let handler2 = address.send(Hello("world")).recv_async().now_or_never();
-    let handler3 = address.send(Hello("world")).recv_async().now_or_never();
+    assert!(handler2.is_none(), "Fail to queue 2nd message because mailbox is full");
 
-    assert!(
-        handler1.is_some(),
-        "handler1 should succeed because actor is not busy"
-    );
-    assert!(
-        handler2.is_some(),
-        "handler2 should succeed because we got space to queue 1 message"
-    );
-    assert!(
-        handler3.is_none(),
-        "handler3 should be pending because the mailbox is full"
-    );
-}
+    context.yield_once(&mut Greeter).await; // process one message
 
-#[tokio::test(flavor = "multi_thread")] // Needs to be multi-threaded to work.
-async fn message_channel_send_exercises_backpressure() {
-    let address = Greeter.create(Some(1)).spawn_global();
-    let message_channel = MessageChannel::clone_channel(&address);
-
-    let handler1 = message_channel
-        .send(Hello("world"))
-        .recv_async()
-        .now_or_never();
-    let handler2 = message_channel
-        .send(Hello("world"))
-        .recv_async()
-        .now_or_never();
-    let handler3 = message_channel
-        .send(Hello("world"))
-        .recv_async()
-        .now_or_never();
-
-    assert!(
-        handler1.is_some(),
-        "handler1 should succeed because actor is not busy"
-    );
-    assert!(
-        handler2.is_some(),
-        "handler2 should succeed because we got space to queue 1 message"
-    );
-    assert!(
-        handler3.is_none(),
-        "handler3 should be pending because the mailbox is full"
-    );
+    address.send(Hello("world")).recv_async().now_or_never().expect("be able to queue another message because the mailbox is empty again");
 }
