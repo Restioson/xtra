@@ -10,12 +10,12 @@ use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// A [`Future`] that represents state of sending a message to an actor.
+/// A [`Future`] that represents the state of sending a message to an actor.
 ///
 /// By default, a `SendFuture` will also wait until the handler has finished executing and resolve to the return value (see [`Handler::Return`](crate::Handler::Return)).
 /// This behaviour can be changed by calling [`recv_async`](SendFuture::recv_async).
 ///
-/// When toggled to receive the return value asynchronously, this future will not resolve until the message is successfully queued into the actor's mailbox. If the actors mailbox is bounded, this future will yield until there is space in the mailbox.
+/// When toggled to receive the return value asynchronously, this future will resolve once the message is successfully queued into the actor's mailbox. If the actors mailbox is bounded, this future will yield `Pending` until there is space in the mailbox. This allows an actor to exercise backpressure on its users.
 #[must_use = "Futures do nothing unless polled"]
 pub struct SendFuture<R, F, TRecvSyncMarker> {
     inner: SendFutureInner<R, F>,
@@ -43,7 +43,7 @@ impl<R, F> SendFuture<R, F, ReceiveSync> {
         }
     }
 
-    /// Toggle this future to only queue the message into the actor's mailbox.
+    /// Toggle this future to receive the return value asynchronously.
     ///
     /// Calling this function will change the [`Output`](Future::Output) of this [`Future`] from [`Handler::Return`](crate::Handler::Return) to [`Receiver<Handler::Return>`](Receiver<crate::Handler::Return>).
     ///

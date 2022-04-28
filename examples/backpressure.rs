@@ -23,7 +23,7 @@ impl Handler<Hello> for Greeter {
 
 /// This examples demonstrates `xtra`'s feature of backpressure when waiting for the result of a handler asynchronously.
 ///
-/// Backpressure allows an actor to throttle the sending of new messages but putting a limit on how many messages can be queued in the mailbox at once.
+/// Backpressure allows an actor to throttle the sending of new messages by putting a limit on how many messages can be queued in the mailbox at once.
 /// To demonstrate backpressure we set up the following environment:
 ///
 /// 1. Single-threaded tokio executor: This ensures that only one task can run at any time.
@@ -31,7 +31,7 @@ impl Handler<Hello> for Greeter {
 /// 3. Print "Greeting world!" to stdout before we dispatch a message.
 /// 4. Print "Hello world!" upon executing the handler.
 ///
-/// By varying the `mailbox_capacity` and observing the output on stdout, we can see the effects off backpressure:
+/// By varying the `mailbox_capacity` and observing the output on stdout, we can see the effects of backpressure:
 ///
 /// ## `mailbox_capacity = Some(0)`
 ///
@@ -57,7 +57,7 @@ impl Handler<Hello> for Greeter {
 /// A `mailbox_capacity` of `None` creates an interesting output: We only see "Greeting world!" messages.
 /// This is easily explained though. `None` creates an unbounded mailbox, meaning there is no artificial upper limit to how many messages we can queue.
 ///
-/// The example ends after the loop and thus, the runtime is immediately destroyed after which means none of the queue handlers ever get to execute.
+/// The example ends after the loop and thus, the runtime is immediately destroyed after which means none of the queue handlers ever get to actually execute.
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let mailbox_capacity = None;
