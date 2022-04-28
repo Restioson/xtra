@@ -1,7 +1,7 @@
 use std::future::Future;
 
 use crate::address::Address;
-use crate::context::Context;
+use crate::context::{Context, Starting};
 use crate::envelope::{BroadcastMessageEnvelope, MessageEnvelope};
 use crate::spawn::Spawner;
 use crate::Actor;
@@ -45,7 +45,7 @@ pub(crate) enum ContinueManageLoop {
 pub struct ActorManager<A: Actor> {
     pub(crate) address: Address<A>,
     pub(crate) actor: A,
-    pub(crate) ctx: Context<A>,
+    pub(crate) ctx: Context<A, Starting>,
 }
 
 impl<A: Actor<Stop = ()>> ActorManager<A> {

@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::future::Future;
+use std::marker::PhantomData;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -19,7 +20,7 @@ use crate::{Actor, Address, Handler, KeepRunning};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
-pub struct Context<A> {
+pub struct Context<A, TStage = Running> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
     /// for it to call the `stopping` method on the actor
     running: RunningState,
@@ -39,7 +40,15 @@ pub struct Context<A> {
     /// to shutdown the tasks as soon as the context stops.
     #[cfg_attr(not(feature = "timing"), allow(dead_code))]
     drop_notifier: DropNotifier,
+
+    stage: PhantomData<TStage>,
 }
+
+/// Represents the `Starting` stage of an actor.
+pub enum Starting {}
+
+/// Represents the `Running` stage of an actor.
+pub enum Running {}
 
 #[derive(Eq, PartialEq, Copy, Clone)]
 enum RunningState {
@@ -48,7 +57,17 @@ enum RunningState {
     Stopped,
 }
 
-impl<A: Actor> Context<A> {
+impl<A, TStage> Context<A, TStage> {
+    /// Get an address to the current actor if there are still external addresses to the actor.
+    pub fn address(&self) -> Result<Address<A>, ActorShutdown> {
+        Ok(Address {
+            sender: self.sender.clone(),
+            ref_counter: self.ref_counter.upgrade().ok_or(ActorShutdown)?,
+        })
+    }
+}
+
+impl<A: Actor> Context<A, Starting> {
     /// Creates a new actor context with a given mailbox capacity, returning an address to the actor
     /// and the context. This can be used as a builder to add more actors to an address before
     /// any have started.
@@ -102,6 +121,7 @@ impl<A: Actor> Context<A> {
             broadcast_receiver: broadcast_rx.into_shared(),
             shared_drop_notifier,
             drop_notifier: DropNotifier::new(),
+            stage: PhantomData::default(),
         };
         (addr, context)
     }
@@ -123,22 +143,93 @@ impl<A: Actor> Context<A> {
             broadcast_receiver,
             shared_drop_notifier: self.shared_drop_notifier.clone(),
             drop_notifier: DropNotifier::new(),
+            stage: PhantomData::default(),
         };
         ctx.run(actor)
     }
 
+    /// Run the given actor's main loop, handling incoming messages to its mailbox.
+    pub async fn run(mut self, mut actor: A) -> A::Stop {
+        actor.started(&mut self).await;
+
+        let mut runnning_context = Context::<A, Running> {
+            running: self.running,
+            sender: self.sender,
+            broadcaster: self.broadcaster,
+            ref_counter: self.ref_counter,
+            self_notifications: self.self_notifications,
+            receiver: self.receiver,
+            broadcast_receiver: self.broadcast_receiver,
+            shared_drop_notifier: self.shared_drop_notifier,
+            drop_notifier: self.drop_notifier,
+            stage: PhantomData::<Running>,
+        };
+
+        // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
+        // in the started method, otherwise it would kinda be a bug
+        if !runnning_context.check_running(&mut actor).await {
+            runnning_context.stop_all();
+            return actor.stopped().await;
+        }
+
+        // Similar to above
+        if let Some(BroadcastMessage::Shutdown) =
+            runnning_context.broadcast_receiver.try_recv().unwrap()
+        {
+            return actor.stopped().await;
+        }
+
+        // Listen for any messages for the ActorManager
+        let addr_rx = runnning_context.receiver.clone();
+        let broadcast_rx = runnning_context.broadcast_receiver.clone();
+
+        let mut addr_recv = addr_rx.recv_async();
+        let mut broadcast_recv = broadcast_rx.recv_async();
+
+        loop {
+            let next = future::select(addr_recv, broadcast_recv).await;
+
+            let msg = match next {
+                Either::Left((res, other)) => {
+                    broadcast_recv = other;
+                    addr_recv = addr_rx.recv_async();
+                    Either::Right(res.unwrap())
+                }
+                Either::Right((res, other)) => {
+                    addr_recv = other;
+                    broadcast_recv = broadcast_rx.recv_async();
+                    Either::Left(res.unwrap())
+                }
+            };
+
+            // To avoid broadcast starvation, try receive a broadcast here
+            if let Ok(Some(broadcast)) = broadcast_rx.try_recv() {
+                match runnning_context
+                    .tick(Either::Left(broadcast), &mut actor)
+                    .await
+                {
+                    ContinueManageLoop::Yes => {}
+                    ContinueManageLoop::ExitImmediately => {
+                        return actor.stopped().await;
+                    }
+                }
+            }
+
+            match runnning_context.tick(msg, &mut actor).await {
+                ContinueManageLoop::Yes => {}
+                ContinueManageLoop::ExitImmediately => {
+                    return actor.stopped().await;
+                }
+            }
+        }
+    }
+}
+
+impl<A: Actor> Context<A, Running> {
     /// Stop the actor as soon as it has finished processing current message. This will mean that the
     /// [`Actor::stopping`](trait.Actor.html#method.stopping) method will be called.
     pub fn stop(&mut self) {
         self.running = RunningState::Stopping;
-    }
-
-    /// Get an address to the current actor if there are still external addresses to the actor.
-    pub fn address(&self) -> Result<Address<A>, ActorShutdown> {
-        Ok(Address {
-            sender: self.sender.clone(),
-            ref_counter: self.ref_counter.upgrade().ok_or(ActorShutdown)?,
-        })
     }
 
     /// Stop all actors on this address
@@ -198,64 +289,6 @@ impl<A: Actor> Context<A> {
         }
 
         true
-    }
-
-    /// Run the given actor's main loop, handling incoming messages to its mailbox.
-    pub async fn run(mut self, mut actor: A) -> A::Stop {
-        actor.started(&mut self).await;
-
-        // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
-        // in the started method, otherwise it would kinda be a bug
-        if !self.check_running(&mut actor).await {
-            self.stop_all();
-            return actor.stopped().await;
-        }
-
-        // Similar to above
-        if let Some(BroadcastMessage::Shutdown) = self.broadcast_receiver.try_recv().unwrap() {
-            return actor.stopped().await;
-        }
-
-        // Listen for any messages for the ActorManager
-        let addr_rx = self.receiver.clone();
-        let broadcast_rx = self.broadcast_receiver.clone();
-
-        let mut addr_recv = addr_rx.recv_async();
-        let mut broadcast_recv = broadcast_rx.recv_async();
-
-        loop {
-            let next = future::select(addr_recv, broadcast_recv).await;
-
-            let msg = match next {
-                Either::Left((res, other)) => {
-                    broadcast_recv = other;
-                    addr_recv = addr_rx.recv_async();
-                    Either::Right(res.unwrap())
-                }
-                Either::Right((res, other)) => {
-                    addr_recv = other;
-                    broadcast_recv = broadcast_rx.recv_async();
-                    Either::Left(res.unwrap())
-                }
-            };
-
-            // To avoid broadcast starvation, try receive a broadcast here
-            if let Ok(Some(broadcast)) = broadcast_rx.try_recv() {
-                match self.tick(Either::Left(broadcast), &mut actor).await {
-                    ContinueManageLoop::Yes => {}
-                    ContinueManageLoop::ExitImmediately => {
-                        return actor.stopped().await;
-                    }
-                }
-            }
-
-            match self.tick(msg, &mut actor).await {
-                ContinueManageLoop::Yes => {}
-                ContinueManageLoop::ExitImmediately => {
-                    return actor.stopped().await;
-                }
-            }
-        }
     }
 
     /// Handle a message and immediate notifications, returning whether to exit from the manage loop

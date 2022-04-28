@@ -6,6 +6,7 @@
 pub use self::address::{Address, Disconnected, WeakAddress};
 pub use self::context::{ActorShutdown, Context};
 pub use self::manager::ActorManager;
+use crate::context::{Running, Starting};
 
 pub mod address;
 mod context;
@@ -34,6 +35,9 @@ pub mod prelude {
     pub use crate::{Actor, Handler};
 
     pub use async_trait::async_trait;
+
+    pub use crate::context::Running;
+    pub use crate::context::Starting;
 }
 
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
@@ -98,7 +102,7 @@ pub trait Handler<M>: Actor {
 /// #[async_trait]
 /// impl Actor for MyActor {
 ///     type Stop = ();
-///     async fn started(&mut self, ctx: &mut Context<Self>) {
+///     async fn started(&mut self, ctx: &mut Context<Self, Starting>) {
 ///         println!("Started!");
 ///     }
 ///
@@ -142,7 +146,7 @@ pub trait Actor: 'static + Send + Sized {
 
     /// Called as soon as the actor has been started.
     #[allow(unused_variables)]
-    async fn started(&mut self, ctx: &mut Context<Self>) {}
+    async fn started(&mut self, ctx: &mut Context<Self, Starting>) {}
 
     /// Called when the actor calls the [`Context::stop`](struct.Context.html#method.stop). This method
     /// can prevent the actor from stopping by returning [`KeepRunning::Yes`](enum.KeepRunning.html#variant.Yes).
