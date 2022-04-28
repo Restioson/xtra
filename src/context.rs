@@ -150,7 +150,9 @@ impl<A: Actor> Context<A, Starting> {
 
     /// Run the given actor's main loop, handling incoming messages to its mailbox.
     pub async fn run(mut self, mut actor: A) -> A::Stop {
-        actor.started(&mut self).await;
+        if let Err(stop) = actor.started(&mut self).await {
+            return stop;
+        }
 
         let mut runnning_context = Context::<A, Running> {
             running: self.running,
