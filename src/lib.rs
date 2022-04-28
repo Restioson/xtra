@@ -90,7 +90,7 @@ pub trait Handler<M>: Actor {
 /// # Example
 ///
 /// ```rust
-/// # use xtra::{KeepRunning, prelude::*};
+/// # use xtra::prelude::*;
 /// # use std::time::Duration;
 /// struct MyActor;
 ///
@@ -155,7 +155,7 @@ pub trait Actor: 'static + Send + Sized {
     /// # Example
     ///
     /// ```rust
-    /// # use xtra::{KeepRunning, prelude::*};
+    /// # use xtra::prelude::*;
     /// # use std::time::Duration;
     /// # use smol::Timer;
     /// # struct MyActor;
