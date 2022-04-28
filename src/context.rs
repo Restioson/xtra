@@ -165,13 +165,6 @@ impl<A: Actor> Context<A, Starting> {
             stage: PhantomData::<Running>,
         };
 
-        // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
-        // in the started method, otherwise it would kinda be a bug
-        if !runnning_context.check_running(&mut actor).await {
-            runnning_context.stop_all();
-            return actor.stopped().await;
-        }
-
         // Similar to above
         if let Some(BroadcastMessage::Shutdown) =
             runnning_context.broadcast_receiver.try_recv().unwrap()
