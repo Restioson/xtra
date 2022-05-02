@@ -213,7 +213,9 @@ async fn receiving_async_on_address_returns_immediately_after_dispatch() {
     let address = LongRunningHandler.create(None).spawn_global();
 
     let send_future = address.send(Duration::from_secs(3)).recv_async();
-    let handler_future = send_future.now_or_never().expect("Dispatch should be immediate on first poll");
+    let handler_future = send_future
+        .now_or_never()
+        .expect("Dispatch should be immediate on first poll");
 
     handler_future.await.unwrap();
 }
@@ -224,7 +226,9 @@ async fn receiving_async_on_message_channel_returns_immediately_after_dispatch()
     let channel = StrongMessageChannel::clone_channel(&address);
 
     let send_future = channel.send(Duration::from_secs(3)).recv_async();
-    let handler_future = send_future.now_or_never().expect(Dispatch should be immediate on first poll");
+    let handler_future = send_future
+        .now_or_never()
+        .expect("Dispatch should be immediate on first poll");
 
     handler_future.await.unwrap();
 }
