@@ -225,7 +225,7 @@ async fn receiving_async_on_message_channel_returns_immediately_after_dispatch()
     let address = LongRunningHandler.create(None).spawn_global();
     let channel = StrongMessageChannel::clone_channel(&address);
 
-    let send_future = channel.send(Duration::from_secs(3)).recv_async();
+    let send_future = channel.send(Duration::from_secs(3)).split_receiver();
     let handler_future = send_future
         .now_or_never()
         .expect("Dispatch should be immediate on first poll");
