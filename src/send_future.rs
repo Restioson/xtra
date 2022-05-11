@@ -12,21 +12,27 @@ use std::task::{Context, Poll};
 
 /// A [`Future`] that represents the state of sending a message to an actor.
 ///
-/// By default, a `SendFuture` will also wait until the handler has finished executing and resolve to the return value (see [`Handler::Return`](crate::Handler::Return)).
-/// This behaviour can be changed by calling [`recv_async`](SendFuture::recv_async).
+/// By default, a [`SendFuture`] will resolve to the return value of the handler (see [`Handler::Return`](crate::Handler::Return)).
+/// This behaviour can be changed by calling [`split_receiver`](SendFuture::split_receiver).
 ///
-/// When toggled to receive the return value asynchronously, this future will resolve once the message is successfully queued into the actor's mailbox. If the actors mailbox is bounded, this future will yield `Pending` until there is space in the mailbox. This allows an actor to exercise backpressure on its users.
+/// A [`SendFuture`] whose [`Receiver`] has been split off will resolve once the message is successfully queued into the actor's mailbox and resolve to the [`Receiver`].
+/// The [`Receiver`] itself is a future that will resolve to the return value of the [`Handler`](crate::Handler).
+///
+/// In case an actor's mailbox is bounded, [`SendFuture`] will yield `Pending` until the message is queued successfully.
+/// This allows an actor to exercise backpressure on its users.
 #[must_use = "Futures do nothing unless polled"]
-pub struct SendFuture<R, F, TRecvSyncMarker> {
+pub struct SendFuture<R, F, TResolveMarker> {
     inner: SendFutureInner<R, F>,
-    phantom: PhantomData<TRecvSyncMarker>,
+    phantom: PhantomData<TResolveMarker>,
 }
 
-/// Marker type for receiving the return value of a [`Handler`](crate::Handler) **synchronously**.
-pub enum ReceiveSync {}
+/// Marker type for resolving the [`SendFuture`] to the return value of the [`Handler`](crate::Handler).
+pub enum ResolveToHandlerReturn {}
 
-/// Marker type for receiving the return value of a [`Handler`](crate::Handler) **asynchronously**.
-pub enum ReceiveAsync {}
+/// Marker type for resolving the [`SendFuture`] to a [`Receiver`] once the message is queued into the actor's mailbox.
+///
+/// The [`Receiver`] can be used to await the completion of the handler separately.
+pub enum ResoleToReceiver {}
 
 enum SendFutureInner<R, F> {
     Disconnected,
@@ -35,7 +41,7 @@ enum SendFutureInner<R, F> {
     Done,
 }
 
-impl<R, F> SendFuture<R, F, ReceiveSync> {
+impl<R, F> SendFuture<R, F, ResolveToHandlerReturn> {
     pub(crate) fn disconnected() -> Self {
         Self {
             inner: SendFutureInner::Disconnected,
@@ -43,12 +49,12 @@ impl<R, F> SendFuture<R, F, ReceiveSync> {
         }
     }
 
-    /// Toggle this future to receive the return value asynchronously.
+    /// Split off a [`Receiver`] from this [`SendFuture`].
+    ///
+    /// Splitting off a [`Receiver`] allows you to await the completion of the [`Handler`](crate::Handler) separately from the queuing of the message into the actor's mailbox.
     ///
     /// Calling this function will change the [`Output`](Future::Output) of this [`Future`] from [`Handler::Return`](crate::Handler::Return) to [`Receiver<Handler::Return>`](Receiver<crate::Handler::Return>).
-    ///
-    /// A [`Receiver`] is a [`Future`] itself that can be used to await the execution of the [`Handler`](crate::Handler) separately from the queuing of the message.
-    pub fn recv_async(self) -> SendFuture<R, F, ReceiveAsync> {
+    pub fn split_receiver(self) -> SendFuture<R, F, ResoleToReceiver> {
         SendFuture {
             inner: self.inner,
             phantom: PhantomData,
@@ -56,7 +62,7 @@ impl<R, F> SendFuture<R, F, ReceiveSync> {
     }
 }
 
-impl<R> SendFuture<R, BoxFuture<'static, Receiver<R>>, ReceiveSync> {
+impl<R> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
     pub(crate) fn sending_boxed<F>(send_fut: F) -> Self
     where
         F: Future<Output = Receiver<R>> + Send + 'static,
@@ -68,7 +74,7 @@ impl<R> SendFuture<R, BoxFuture<'static, Receiver<R>>, ReceiveSync> {
     }
 }
 
-impl<A, R> SendFuture<R, NameableSending<A, R>, ReceiveSync> {
+impl<A, R> SendFuture<R, NameableSending<A, R>, ResolveToHandlerReturn> {
     pub(crate) fn sending_named(
         send_fut: SendFut<'static, AddressMessage<A>>,
         receiver: catty::Receiver<R>,
@@ -103,7 +109,7 @@ impl<A, R> Future for NameableSending<A, R> {
     }
 }
 
-impl<R, F> Future for SendFuture<R, F, ReceiveSync>
+impl<R, F> Future for SendFuture<R, F, ResolveToHandlerReturn>
 where
     F: Future<Output = Receiver<R>> + Unpin,
 {
@@ -144,7 +150,7 @@ where
     }
 }
 
-impl<R, F> Future for SendFuture<R, F, ReceiveAsync>
+impl<R, F> Future for SendFuture<R, F, ResoleToReceiver>
 where
     F: Future<Output = Receiver<R>> + Unpin,
 {

@@ -212,7 +212,7 @@ impl Handler<Duration> for LongRunningHandler {
 async fn receiving_async_on_address_returns_immediately_after_dispatch() {
     let address = LongRunningHandler.create(None).spawn_global();
 
-    let send_future = address.send(Duration::from_secs(3)).recv_async();
+    let send_future = address.send(Duration::from_secs(3)).split_receiver();
     let handler_future = send_future
         .now_or_never()
         .expect("Dispatch should be immediate on first poll");
@@ -259,10 +259,10 @@ async fn address_send_exercises_backpressure() {
 
     let _ = address
         .send(Hello("world"))
-        .recv_async()
+        .split_receiver()
         .now_or_never()
         .expect("be able to queue 1 message because the mailbox is empty");
-    let handler2 = address.send(Hello("world")).recv_async().now_or_never();
+    let handler2 = address.send(Hello("world")).split_receiver().now_or_never();
     assert!(
         handler2.is_none(),
         "Fail to queue 2nd message because mailbox is full"
@@ -272,7 +272,7 @@ async fn address_send_exercises_backpressure() {
 
     let _ = address
         .send(Hello("world"))
-        .recv_async()
+        .split_receiver()
         .now_or_never()
         .expect("be able to queue another message because the mailbox is empty again");
 }

@@ -11,7 +11,7 @@ use crate::manager::AddressMessage;
 use crate::private::Sealed;
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Shared, Strong};
-use crate::send_future::{ReceiveSync, SendFuture};
+use crate::send_future::{ResolveToHandlerReturn, SendFuture};
 use crate::sink::{AddressSink, MessageSink, StrongMessageSink, WeakMessageSink};
 use crate::{Handler, KeepRunning};
 
@@ -108,7 +108,7 @@ pub trait MessageChannel<M>: Sealed + Unpin + Send + Sync {
     fn send(
         &self,
         message: M,
-    ) -> SendFuture<Self::Return, BoxFuture<'static, Receiver<Self::Return>>, ReceiveSync>;
+    ) -> SendFuture<Self::Return, BoxFuture<'static, Receiver<Self::Return>>, ResolveToHandlerReturn>;
 
     /// Attaches a stream to this channel such that all messages produced by it are forwarded to the
     /// actor. This could, for instance, be used to forward messages from a socket to the actor
@@ -211,7 +211,7 @@ where
         self.capacity()
     }
 
-    fn send(&self, message: M) -> SendFuture<R, BoxFuture<'static, Receiver<R>>, ReceiveSync> {
+    fn send(&self, message: M) -> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
         if self.is_connected() {
             let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
             let sending = self
