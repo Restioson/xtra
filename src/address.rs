@@ -12,7 +12,7 @@ use futures_util::{future, StreamExt};
 use crate::envelope::ReturningEnvelope;
 use crate::manager::AddressMessage;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
-use crate::send_future::{ResolveToHandlerReturn, NameableSending, SendFuture};
+use crate::send_future::{NameableSending, ResolveToHandlerReturn, SendFuture};
 use crate::sink::AddressSink;
 use crate::{Handler, KeepRunning};
 

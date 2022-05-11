@@ -211,7 +211,10 @@ where
         self.capacity()
     }
 
-    fn send(&self, message: M) -> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
+    fn send(
+        &self,
+        message: M,
+    ) -> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
         if self.is_connected() {
             let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
             let sending = self
