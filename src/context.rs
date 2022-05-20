@@ -404,6 +404,10 @@ impl<A: Actor> Context<A> {
     /// Notify the actor with a message every interval until it is stopped (either directly with
     /// [`Context::stop`](struct.Context.html#method.stop), or for a lack of strong
     /// [`Address`es](address/struct.Address.html)). This does not take priority over other messages.
+    ///
+    /// This function is subject to back-pressure by the actor's mailbox. Thus, if the mailbox is full
+    /// the loop will wait until a slot is available. It is therefore not guaranteed that a message
+    /// will be delivered at exactly `duration` intervals.
     #[cfg(feature = "timing")]
     pub fn notify_interval<F, M>(
         &mut self,
@@ -423,7 +427,7 @@ impl<A: Actor> Context<A> {
                 let delay = Delay::new(duration);
                 match future::select(delay, &mut stopped).await {
                     Either::Left(_) => {
-                        if addr.do_send(constructor()).is_err() {
+                        if addr.send(constructor()).await.is_err() {
                             break;
                         }
                     }
@@ -440,6 +444,9 @@ impl<A: Actor> Context<A> {
 
     /// Notify the actor with a message after a certain duration has elapsed. This does not take
     /// priority over other messages.
+    ///
+    /// This function is subject to back-pressure by the actor's mailbox. If the mailbox is full once
+    /// the timer expires, the future will continue to block until the message is delivered.
     #[cfg(feature = "timing")]
     pub fn notify_after<M>(
         &mut self,
@@ -457,7 +464,7 @@ impl<A: Actor> Context<A> {
             let delay = Delay::new(duration);
             match future::select(delay, &mut stopped).await {
                 Either::Left(_) => {
-                    let _ = addr.do_send(notification);
+                    let _ = addr.send(notification).await;
                 }
                 Either::Right(_) => {
                     // Context stopped before the end of the delay was reached

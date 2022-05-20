@@ -88,6 +88,10 @@ required-features = ["with-tokio-1", "tokio/full"]
 name = "global_spawner_ext"
 required-features = ["with-smol-1"]
 
+[[example]]
+name = "backpressure"
+required-features = ["with-tokio-1"]
+
 [[test]]
 name = "basic"
 required-features = ["with-tokio-1"]

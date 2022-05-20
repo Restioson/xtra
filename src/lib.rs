@@ -6,6 +6,8 @@
 pub use self::address::{Address, Disconnected, WeakAddress};
 pub use self::context::{ActorShutdown, Context};
 pub use self::manager::ActorManager;
+pub use self::receiver::Receiver;
+pub use self::send_future::SendFuture;
 
 pub mod address;
 mod context;
@@ -13,9 +15,11 @@ mod drop_notice;
 mod envelope;
 mod manager;
 pub mod message_channel;
+mod receiver;
 /// This module contains types representing the strength of an address's reference counting, which
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount;
+mod send_future;
 pub mod sink;
 /// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
 pub mod spawn;
