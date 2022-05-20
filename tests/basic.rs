@@ -45,7 +45,7 @@ impl Handler<Report> for Accumulator {
 async fn accumulate_to_ten() {
     let addr = Accumulator(0).create(None).spawn_global();
     for _ in 0..10 {
-        addr.send(Inc).await.unwrap();
+        let _ = addr.send(Inc).split_receiver().await;
     }
 
     assert_eq!(addr.send(Report).await.unwrap().0, 10);
@@ -98,7 +98,7 @@ async fn test_stop_and_drop() {
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
     let handle = smol::spawn(fut);
-    addr.send(Stop).await.unwrap();
+    let _ = addr.send(Stop).split_receiver().await;
     handle.await;
     assert_eq!(drop_count.load(Ordering::SeqCst), 3);
 
@@ -112,10 +112,7 @@ async fn test_stop_and_drop() {
     // Send a stop message before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
-    smol::spawn(async move {
-        addr.send(Stop).await.unwrap();
-    })
-    .detach();
+    let _ = addr.send(Stop).split_receiver().await;
     smol::spawn(fut).await;
     assert_eq!(drop_count.load(Ordering::SeqCst), 3);
 }
