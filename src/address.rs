@@ -80,29 +80,26 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///
     /// ```rust
     /// # use xtra::prelude::*;
-    /// # use xtra::spawn::Smol;
     /// # use std::time::Duration;
     /// # struct MyActor;
     /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
-    /// # use smol::Timer;
     /// struct Shutdown;
-    ///
-    /// impl Message for Shutdown {
-    ///     type Result = ();
-    /// }
     ///
     /// #[async_trait]
     /// impl Handler<Shutdown> for MyActor {
+    ///     type Return = ();
+    ///
     ///     async fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
     ///         ctx.stop();
     ///     }
     /// }
     ///
+    /// # #[cfg(feature = "with-smol-1")]
     /// smol::block_on(async {
-    ///     let addr = MyActor.create(None).spawn(&mut Smol::Global);
+    ///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
     ///     assert!(addr.is_connected());
     ///     addr.send(Shutdown).await;
-    ///     Timer::after(Duration::from_secs(1)).await; // Give it time to shut down
+    ///     smol::Timer::after(Duration::from_secs(1)).await; // Give it time to shut down
     ///     assert!(!addr.is_connected());
     /// })
     /// ```

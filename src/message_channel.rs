@@ -30,13 +30,8 @@ use crate::{Handler, KeepRunning};
 /// ```rust
 /// # use xtra::prelude::*;
 /// # use smol::Timer;
-/// # use xtra::spawn::Smol;
 /// # use std::time::Duration;
 /// struct WhatsYourName;
-///
-/// impl Message for WhatsYourName {
-///     type Result = &'static str;
-/// }
 ///
 /// struct Alice;
 /// struct Bob;
@@ -52,23 +47,28 @@ use crate::{Handler, KeepRunning};
 ///
 /// #[async_trait]
 /// impl Handler<WhatsYourName> for Alice {
-///     async fn handle(&mut self, _: WhatsYourName, _ctx: &mut Context<Self>) -> &'static str {
+///     type Return = &'static str;
+///
+///     async fn handle(&mut self, _: WhatsYourName, _ctx: &mut Context<Self>) -> Self::Return {
 ///         "Alice"
 ///     }
 /// }
 ///
 /// #[async_trait]
 /// impl Handler<WhatsYourName> for Bob {
-///     async fn handle(&mut self, _: WhatsYourName, _ctx: &mut Context<Self>) -> &'static str {
+///     type Return = &'static str;
+///
+///     async fn handle(&mut self, _: WhatsYourName, _ctx: &mut Context<Self>) -> Self::Return {
 ///         "Bob"
 ///     }
 /// }
 ///
 /// fn main() {
+/// # #[cfg(feature = "with-smol-1")]
 /// smol::block_on(async {
-///         let channels: [Box<dyn StrongMessageChannel<WhatsYourName>>; 2] = [
-///             Box::new(Alice.create(None).spawn(&mut Smol::Global)),
-///             Box::new(Bob.create(None).spawn(&mut Smol::Global))
+///         let channels: [Box<dyn StrongMessageChannel<WhatsYourName, Return = &'static str>>; 2] = [
+///             Box::new(Alice.create(None).spawn(&mut xtra::spawn::Smol::Global)),
+///             Box::new(Bob.create(None).spawn(&mut xtra::spawn::Smol::Global))
 ///         ];
 ///         let name = ["Alice", "Bob"];
 ///         for (channel, name) in channels.iter().zip(&name) {

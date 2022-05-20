@@ -37,6 +37,7 @@ pub struct Context<A> {
     shared_drop_notifier: Arc<DropNotifier>,
     /// Activates when this context is dropped. Used in [`Context::notify_interval`] and [`Context::notify_after`]
     /// to shutdown the tasks as soon as the context stops.
+    #[cfg_attr(not(feature = "timing"), allow(dead_code))]
     drop_notifier: DropNotifier,
 }
 
@@ -446,6 +447,7 @@ impl<A: Actor> Context<A> {
     ///
     /// This function is subject to back-pressure by the actor's mailbox. If the mailbox is full once
     /// the timer expires, the future will continue to block until the message is delivered.
+    #[cfg(feature = "timing")]
     pub fn notify_after<M>(
         &mut self,
         duration: Duration,
