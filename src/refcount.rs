@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use crate::drop_notice;
 use crate::drop_notice::DropNotice;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,6 +19,16 @@ pub struct Strong {
     lock: Arc<RwLock<()>>,
 }
 
+impl Debug for Strong {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Strong")
+            .field("connected", &self.is_connected())
+            .field("strong_count", &self.strong_count())
+            .field("weak_count", &self.weak_count())
+            .finish()
+    }
+}
+
 #[doc(hidden)]
 pub struct Shared {
     connected: AtomicBool,
@@ -33,6 +44,11 @@ impl Strong {
             }),
             lock: Arc::new(RwLock::new(())),
         }
+    }
+
+    fn weak_count(&self) -> usize {
+        let _lock = self.lock.read().unwrap();
+        Arc::weak_count(&self.shared)
     }
 
     pub(crate) fn downgrade(&self) -> Weak {
@@ -55,6 +71,16 @@ pub struct Weak {
     lock: Arc<RwLock<()>>,
 }
 
+impl Debug for Weak {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Weak")
+            .field("connected", &self.is_connected())
+            .field("strong_count", &self.strong_count())
+            .field("weak_count", &self.weak_count())
+            .finish()
+    }
+}
+
 impl Weak {
     pub(crate) fn upgrade(&self) -> Option<Strong> {
         ArcWeak::upgrade(&self.shared).map(|shared| Strong {
@@ -62,10 +88,15 @@ impl Weak {
             lock: self.lock.clone(),
         })
     }
+
+    fn weak_count(&self) -> usize {
+        let _lock = self.lock.read().unwrap();
+        ArcWeak::weak_count(&self.shared)
+    }
 }
 
 /// A reference counter that can be dynamically either strong or weak.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Either {
     /// A strong reference counter.
     Strong(Strong),
@@ -87,7 +118,7 @@ impl Either {
 /// [`Strong`](struct.Weak.html). These can be provided as the second type argument to
 /// [`Address`](../address/struct.Address.html) in order to change how the address affects the actor's
 /// dropping. Read the docs of [`Address`](../address/struct.Address.html) to find out more.
-pub trait RefCounter: Sealed + Clone + Unpin + Send + Sync + 'static {
+pub trait RefCounter: Sealed + Clone + Unpin + Debug + Send + Sync + 'static {
     #[doc(hidden)]
     fn is_connected(&self) -> bool;
     #[doc(hidden)]

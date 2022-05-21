@@ -2,6 +2,7 @@
 //! any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
 //! the message type rather than the actor type.
 
+use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -101,7 +102,7 @@ impl<M: Message> Future for SendFuture<M> {
 ///     })
 /// }
 /// ```
-pub trait MessageChannel<M: Message>: Sealed + Unpin + Send + Sync {
+pub trait MessageChannel<M: Message>: Sealed + Unpin + Debug + Send + Sync {
     /// Returns whether the actor referred to by this address is running and accepting messages.
     fn is_connected(&self) -> bool;
 
