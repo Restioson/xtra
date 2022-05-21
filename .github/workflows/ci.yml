@@ -16,7 +16,7 @@ jobs:
         ]
         args: [
           --all-features,
-          --no-default-features
+          --no-default-features,
         ]
     runs-on: ubuntu-latest
     steps:

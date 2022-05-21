@@ -48,7 +48,8 @@ smol-potat = "1.1"
 smol-timeout = "0.6"
 waker-fn = "1.1"
 criterion = { version = "0.3", features = ["async_tokio"] }
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.0", features = ["full"] }
+async-std = { version = "1.0", features = ["attributes"] }
 
 [features]
 default = ["timing"]
@@ -61,11 +62,11 @@ with-tracing-0_1 = ["tracing"]
 
 [[example]]
 name = "basic_tokio"
-required-features = ["with-tokio-1", "tokio/full"]
+required-features = ["with-tokio-1"]
 
 [[example]]
 name = "basic_async_std"
-required-features = ["with-async_std-1", "async-std/attributes"]
+required-features = ["with-async_std-1"]
 
 [[example]]
 name = "basic_smol"
@@ -82,7 +83,7 @@ required-features = ["with-smol-1"]
 
 [[example]]
 name = "crude_bench"
-required-features = ["with-tokio-1", "tokio/full"]
+required-features = ["with-tokio-1"]
 
 [[example]]
 name = "global_spawner_ext"
