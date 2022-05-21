@@ -5,7 +5,7 @@ use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 
 use crate::context::Context;
-use crate::{Actor, Handler, Message};
+use crate::{Actor, Handler};
 
 /// A message envelope is a struct that encapsulates a message and its return channel sender (if applicable).
 /// Firstly, this allows us to be generic over returning and non-returning messages (as all use the
@@ -47,14 +47,14 @@ pub(crate) trait MessageEnvelope: Send {
 }
 
 /// An envelope that returns a result from a message. Constructed by the `AddressExt::do_send` method.
-pub(crate) struct ReturningEnvelope<A: Actor, M: Message> {
+pub(crate) struct ReturningEnvelope<A: Actor, M, R> {
     message: M,
-    result_sender: Sender<M::Result>,
+    result_sender: Sender<R>,
     phantom: PhantomData<fn() -> A>,
 }
 
-impl<A: Actor, M: Message> ReturningEnvelope<A, M> {
-    pub(crate) fn new(message: M) -> (Self, Receiver<M::Result>) {
+impl<A: Actor, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
+    pub(crate) fn new(message: M) -> (Self, Receiver<R>) {
         let (tx, rx) = catty::oneshot();
         let envelope = ReturningEnvelope {
             message,
@@ -66,7 +66,9 @@ impl<A: Actor, M: Message> ReturningEnvelope<A, M> {
     }
 }
 
-impl<A: Handler<M>, M: Message> MessageEnvelope for ReturningEnvelope<A, M> {
+impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnvelope
+    for ReturningEnvelope<A, M, R>
+{
     type Actor = A;
 
     fn handle<'a>(
@@ -88,12 +90,12 @@ impl<A: Handler<M>, M: Message> MessageEnvelope for ReturningEnvelope<A, M> {
 
 /// An envelope that does not return a result from a message. Constructed  by the `AddressExt::do_send`
 /// method.
-pub(crate) struct NonReturningEnvelope<A: Actor, M: Message> {
+pub(crate) struct NonReturningEnvelope<A: Actor, M> {
     message: M,
     phantom: PhantomData<fn() -> A>,
 }
 
-impl<A: Actor, M: Message> NonReturningEnvelope<A, M> {
+impl<A: Actor, M> NonReturningEnvelope<A, M> {
     pub(crate) fn new(message: M) -> Self {
         NonReturningEnvelope {
             message,
@@ -102,7 +104,7 @@ impl<A: Actor, M: Message> NonReturningEnvelope<A, M> {
     }
 }
 
-impl<A: Handler<M>, M: Message> MessageEnvelope for NonReturningEnvelope<A, M> {
+impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<A, M> {
     type Actor = A;
 
     fn handle<'a>(
@@ -119,7 +121,7 @@ pub(crate) trait BroadcastMessageEnvelope: MessageEnvelope + Sync {
     fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>>;
 }
 
-impl<A: Handler<M>, M: Message + Clone + Sync> BroadcastMessageEnvelope
+impl<A: Handler<M>, M: Send + 'static + Clone + Sync> BroadcastMessageEnvelope
     for NonReturningEnvelope<A, M>
 {
     fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>> {

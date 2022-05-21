@@ -15,7 +15,7 @@ use crate::drop_notice::DropNotifier;
 use crate::envelope::{MessageEnvelope, NonReturningEnvelope};
 use crate::manager::{AddressMessage, BroadcastMessage, ContinueManageLoop};
 use crate::refcount::{RefCounter, Strong, Weak};
-use crate::{Actor, Address, Handler, KeepRunning, Message};
+use crate::{Actor, Address, Handler, KeepRunning};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -37,6 +37,7 @@ pub struct Context<A> {
     shared_drop_notifier: Arc<DropNotifier>,
     /// Activates when this context is dropped. Used in [`Context::notify_interval`] and [`Context::notify_after`]
     /// to shutdown the tasks as soon as the context stops.
+    #[cfg_attr(not(feature = "timing"), allow(dead_code))]
     drop_notifier: DropNotifier,
 }
 
@@ -379,7 +380,7 @@ impl<A: Actor> Context<A> {
     /// is only over other messages).
     pub fn notify<M>(&mut self, msg: M)
     where
-        M: Message,
+        M: Send + 'static,
         A: Handler<M>,
     {
         let envelope = Box::new(NonReturningEnvelope::<A, M>::new(msg));
@@ -391,7 +392,7 @@ impl<A: Actor> Context<A> {
     /// broadcast channel (it is unbounded).
     pub fn notify_all<M>(&mut self, msg: M)
     where
-        M: Message + Clone + Sync,
+        M: Clone + Sync + Send + 'static,
         A: Handler<M>,
     {
         let envelope = NonReturningEnvelope::<A, M>::new(msg);
@@ -403,6 +404,10 @@ impl<A: Actor> Context<A> {
     /// Notify the actor with a message every interval until it is stopped (either directly with
     /// [`Context::stop`](struct.Context.html#method.stop), or for a lack of strong
     /// [`Address`es](address/struct.Address.html)). This does not take priority over other messages.
+    ///
+    /// This function is subject to back-pressure by the actor's mailbox. Thus, if the mailbox is full
+    /// the loop will wait until a slot is available. It is therefore not guaranteed that a message
+    /// will be delivered at exactly `duration` intervals.
     #[cfg(feature = "timing")]
     pub fn notify_interval<F, M>(
         &mut self,
@@ -411,7 +416,7 @@ impl<A: Actor> Context<A> {
     ) -> Result<impl Future<Output = ()>, ActorShutdown>
     where
         F: Send + 'static + Fn() -> M,
-        M: Message,
+        M: Send + 'static,
         A: Handler<M>,
     {
         let addr = self.address()?.downgrade();
@@ -422,7 +427,7 @@ impl<A: Actor> Context<A> {
                 let delay = Delay::new(duration);
                 match future::select(delay, &mut stopped).await {
                     Either::Left(_) => {
-                        if addr.do_send(constructor()).is_err() {
+                        if addr.send(constructor()).await.is_err() {
                             break;
                         }
                     }
@@ -439,13 +444,17 @@ impl<A: Actor> Context<A> {
 
     /// Notify the actor with a message after a certain duration has elapsed. This does not take
     /// priority over other messages.
+    ///
+    /// This function is subject to back-pressure by the actor's mailbox. If the mailbox is full once
+    /// the timer expires, the future will continue to block until the message is delivered.
+    #[cfg(feature = "timing")]
     pub fn notify_after<M>(
         &mut self,
         duration: Duration,
         notification: M,
     ) -> Result<impl Future<Output = ()>, ActorShutdown>
     where
-        M: Message,
+        M: Send + 'static,
         A: Handler<M>,
     {
         let addr = self.address()?.downgrade();
@@ -455,7 +464,7 @@ impl<A: Actor> Context<A> {
             let delay = Delay::new(duration);
             match future::select(delay, &mut stopped).await {
                 Either::Left(_) => {
-                    let _ = addr.do_send(notification);
+                    let _ = addr.send(notification).await;
                 }
                 Either::Right(_) => {
                     // Context stopped before the end of the delay was reached

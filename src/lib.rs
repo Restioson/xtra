@@ -6,6 +6,8 @@
 pub use self::address::{Address, Disconnected, WeakAddress};
 pub use self::context::{ActorShutdown, Context};
 pub use self::manager::ActorManager;
+pub use self::receiver::Receiver;
+pub use self::send_future::SendFuture;
 
 pub mod address;
 mod context;
@@ -13,9 +15,11 @@ mod drop_notice;
 mod envelope;
 mod manager;
 pub mod message_channel;
+mod receiver;
 /// This module contains types representing the strength of an address's reference counting, which
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount;
+mod send_future;
 pub mod sink;
 /// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
 pub mod spawn;
@@ -31,30 +35,9 @@ pub mod prelude {
     #[cfg(feature = "with-tracing-0_1")]
     pub use crate::tracing::InstrumentedExt;
     #[doc(no_inline)]
-    pub use crate::{Actor, Handler, Message};
+    pub use crate::{Actor, Handler};
 
     pub use async_trait::async_trait;
-}
-
-/// A message that can be sent to an [`Actor`](trait.Actor.html) for processing. They are processed
-/// one at a time. Only actors implementing the corresponding [`Handler<M>`](trait.Handler.html)
-/// trait can be sent a given message.
-///
-/// # Example
-///
-/// ```no_run
-/// # use xtra::Message;
-/// struct MyResult;
-/// struct MyMessage;
-///
-/// impl Message for MyMessage {
-///     type Result = MyResult;
-/// }
-/// ```
-pub trait Message: Send + 'static {
-    /// The return type of the message. It will be returned when the [`Address::send`](address/struct.Address.html#method.send)
-    /// method is called.
-    type Result: Send;
 }
 
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
@@ -65,38 +48,39 @@ pub trait Message: Send + 'static {
 ///
 /// # Example
 ///
-/// ```
+/// ```rust
 /// # use xtra::prelude::*;
-/// # use xtra::spawn::Smol;
 /// # struct MyActor;
 /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
 /// struct Msg;
 ///
-/// impl Message for Msg {
-///     type Result = u32;
-/// }
-///
 /// #[async_trait]
 /// impl Handler<Msg> for MyActor {
+///     type Return = u32;
+///
 ///     async fn handle(&mut self, message: Msg, ctx: &mut Context<Self>) -> u32 {
 ///         20
 ///     }
 /// }
 ///
 /// fn main() {
+/// #   #[cfg(feature = "with-smol-1")]
 ///     smol::block_on(async {
-///         let addr = MyActor.create(None).spawn(&mut Smol::Global);
+///         let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///         assert_eq!(addr.send(Msg).await, Ok(20));
 ///     })
 /// }
 /// ```
 #[async_trait::async_trait]
-pub trait Handler<M: Message>: Actor {
+pub trait Handler<M>: Actor {
+    /// The return value of this handler.
+    type Return: Send + 'static;
+
     /// Handle a given message, returning its result.
     ///
     /// This is an [`async_trait`](https://docs.rs/async-trait).
     /// See the trait documentation to see an example of how this method can be declared.
-    async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> M::Result;
+    async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::Return;
 }
 
 /// An actor which can handle [`Message`s](trait.Message.html) one at a time. Actors can only be
@@ -112,9 +96,7 @@ pub trait Handler<M: Message>: Actor {
 ///
 /// ```rust
 /// # use xtra::{KeepRunning, prelude::*};
-/// # use xtra::spawn::Smol;
 /// # use std::time::Duration;
-/// # use smol::Timer;
 /// struct MyActor;
 ///
 /// #[async_trait]
@@ -136,12 +118,10 @@ pub trait Handler<M: Message>: Actor {
 ///
 /// struct Goodbye;
 ///
-/// impl Message for Goodbye {
-///     type Result = ();
-/// }
-///
 /// #[async_trait]
 /// impl Handler<Goodbye> for MyActor {
+///     type Return = ();
+///
 ///     async fn handle(&mut self, _: Goodbye, ctx: &mut Context<Self>) {
 ///         println!("Goodbye!");
 ///         ctx.stop();
@@ -149,11 +129,12 @@ pub trait Handler<M: Message>: Actor {
 /// }
 ///
 /// // Will print "Started!", "Goodbye!", "Decided not to keep running", and then "Finally stopping."
+/// # #[cfg(feature = "with-smol-1")]
 /// smol::block_on(async {
-///     let addr = MyActor.create(None).spawn(&mut Smol::Global);
+///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///     addr.send(Goodbye).await;
 ///
-///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
+///     smol::Timer::after(Duration::from_secs(1)).await; // Give it time to run
 /// })
 /// ```
 ///

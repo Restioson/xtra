@@ -9,47 +9,32 @@ jobs:
   ci:
     strategy:
       matrix:
-        platform: [ubuntu-latest]
-        toolchain: [stable]
-        runtime:
-          - with-async_std-1
-          - with-smol-1
-          - with-tokio-1
-          - with-wasm_bindgen-0_2
-    runs-on: ${{ matrix.platform }}
-
+        toolchain: [
+          stable,
+          beta,
+          1.54.0 # MSRV
+        ]
+        args: [
+          --all-features,
+          --no-default-features
+        ]
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout Sources
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Install Rust Toolchain
-        uses: actions-rs/toolchain@v1.0.7
+      - uses: actions-rs/toolchain@v1.0.7
         with:
           profile: minimal
           toolchain: ${{ matrix.toolchain }}
           override: true
-          component: rustfmt, clippy
+          components: rustfmt, clippy
 
-      - name: Check Code Format
-        uses: actions-rs/cargo@v1.0.3
+      - uses: Swatinem/rust-cache@v1
         with:
-          command: fmt
-          args: -- --check
+          key: ${{ matrix.args }}
 
-      - name: Check Code Lint
-        uses: actions-rs/cargo@v1.0.3
-        with:
-          command: clippy
-          args: --all-features --all-targets -- -D warnings
+      - run: cargo fmt -- --check
 
-      - name: Build Examples
-        uses: actions-rs/cargo@v1.0.3
-        with:
-          command: build
-          args: --verbose --examples --features ${{ matrix.runtime }}
+      - run: cargo clippy --all-targets ${{ matrix.args }} -- -D warnings
 
-      - name: Test
-        uses: actions-rs/cargo@v1.0.3
-        with:
-          command: test
-          args: --lib --tests --features ${{ matrix.runtime }}
+      - run: cargo test ${{ matrix.args }}

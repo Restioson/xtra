@@ -2,14 +2,8 @@ use xtra::prelude::*;
 use xtra::spawn::Smol;
 
 struct Initialized(Address<ActorA>);
-impl Message for Initialized {
-    type Result = ();
-}
 
 struct Hello;
-impl Message for Hello {
-    type Result = ();
-}
 
 struct ActorA {
     actor_b: Address<ActorB>,
@@ -24,6 +18,8 @@ impl Actor for ActorA {
 
 #[async_trait]
 impl Handler<Hello> for ActorA {
+    type Return = ();
+
     async fn handle(&mut self, _: Hello, ctx: &mut Context<Self>) {
         println!("ActorA: Hello");
         ctx.handle_while(self, self.actor_b.send(Hello))
@@ -43,6 +39,8 @@ impl Actor for ActorB {
 
 #[async_trait]
 impl Handler<Initialized> for ActorB {
+    type Return = ();
+
     async fn handle(&mut self, m: Initialized, ctx: &mut Context<Self>) {
         println!("ActorB: Initialized");
         let actor_a = m.0;
@@ -52,6 +50,8 @@ impl Handler<Initialized> for ActorB {
 
 #[async_trait]
 impl Handler<Hello> for ActorB {
+    type Return = ();
+
     async fn handle(&mut self, _: Hello, _: &mut Context<Self>) {
         println!("ActorB: Hello");
     }

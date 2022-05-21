@@ -1,5 +1,10 @@
 # Breaking Changes by Version
 
+## Unreleased
+
+- `Context::notify_interval` and `Context::notify_after` are now subject to back-pressure.
+  These aren't API breaking but a semantic changes.
+
 ## 0.6.0
 
 - Sealed `RefCounter`, `MessageChannel`, and `MessageSink` traits
