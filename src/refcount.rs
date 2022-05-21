@@ -1,6 +1,6 @@
-use std::fmt::{Debug, Formatter};
 use crate::drop_notice;
 use crate::drop_notice::DropNotice;
+use std::fmt::{Debug, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock, Weak as ArcWeak};
 
