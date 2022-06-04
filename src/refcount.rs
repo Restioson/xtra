@@ -1,10 +1,7 @@
 use std::fmt::{Debug, Formatter};
-use crate::drop_notice;
-use crate::drop_notice::DropNotice;
-use std::fmt::{Debug, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock, Weak as ArcWeak};
-
+use crate::drop_notice::{self, DropNotice};
 use crate::private::Sealed;
 
 /// The reference count of a strong address. Strong addresses will prevent the actor from being

@@ -5,15 +5,19 @@ use xtra::spawn::WasmBindgen;
 
 struct Echoer;
 
-impl Actor for Echoer {}
+#[async_trait]
+impl Actor for Echoer {
+    type Stop = ();
+
+    async fn stopped(self) {}
+}
 
 struct Echo(String);
-impl Message for Echo {
-    type Result = String;
-}
 
 #[async_trait]
 impl Handler<Echo> for Echoer {
+    type Return = String;
+
     async fn handle(&mut self, echo: Echo, _ctx: &mut Context<Self>) -> String {
         echo.0
     }
