@@ -274,8 +274,8 @@ async fn address_send_exercises_backpressure() {
         .expect("be able to queue another message because the mailbox is empty again");
 }
 
-#[tokio::test]
-async fn address_debug() {
+#[test]
+fn address_debug() {
     let (addr1, _ctx): (Address<_>, Context<Greeter>) = Context::new(None);
 
     let addr2 = addr1.clone();
@@ -283,7 +283,7 @@ async fn address_debug() {
 
     assert_eq!(
         format!("{:?}", addr1),
-        "Address<basic::Greeter, xtra::refcount::Strong> { \
+        "Address<basic::Greeter> { \
         ref_counter: Strong { connected: true, strong_count: 2, weak_count: 2 } }"
     );
 
@@ -291,7 +291,7 @@ async fn address_debug() {
 
     assert_eq!(
         format!("{:?}", weak_addr),
-        "Address<basic::Greeter, xtra::refcount::Weak> { \
+        "Address<basic::Greeter> { \
         ref_counter: Weak { connected: true, strong_count: 2, weak_count: 2 } }"
     );
 }

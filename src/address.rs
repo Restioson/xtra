@@ -46,10 +46,7 @@ pub struct Address<A, Rc: RefCounter = Strong> {
 
 impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let a = std::any::type_name::<A>();
-        let rc = std::any::type_name::<Rc>();
-
-        f.debug_struct(&format!("Address<{}, {}>", a, rc))
+        f.debug_struct(&format!("Address<{}>", std::any::type_name::<A>()))
             .field("ref_counter", &self.ref_counter)
             .finish()
     }
