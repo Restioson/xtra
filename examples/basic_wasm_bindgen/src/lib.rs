@@ -9,7 +9,7 @@ struct Echoer;
 impl Actor for Echoer {
     type Stop = ();
 
-    async fn stopped(self) {}
+    async fn stopped(self) -> Self::Stop {}
 }
 
 struct Echo(String);

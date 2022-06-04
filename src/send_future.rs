@@ -89,6 +89,7 @@ impl<A, R> SendFuture<R, NameableSending<A, R>, ResolveToHandlerReturn> {
     }
 }
 
+/// "Sending" state of [`SendFuture`] for cases where the actor type is known and we can there refer to it by name.
 pub struct NameableSending<A: 'static, R> {
     inner: SendFut<'static, AddressMessage<A>>,
     receiver: Option<Receiver<R>>,

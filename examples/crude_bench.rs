@@ -1,7 +1,12 @@
 use std::time::{Duration, Instant};
 
+use futures_core::future::BoxFuture;
+use std::future::Future;
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
+use xtra::NameableSending;
+use xtra::Receiver;
+use xtra::SendFuture;
 
 struct Counter {
     count: usize,
@@ -15,25 +20,13 @@ impl Actor for Counter {
 }
 
 struct Increment;
-
-impl Message for Increment {
-    type Result = ();
-}
-
 struct IncrementWithData(usize);
-
-impl Message for IncrementWithData {
-    type Result = ();
-}
-
 struct GetCount;
-
-impl Message for GetCount {
-    type Result = usize;
-}
 
 #[async_trait]
 impl Handler<Increment> for Counter {
+    type Return = ();
+
     async fn handle(&mut self, _: Increment, _ctx: &mut Context<Self>) {
         self.count += 1;
     }
@@ -41,6 +34,8 @@ impl Handler<Increment> for Counter {
 
 #[async_trait]
 impl Handler<IncrementWithData> for Counter {
+    type Return = ();
+
     async fn handle(&mut self, _: IncrementWithData, _ctx: &mut Context<Self>) {
         self.count += 1;
     }
@@ -48,6 +43,8 @@ impl Handler<IncrementWithData> for Counter {
 
 #[async_trait]
 impl Handler<GetCount> for Counter {
+    type Return = usize;
+
     async fn handle(&mut self, _: GetCount, _ctx: &mut Context<Self>) -> usize {
         let count = self.count;
         self.count = 0;
@@ -68,12 +65,10 @@ impl Actor for SendTimer {
 
 struct GetTime;
 
-impl Message for GetTime {
-    type Result = Duration;
-}
-
 #[async_trait]
 impl Handler<GetTime> for SendTimer {
+    type Return = Duration;
+
     async fn handle(&mut self, _time: GetTime, _ctx: &mut Context<Self>) -> Duration {
         self.time
     }
@@ -90,12 +85,10 @@ impl Actor for ReturnTimer {
 
 struct TimeReturn;
 
-impl Message for TimeReturn {
-    type Result = Instant;
-}
-
 #[async_trait]
 impl Handler<TimeReturn> for ReturnTimer {
+    type Return = Instant;
+
     async fn handle(&mut self, _time: TimeReturn, _ctx: &mut Context<Self>) -> Instant {
         Instant::now()
     }
@@ -103,14 +96,19 @@ impl Handler<TimeReturn> for ReturnTimer {
 
 const COUNT: usize = 50_000_000; // May take a while on some machines
 
-async fn do_address_benchmark(name: &str, f: fn(&Address<Counter>) -> ()) {
+async fn do_address_benchmark<R>(
+    name: &str,
+    f: impl Fn(&Address<Counter>) -> SendFuture<(), NameableSending<Counter, ()>, R>,
+) where
+    SendFuture<(), NameableSending<Counter, ()>, R>: Future,
+{
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
 
     let start = Instant::now();
 
     // rounding overflow
     for _ in 0..COUNT {
-        f(&addr);
+        let _ = f(&addr).await;
     }
 
     // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
@@ -123,7 +121,13 @@ async fn do_address_benchmark(name: &str, f: fn(&Address<Counter>) -> ()) {
     assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 }
 
-async fn do_parallel_address_benchmark(name: &str, workers: usize, f: fn(&Address<Counter>) -> ()) {
+async fn do_parallel_address_benchmark<R>(
+    name: &str,
+    workers: usize,
+    f: impl Fn(&Address<Counter>) -> SendFuture<(), NameableSending<Counter, ()>, R>,
+) where
+    SendFuture<(), NameableSending<Counter, ()>, R>: Future,
+{
     let (addr, mut ctx) = Context::new(None);
     let start = Instant::now();
     for _ in 0..workers {
@@ -131,7 +135,7 @@ async fn do_parallel_address_benchmark(name: &str, workers: usize, f: fn(&Addres
     }
 
     for _ in 0..COUNT {
-        f(&addr);
+        let _ = f(&addr).await;
     }
 
     // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
@@ -143,16 +147,22 @@ async fn do_parallel_address_benchmark(name: &str, workers: usize, f: fn(&Addres
     println!("{} avg time of processing: {}ns", name, average_ns);
 }
 
-async fn do_channel_benchmark<M: Message, F: Fn(&dyn MessageChannel<M>)>(name: &str, f: F)
-where
-    Counter: Handler<M>,
+async fn do_channel_benchmark<M, RM>(
+    name: &str,
+    f: impl Fn(
+        &dyn MessageChannel<M, Return = ()>,
+    ) -> SendFuture<(), BoxFuture<'static, Receiver<()>>, RM>,
+) where
+    Counter: Handler<M, Return = ()> + Send,
+    M: Send + 'static,
+    SendFuture<(), BoxFuture<'static, Receiver<()>>, RM>: Future,
 {
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
-    let chan = &addr as &dyn MessageChannel<M>;
+    let chan = &addr as &dyn MessageChannel<M, Return = ()>;
 
     let start = Instant::now();
     for _ in 0..COUNT {
-        f(chan);
+        let _ = f(chan).await;
     }
 
     // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
@@ -167,43 +177,44 @@ where
 
 #[tokio::main]
 async fn main() {
-    do_address_benchmark("address do_send (ZST message)", |addr| {
-        let _ = addr.do_send(Increment);
+    do_address_benchmark("address split_receiver (ZST message)", |addr| {
+        addr.send(Increment).split_receiver()
     })
     .await;
 
-    do_address_benchmark("address do_send (8-byte message)", |addr| {
-        let _ = addr.do_send(IncrementWithData(0));
+    do_address_benchmark("address split_receiver (8-byte message)", |addr| {
+        addr.send(IncrementWithData(0)).split_receiver()
     })
     .await;
 
-    do_parallel_address_benchmark("address do_send 2 workers (ZST message)", 2, |addr| {
-        let _ = addr.do_send(Increment);
+    do_parallel_address_benchmark(
+        "address split_receiver 2 workers (ZST message)",
+        2,
+        |addr| addr.send(Increment).split_receiver(),
+    )
+    .await;
+
+    do_parallel_address_benchmark(
+        "address split_receiver 2 workers (8-byte message)",
+        2,
+        |addr| addr.send(IncrementWithData(0)).split_receiver(),
+    )
+    .await;
+
+    do_channel_benchmark("channel split_receiver (ZST message)", |chan| {
+        chan.send(Increment).split_receiver()
     })
     .await;
 
-    do_parallel_address_benchmark("address do_send 2 workers (8-byte message)", 2, |addr| {
-        let _ = addr.do_send(IncrementWithData(0));
+    do_channel_benchmark("channel split_receiver (8-byte message)", |chan| {
+        chan.send(IncrementWithData(0)).split_receiver()
     })
     .await;
 
-    do_channel_benchmark("channel do_send (ZST message)", |chan| {
-        let _ = chan.do_send(Increment);
-    })
-    .await;
-
-    do_channel_benchmark("channel do_send (8-byte message)", |chan| {
-        let _ = chan.do_send(IncrementWithData(0));
-    })
-    .await;
-
-    do_channel_benchmark("channel send (ZST message)", |chan| {
-        let _ = chan.send(Increment);
-    })
-    .await;
+    do_channel_benchmark("channel send (ZST message)", |chan| chan.send(Increment)).await;
 
     do_channel_benchmark("channel send (8-byte message)", |chan| {
-        let _ = chan.send(IncrementWithData(0));
+        chan.send(IncrementWithData(0))
     })
     .await;
 }
