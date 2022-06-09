@@ -1,8 +1,8 @@
+use crate::drop_notice::{self, DropNotice};
+use crate::private::Sealed;
 use std::fmt::{Debug, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock, Weak as ArcWeak};
-use crate::drop_notice::{self, DropNotice};
-use crate::private::Sealed;
 
 /// The reference count of a strong address. Strong addresses will prevent the actor from being
 /// dropped as long as they live. Read the docs of [`Address`](../address/struct.Address.html) to find
