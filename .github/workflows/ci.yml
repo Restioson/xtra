@@ -22,6 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - uses: actions-rs/toolchain@1.0.7
+        with:
+          profile: minimal
+          toolchain: nightly
+
       - uses: actions-rs/toolchain@v1.0.7
         with:
           profile: minimal
@@ -32,6 +37,8 @@ jobs:
       - uses: Swatinem/rust-cache@v1
         with:
           key: ${{ matrix.args }}
+
+      - run: cargo +nightly update -Z minimal-versions
 
       - run: cargo fmt -- --check
 
