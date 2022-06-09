@@ -5,7 +5,7 @@ use flume::r#async::SendSink;
 use futures_core::Stream;
 use futures_sink::Sink;
 use futures_util::{future, StreamExt};
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{self, Debug, Display, Formatter};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -43,6 +43,14 @@ impl Error for Disconnected {}
 pub struct Address<A: 'static, Rc: RefCounter = Strong> {
     pub(crate) sink: SendSink<'static, AddressMessage<A>>,
     pub(crate) ref_counter: Rc,
+}
+
+impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct(&format!("Address<{}>", std::any::type_name::<A>()))
+            .field("ref_counter", &self.ref_counter)
+            .finish()
+    }
 }
 
 /// A `WeakAddress` is a reference to an actor through which [`Message`s](../trait.Message.html) can be

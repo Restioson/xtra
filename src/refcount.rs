@@ -1,9 +1,8 @@
-use crate::drop_notice;
-use crate::drop_notice::DropNotice;
+use crate::drop_notice::{self, DropNotice};
+use crate::private::Sealed;
+use std::fmt::{Debug, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock, Weak as ArcWeak};
-
-use crate::private::Sealed;
 
 /// The reference count of a strong address. Strong addresses will prevent the actor from being
 /// dropped as long as they live. Read the docs of [`Address`](../address/struct.Address.html) to find
@@ -16,6 +15,16 @@ use crate::private::Sealed;
 pub struct Strong {
     shared: Arc<Shared>,
     lock: Arc<RwLock<()>>,
+}
+
+impl Debug for Strong {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Strong")
+            .field("connected", &self.is_connected())
+            .field("strong_count", &self.strong_count())
+            .field("weak_count", &self.weak_count())
+            .finish()
+    }
 }
 
 #[doc(hidden)]
@@ -33,6 +42,10 @@ impl Strong {
             }),
             lock: Arc::new(RwLock::new(())),
         }
+    }
+
+    fn weak_count(&self) -> usize {
+        Arc::weak_count(&self.shared)
     }
 
     pub(crate) fn downgrade(&self) -> Weak {
@@ -55,6 +68,16 @@ pub struct Weak {
     lock: Arc<RwLock<()>>,
 }
 
+impl Debug for Weak {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Weak")
+            .field("connected", &self.is_connected())
+            .field("strong_count", &self.strong_count())
+            .field("weak_count", &self.weak_count())
+            .finish()
+    }
+}
+
 impl Weak {
     pub(crate) fn upgrade(&self) -> Option<Strong> {
         ArcWeak::upgrade(&self.shared).map(|shared| Strong {
@@ -62,10 +85,14 @@ impl Weak {
             lock: self.lock.clone(),
         })
     }
+
+    fn weak_count(&self) -> usize {
+        ArcWeak::weak_count(&self.shared)
+    }
 }
 
 /// A reference counter that can be dynamically either strong or weak.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Either {
     /// A strong reference counter.
     Strong(Strong),
@@ -87,7 +114,7 @@ impl Either {
 /// [`Strong`](struct.Weak.html). These can be provided as the second type argument to
 /// [`Address`](../address/struct.Address.html) in order to change how the address affects the actor's
 /// dropping. Read the docs of [`Address`](../address/struct.Address.html) to find out more.
-pub trait RefCounter: Sealed + Clone + Unpin + Send + Sync + 'static {
+pub trait RefCounter: Sealed + Clone + Unpin + Debug + Send + Sync + 'static {
     #[doc(hidden)]
     fn is_connected(&self) -> bool;
     #[doc(hidden)]
