@@ -45,7 +45,6 @@ impl Strong {
     }
 
     fn weak_count(&self) -> usize {
-        let _lock = self.lock.read().unwrap();
         Arc::weak_count(&self.shared)
     }
 
@@ -88,7 +87,6 @@ impl Weak {
     }
 
     fn weak_count(&self) -> usize {
-        let _lock = self.lock.read().unwrap();
         ArcWeak::weak_count(&self.shared)
     }
 }
