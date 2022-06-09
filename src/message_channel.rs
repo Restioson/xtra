@@ -2,6 +2,8 @@
 //! any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
 //! the message type rather than the actor type.
 
+use std::fmt::Debug;
+
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
 
@@ -77,10 +79,9 @@ use crate::{Handler, KeepRunning};
 ///     })
 /// }
 /// ```
-pub trait MessageChannel<M>: Sealed + Unpin + Send + Sync {
+pub trait MessageChannel<M>: Sealed + Unpin + Debug + Send + Sync {
     /// The return value of the handler for `M`.
     type Return: Send + 'static;
-
     /// Returns whether the actor referred to by this address is running and accepting messages.
     fn is_connected(&self) -> bool;
 
