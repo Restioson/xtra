@@ -276,7 +276,7 @@ async fn address_send_exercises_backpressure() {
 
 #[test]
 fn address_debug() {
-    let (addr1, _ctx): (Address<_>, Context<Greeter>) = Context::new(None);
+    let (addr1, _ctx) = Context::<Greeter>::new(None);
 
     let addr2 = addr1.clone();
     let weak_addr = addr2.downgrade();
