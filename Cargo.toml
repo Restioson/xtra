@@ -3,7 +3,7 @@ name = "xtra"
 version = "0.6.0"
 description = "A tiny actor framework"
 authors = ["Restioson <restiosondev@gmail.com>"]
-edition = "2018"
+edition = "2021"
 license = "MPL-2.0"
 repository = "https://github.com/Restioson/xtra"
 documentation = "https://docs.rs/xtra"
@@ -18,7 +18,7 @@ catty = "0.1.4"
 flume = { version = "0.10.9", default-features = false, features = ["async"] }
 futures-core = { version = "0.3.5", default-features = false, features = ["alloc"] }
 futures-sink = { version = "0.3.5", default-features = false }
-futures-util = { version = "0.3.5", default-features = false, features = ["sink"] }
+futures-util = { version = "0.3.5", default-features = false, features = ["sink", "alloc"] }
 pollster = "0.2"
 event-listener = "2.4.0"
 

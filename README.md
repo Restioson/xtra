@@ -70,6 +70,8 @@ is recommended in order to enable some  convenience methods (such as `Actor::spa
 which executor you want to use (check out their docs to learn more about each). If you have any questions, feel free to
 [open an issue](https://github.com/Restioson/xtra/issues/new) or message me on the [Rust discord](https://bit.ly/rust-community).
 
+Keep in mind that `xtra` has a MSRV of 1.56.0.
+
 ## Cargo features
 
 - `timing`: enables the `notify_interval` method, and brings in the
