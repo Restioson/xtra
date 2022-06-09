@@ -1,15 +1,16 @@
 //! An address to an actor is a way to send it a message. An address allows an actor to be sent any
 //! kind of message that it can receive.
 
-use flume::r#async::SendSink;
-use futures_core::Stream;
-use futures_sink::Sink;
-use futures_util::{future, StreamExt};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{cmp::Ordering, error::Error, hash::Hash};
+
+use flume::r#async::SendSink;
+use futures_core::Stream;
+use futures_sink::Sink;
+use futures_util::{future, StreamExt};
 
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::manager::AddressMessage;
