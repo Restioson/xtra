@@ -15,7 +15,7 @@ categories = ["asynchronous", "concurrency"]
 async-trait = "0.1.36"
 barrage = "0.2.1"
 catty = "0.1.4"
-flume = { version = "0.10.9", default-features = false, features = ["async"] }
+flume = { git = "https://github.com/Restioson/flume", branch = "sink_to_sender", default-features = false, features = ["async"] }
 futures-core = { version = "0.3.5", default-features = false, features = ["alloc"] }
 futures-sink = { version = "0.3.5", default-features = false }
 futures-util = { version = "0.3.5", default-features = false, features = ["sink"] }

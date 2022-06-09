@@ -88,7 +88,7 @@ impl<A: Actor> Context<A> {
         let weak = strong.downgrade();
 
         let addr = Address {
-            sender: sender.clone(),
+            sink: sender.clone().into_sink(),
             ref_counter: strong,
         };
 
@@ -136,7 +136,7 @@ impl<A: Actor> Context<A> {
     /// Get an address to the current actor if there are still external addresses to the actor.
     pub fn address(&self) -> Result<Address<A>, ActorShutdown> {
         Ok(Address {
-            sender: self.sender.clone(),
+            sink: self.sender.clone().into_sink(),
             ref_counter: self.ref_counter.upgrade().ok_or(ActorShutdown)?,
         })
     }

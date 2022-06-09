@@ -12,7 +12,6 @@ use crate::private::Sealed;
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Shared, Strong};
 use crate::send_future::{ResolveToHandlerReturn, SendFuture};
-use crate::sink::{AddressSink, MessageSink, StrongMessageSink, WeakMessageSink};
 use crate::{Handler, KeepRunning};
 
 /// A message channel is a channel through which you can send only one kind of message, but to
@@ -77,7 +76,7 @@ use crate::{Handler, KeepRunning};
 ///     })
 /// }
 /// ```
-pub trait MessageChannel<M>: Sealed + Unpin + Send + Sync {
+pub trait MessageChannel<M>: Sealed + Unpin + Send {
     /// The return value of the handler for `M`.
     type Return: Send + 'static;
 
@@ -127,10 +126,6 @@ pub trait MessageChannel<M>: Sealed + Unpin + Send + Sync {
     /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn MessageChannel<M, Return = Self::Return>>;
 
-    /// Use this message channel as [a futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
-    /// and asynchronously send messages through it.
-    fn sink(&self) -> Box<dyn MessageSink<M>>;
-
     /// Determines whether this and the other message channel address the same actor mailbox.
     fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool;
 
@@ -161,10 +156,6 @@ pub trait StrongMessageChannel<M>: MessageChannel<M> {
 
     /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn StrongMessageChannel<M, Return = Self::Return>>;
-
-    /// Use this message channel as [a futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
-    /// and asynchronously send messages through it.
-    fn sink(&self) -> Box<dyn StrongMessageSink<M>>;
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
@@ -185,10 +176,6 @@ pub trait WeakMessageChannel<M>: MessageChannel<M> {
 
     /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn WeakMessageChannel<M, Return = Self::Return>>;
-
-    /// Use this message channel as [a futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html)
-    /// and asynchronously send messages through it.
-    fn sink(&self) -> Box<dyn WeakMessageSink<M>>;
 }
 
 impl<A, R, M, Rc: RefCounter> MessageChannel<M> for Address<A, Rc>
@@ -218,8 +205,8 @@ where
         if self.is_connected() {
             let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
             let sending = self
-                .sender
-                .clone()
+                .sink
+                .sender()
                 .into_send_async(AddressMessage::Message(Box::new(envelope)));
 
             #[allow(clippy::async_yields_async)] // We only want to await the sending.
@@ -243,13 +230,6 @@ where
 
     fn clone_channel(&self) -> Box<dyn MessageChannel<M, Return = Self::Return>> {
         Box::new(self.clone())
-    }
-
-    fn sink(&self) -> Box<dyn MessageSink<M>> {
-        Box::new(AddressSink {
-            sink: self.sender.clone().into_sink(),
-            ref_counter: self.ref_counter.clone(),
-        })
     }
 
     fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
@@ -285,13 +265,6 @@ where
     fn clone_channel(&self) -> Box<dyn StrongMessageChannel<M, Return = Self::Return>> {
         Box::new(self.clone())
     }
-
-    fn sink(&self) -> Box<dyn StrongMessageSink<M>> {
-        Box::new(AddressSink {
-            sink: self.sender.clone().into_sink(),
-            ref_counter: self.ref_counter.clone(),
-        })
-    }
 }
 
 impl<A, M> WeakMessageChannel<M> for WeakAddress<A>
@@ -313,12 +286,5 @@ where
 
     fn clone_channel(&self) -> Box<dyn WeakMessageChannel<M, Return = Self::Return>> {
         Box::new(self.clone())
-    }
-
-    fn sink(&self) -> Box<dyn WeakMessageSink<M>> {
-        Box::new(AddressSink {
-            sink: self.sender.clone().into_sink(),
-            ref_counter: self.ref_counter.clone(),
-        })
     }
 }
