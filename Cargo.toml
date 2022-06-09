@@ -50,7 +50,6 @@ waker-fn = "1.1"
 criterion = { version = "0.3", features = ["async_tokio"] }
 tokio = { version = "1.0", features = ["full"] }
 async-std = { version = "1.0", features = ["attributes"] }
-async-global-executor = "<2.0.4" # MSRV of 1.54 necessitates this
 
 [features]
 default = ["timing"]
