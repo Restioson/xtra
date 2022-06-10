@@ -214,7 +214,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
 
 impl<A, M, Rc> Sink<M> for Address<A, Rc>
 where
-    A: Handler<M>,
+    A: Handler<M, Return = ()>,
     M: Send + 'static,
     Rc: RefCounter,
 {
