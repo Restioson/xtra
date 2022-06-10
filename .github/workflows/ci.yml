@@ -12,7 +12,7 @@ jobs:
         toolchain: [
           stable,
           beta,
-          1.54.0 # MSRV
+          1.56.0 # MSRV
         ]
         args: [
           --all-features,
@@ -25,6 +25,11 @@ jobs:
       - uses: actions-rs/toolchain@v1.0.7
         with:
           profile: minimal
+          toolchain: nightly
+
+      - uses: actions-rs/toolchain@v1.0.7
+        with:
+          profile: minimal
           toolchain: ${{ matrix.toolchain }}
           override: true
           components: rustfmt, clippy
@@ -32,6 +37,8 @@ jobs:
       - uses: Swatinem/rust-cache@v1
         with:
           key: ${{ matrix.args }}
+
+      - run: cargo +nightly update -Z minimal-versions
 
       - run: cargo fmt -- --check
 
