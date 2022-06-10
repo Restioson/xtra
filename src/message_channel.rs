@@ -208,6 +208,7 @@ where
             let sending = self
                 .sink
                 .sender()
+                .clone()
                 .into_send_async(AddressMessage::Message(Box::new(envelope)));
 
             #[allow(clippy::async_yields_async)] // We only want to await the sending.

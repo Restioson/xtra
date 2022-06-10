@@ -163,6 +163,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
             let tx = self
                 .sink
                 .sender()
+                .clone()
                 .into_send_async(AddressMessage::Message(Box::new(envelope)));
 
             SendFuture::sending_named(tx, rx)
