@@ -415,7 +415,8 @@ impl<A: Actor> Context<A> {
     ///
     ///         let addr = ctx.address().unwrap();
     ///         let select = ctx.select(self, future::pending::<()>());
-    ///         addr.send(Stop).split_receiver().await;
+    ///         let send = addr.send(Stop).split_receiver();
+    ///         send.await;
     ///
     ///         // Actor is no longer running, so this will return Err, even though the future will
     ///         // usually never complete.
