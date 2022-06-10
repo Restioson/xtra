@@ -51,6 +51,5 @@ async fn main() {
         .unwrap();
 
     let sum = addr.send(GetSum).await.unwrap();
-
-    println!("Sum is {sum}!");
+    println!("Sum is {}!", sum);
 }
