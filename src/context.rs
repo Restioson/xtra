@@ -2,7 +2,6 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::ops::ControlFlow;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use flume::{Receiver, Sender};
@@ -19,7 +18,10 @@ use crate::refcount::{RefCounter, Strong, Weak};
 use crate::{Actor, Address, Handler};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
-/// of a message handler.
+/// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
+/// [`Context::run`] or [`Context::attach`]) exists, **it will prevent the actor's channel from being
+/// closed**, as more actors that could still then be added to the address, so closing early, while
+/// maybe intuitive, would be subtly wrong.
 pub struct Context<A> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
     /// for it to call the `stopped` method on the actor
@@ -36,10 +38,6 @@ pub struct Context<A> {
     broadcast_receiver: barrage::SharedReceiver<BroadcastMessage<A>>,
     /// Shared between all contexts on the same address
     shared_drop_notifier: Arc<DropNotifier>,
-    /// Activates when this context is dropped. Used in [`Context::notify_interval`] and [`Context::notify_after`]
-    /// to shutdown the tasks as soon as the context stops.
-    #[cfg_attr(not(feature = "timing"), allow(dead_code))]
-    drop_notifier: DropNotifier,
 }
 
 impl<A: Actor> Context<A> {
@@ -78,7 +76,7 @@ impl<A: Actor> Context<A> {
 
         let shared_drop_notifier = Arc::new(DropNotifier::new());
 
-        let strong = Strong::new(AtomicBool::new(true), shared_drop_notifier.subscribe());
+        let strong = Strong::new(shared_drop_notifier.subscribe());
         let weak = strong.downgrade();
 
         let addr = Address {
@@ -95,7 +93,6 @@ impl<A: Actor> Context<A> {
             receiver,
             broadcast_receiver: broadcast_rx.into_shared(),
             shared_drop_notifier,
-            drop_notifier: DropNotifier::new(),
         };
         (addr, context)
     }
@@ -116,7 +113,6 @@ impl<A: Actor> Context<A> {
             receiver: self.receiver.clone(),
             broadcast_receiver,
             shared_drop_notifier: self.shared_drop_notifier.clone(),
-            drop_notifier: DropNotifier::new(),
         };
         ctx.run(actor)
     }
@@ -127,12 +123,9 @@ impl<A: Actor> Context<A> {
         self.running = false;
     }
 
-    /// Stop all actors on this address. This is similar to [`Context::stop_self`]
+    /// Stop all actors on this address. This is similar to [`Context::stop_self`] but it will stop
+    /// all actors on this address.
     pub fn stop_all(&mut self) {
-        if let Some(strong) = self.ref_counter.upgrade() {
-            strong.mark_disconnected();
-        }
-
         assert!(self.broadcaster.send(BroadcastMessage::Shutdown).is_ok());
         self.receiver.drain();
     }
@@ -243,10 +236,10 @@ impl<A: Actor> Context<A> {
         self.handle_self_notifications(actor).await;
 
         if !self.running {
-            return ControlFlow::Break(());
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
         }
-
-        ControlFlow::Continue(())
     }
 
     /// This is a combinator to avoid holding !Sync references across await points
@@ -379,7 +372,7 @@ impl<A: Actor> Context<A> {
         A: Handler<M>,
     {
         let addr = self.address()?.downgrade();
-        let mut stopped = self.drop_notifier.subscribe();
+        let mut stopped = self.shared_drop_notifier.subscribe();
 
         let fut = async move {
             loop {
@@ -417,7 +410,7 @@ impl<A: Actor> Context<A> {
         A: Handler<M>,
     {
         let addr = self.address()?.downgrade();
-        let mut stopped = self.drop_notifier.subscribe();
+        let mut stopped = self.shared_drop_notifier.subscribe();
 
         let fut = async move {
             let delay = Delay::new(duration);

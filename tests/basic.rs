@@ -84,31 +84,47 @@ async fn test_stop_and_drop() {
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
     let handle = tokio::spawn(fut);
+    let weak = addr.downgrade();
+    let join = weak.join();
     drop(addr);
     handle.await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert!(!weak.is_connected());
+    assert!(join.now_or_never().is_some());
 
     // Send a stop message
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
     let handle = tokio::spawn(fut);
+    let weak = addr.downgrade();
+    let join = weak.join();
     let _ = addr.send(Stop).split_receiver().await;
     handle.await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert!(!weak.is_connected());
+    assert!(join.now_or_never().is_some());
 
     // Drop address before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
+    let weak = addr.downgrade();
+    let join = weak.join();
     drop(addr);
     tokio::spawn(fut).await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert!(!weak.is_connected());
+    assert!(join.now_or_never().is_some());
 
     // Send a stop message before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
+    let weak = addr.downgrade();
+    let join = weak.join();
     let _ = addr.send(Stop).split_receiver().await;
     tokio::spawn(fut).await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert!(!weak.is_connected());
+    assert!(join.now_or_never().is_some());
 }
 
 struct StreamCancelMessage;
@@ -151,14 +167,40 @@ async fn test_stream_cancel_join() {
 
 #[tokio::test]
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
+    let (address, ctx) = Context::new(None);
+    tokio::spawn(ctx.run(ActorStopSelf));
+    address.send(Stop).await.unwrap();
+    assert!(address.join().timeout(Duration::from_secs(2)).await.is_some());
+}
+
+#[tokio::test]
+async fn two_actors_on_address_with_stop_self() {
     let (address, mut ctx) = Context::new(None);
     tokio::spawn(ctx.attach(ActorStopSelf));
-    tokio::spawn(ctx.attach(ActorStopSelf));
+    tokio::spawn(ctx.run(ActorStopSelf));
     address.send(Stop).await.unwrap();
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     assert!(address.is_connected());
+    address.send(Stop).await.unwrap();
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
     assert!(!address.is_connected());
+}
+
+#[tokio::test]
+async fn two_actors_on_address_with_stop_self_context_alive() {
+    let (address, mut ctx) = Context::new(None);
+    tokio::spawn(ctx.attach(ActorStopSelf));
+    tokio::spawn(ctx.attach(ActorStopSelf)); // Context not dropped here
+    address.send(Stop).await.unwrap();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    assert!(address.is_connected());
+    address.send(Stop).await.unwrap();
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(address.is_connected());
 }
 
 struct ActorStopSelf;
@@ -167,7 +209,9 @@ struct ActorStopSelf;
 impl Actor for ActorStopSelf {
     type Stop = ();
 
-    async fn stopped(self) -> Self::Stop {}
+    async fn stopped(self) -> Self::Stop {
+        println!("Stopped");
+    }
 }
 
 #[async_trait]
@@ -276,7 +320,7 @@ fn address_debug() {
     assert_eq!(
         format!("{:?}", addr1),
         "Address<basic::Greeter> { \
-        ref_counter: Strong { connected: true, strong_count: 2, weak_count: 2 } }"
+        connected: true, ref_counter: Strong { strong_count: 2, weak_count: 2 } }"
     );
 
     assert_eq!(format!("{:?}", addr1), format!("{:?}", addr2));
@@ -284,6 +328,6 @@ fn address_debug() {
     assert_eq!(
         format!("{:?}", weak_addr),
         "Address<basic::Greeter> { \
-        ref_counter: Weak { connected: true, strong_count: 2, weak_count: 2 } }"
+        connected: true, ref_counter: Weak { strong_count: 2, weak_count: 2 } }"
     );
 }

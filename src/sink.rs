@@ -39,7 +39,7 @@ pub type WeakAddressSink<A> = AddressSink<A, Weak>;
 impl<A, Rc: RefCounter> AddressSink<A, Rc> {
     /// Returns whether the actor referred to by this address sink is running and accepting messages.
     pub fn is_connected(&self) -> bool {
-        self.ref_counter.is_connected()
+        !self.sink.is_disconnected() && self.ref_counter.is_connected()
     }
 }
 
@@ -164,7 +164,7 @@ where
     M: Send + 'static,
 {
     fn is_connected(&self) -> bool {
-        self.ref_counter.is_connected()
+        self.is_connected()
     }
 
     fn len(&self) -> usize {
