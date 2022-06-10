@@ -98,7 +98,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///     type Return = ();
     ///
     ///     async fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
-    ///         ctx.stop();
+    ///         ctx.stop_all();
     ///     }
     /// }
     ///

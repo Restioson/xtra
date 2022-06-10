@@ -1,9 +1,8 @@
 use futures_util::FutureExt;
+use smol_timeout::TimeoutExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-
-use smol_timeout::TimeoutExt;
 
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
@@ -63,11 +62,6 @@ impl Drop for DropTester {
 impl Actor for DropTester {
     type Stop = ();
 
-    async fn stopping(&mut self, _ctx: &mut Context<Self>) -> KeepRunning {
-        self.0.fetch_add(2, Ordering::SeqCst);
-        KeepRunning::StopAll
-    }
-
     async fn stopped(self) {
         self.0.fetch_add(5, Ordering::SeqCst);
     }
@@ -80,7 +74,7 @@ impl Handler<Stop> for DropTester {
     type Return = ();
 
     async fn handle(&mut self, _: Stop, ctx: &mut Context<Self>) {
-        ctx.stop();
+        ctx.stop_all();
     }
 }
 
@@ -89,32 +83,32 @@ async fn test_stop_and_drop() {
     // Drop the address
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
-    let handle = smol::spawn(fut);
+    let handle = tokio::spawn(fut);
     drop(addr);
-    handle.await;
+    handle.await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
 
     // Send a stop message
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
-    let handle = smol::spawn(fut);
+    let handle = tokio::spawn(fut);
     let _ = addr.send(Stop).split_receiver().await;
-    handle.await;
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 2 + 5);
+    handle.await.unwrap();
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
 
     // Drop address before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
     drop(addr);
-    smol::spawn(fut).await;
+    tokio::spawn(fut).await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
 
     // Send a stop message before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
     let _ = addr.send(Stop).split_receiver().await;
-    smol::spawn(fut).await;
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 2 + 5);
+    tokio::spawn(fut).await.unwrap();
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
 }
 
 struct StreamCancelMessage;
@@ -145,7 +139,7 @@ async fn test_stream_cancel_join() {
     let jh = addr.join();
     let addr2 = addr.clone().downgrade();
     // attach a stream that blocks forever
-    let handle = smol::spawn(async move { addr2.attach_stream(stream).await });
+    let handle = tokio::spawn(async move { addr2.attach_stream(stream).await });
     drop(addr); // stop the actor
 
     // Attach stream should return immediately
@@ -157,33 +151,31 @@ async fn test_stream_cancel_join() {
 
 #[tokio::test]
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
-    let address = ActorReturningStopSelf.create(None).spawn_global();
-
+    let (address, mut ctx) = Context::new(None);
+    tokio::spawn(ctx.attach(ActorStopSelf));
+    tokio::spawn(ctx.attach(ActorStopSelf));
     address.send(Stop).await.unwrap();
-    smol::Timer::after(Duration::from_secs(1)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
+    assert!(address.is_connected());
     assert!(!address.is_connected());
 }
 
-struct ActorReturningStopSelf;
+struct ActorStopSelf;
 
 #[async_trait]
-impl Actor for ActorReturningStopSelf {
+impl Actor for ActorStopSelf {
     type Stop = ();
-
-    async fn stopping(&mut self, _: &mut Context<Self>) -> KeepRunning {
-        KeepRunning::StopSelf
-    }
 
     async fn stopped(self) -> Self::Stop {}
 }
 
 #[async_trait]
-impl Handler<Stop> for ActorReturningStopSelf {
+impl Handler<Stop> for ActorStopSelf {
     type Return = ();
 
     async fn handle(&mut self, _: Stop, ctx: &mut Context<Self>) {
-        ctx.stop();
+        ctx.stop_self();
     }
 }
 
