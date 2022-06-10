@@ -291,9 +291,7 @@ impl<A: Actor> Context<A> {
     where
         F: Future<Output = R>,
     {
-        if !self.handle_self_notifications(actor).await {
-            self.stop();
-        }
+        self.handle_self_notifications(actor).await;
 
         futures_util::pin_mut!(fut);
 
