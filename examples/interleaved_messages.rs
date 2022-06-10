@@ -22,9 +22,7 @@ impl Handler<Hello> for ActorA {
 
     async fn handle(&mut self, _: Hello, ctx: &mut Context<Self>) {
         println!("ActorA: Hello");
-        ctx.join(self, self.actor_b.send(Hello))
-            .await
-            .unwrap();
+        ctx.join(self, self.actor_b.send(Hello)).await.unwrap();
     }
 }
 

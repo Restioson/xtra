@@ -433,7 +433,8 @@ impl<A: Actor> Context<A> {
     ///
     /// ```
     pub async fn select<F, R>(&mut self, actor: &mut A, mut fut: F) -> Result<R, F>
-        where F: Future<Output = R> + Unpin
+    where
+        F: Future<Output = R> + Unpin,
     {
         if !self.handle_self_notifications(actor).await {
             self.stop();
