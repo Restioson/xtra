@@ -21,7 +21,6 @@ mod receiver;
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount;
 mod send_future;
-pub mod sink;
 /// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
 pub mod spawn;
 #[cfg(feature = "with-tracing-0_1")]
@@ -211,7 +210,6 @@ impl From<()> for KeepRunning {
 
 mod private {
     use crate::refcount::{Either, RefCounter, Strong, Weak};
-    use crate::sink::AddressSink;
     use crate::{Actor, Address};
 
     pub trait Sealed {}
@@ -220,5 +218,4 @@ mod private {
     impl Sealed for Weak {}
     impl Sealed for Either {}
     impl<A: Actor, Rc: RefCounter> Sealed for Address<A, Rc> {}
-    impl<A: Actor, Rc: RefCounter> Sealed for AddressSink<A, Rc> {}
 }
