@@ -66,7 +66,7 @@ impl<A: Actor> Context<A> {
     /// #     }
     /// # }
     /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
-    /// # async {
+    /// # async { // This does not actually run because there is nothing to assert
     /// let (addr, mut ctx) = Context::new(Some(32));
     /// for n in 0..3 {
     ///     smol::spawn(ctx.attach(MyActor::new(n))).detach();
@@ -415,7 +415,8 @@ impl<A: Actor> Context<A> {
     ///
     ///         let addr = ctx.address().unwrap();
     ///         let select = ctx.select(self, future::pending::<()>());
-    ///         addr.send(Stop).split_receiver().await;
+    ///         let send = addr.send(Stop).split_receiver();
+    ///         send.await;
     ///
     ///         // Actor is no longer running, so this will return Err, even though the future will
     ///         // usually never complete.
@@ -423,13 +424,12 @@ impl<A: Actor> Context<A> {
     ///     }
     /// }
     ///
-    /// // Will print "Started!", "Goodbye!", "Decided not to keep running", and then "Finally stopping."
     /// # #[cfg(feature = "with-smol-1")]
-    /// smol::block_on(async {
-    ///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
-    ///     assert!(addr.is_connected());
-    ///     assert_eq!(addr.send(Selecting).await, Ok(true)); // Assert that the select did end early
-    /// })
+    /// # smol::block_on(async {
+    /// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
+    /// assert!(addr.is_connected());
+    /// assert_eq!(addr.send(Selecting).await, Ok(true)); // Assert that the select did end early
+    /// # })
     ///
     /// ```
     pub async fn select<F, R>(&mut self, actor: &mut A, mut fut: F) -> Result<R, F>
