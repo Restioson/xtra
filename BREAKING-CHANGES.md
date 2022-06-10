@@ -1,13 +1,15 @@
 # Breaking Changes by Version
 
-## Unreleased
-
-- `Context::notify_interval` and `Context::notify_after` are now subject to back-pressure.
-  These aren't API breaking but a semantic changes.
-
 ## 0.6.0
 
 - Sealed `RefCounter`, `MessageChannel`, and `MessageSink` traits
+- `Context::notify_interval` and `Context::notify_after` are now subject to back-pressure, in case the address mailbox
+  is full. These aren't API breaking but a semantic changes.
+- `stopping` has been removed in favour of `stop_self` and `stop_all`. If logic to determine if the actor should stop
+  must be executed, it should be done rather at the point of calling `stop_{self,all}`.
+- Previously, `stop_all` would immediately disconnect the address. However, `stop_self` done on every actor would actually
+  not do this in one case - if there were a free-floating (not executing an actor event loop) Context. This change brings
+  `stop_all` in line with `stop_self`.
 
 ## 0.5.0
 

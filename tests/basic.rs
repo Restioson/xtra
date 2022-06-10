@@ -170,7 +170,11 @@ async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
     let (address, ctx) = Context::new(None);
     tokio::spawn(ctx.run(ActorStopSelf));
     address.send(Stop).await.unwrap();
-    assert!(address.join().timeout(Duration::from_secs(2)).await.is_some());
+    assert!(address
+        .join()
+        .timeout(Duration::from_secs(2))
+        .await
+        .is_some());
 }
 
 #[tokio::test]
