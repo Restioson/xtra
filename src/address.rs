@@ -208,14 +208,6 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         }
     }
 
-    /// Converts this address into a [futures `Sink`](https://docs.rs/futures/0.3/futures/io/struct.Sink.html).
-    pub fn into_sink(self) -> AddressSink<A, Rc> {
-        AddressSink {
-            sink: self.sender.clone().into_sink(),
-            ref_counter: self.ref_counter.clone(),
-        }
-    }
-
     /// Waits until this address becomes disconnected. Note that if this is called on a strong
     /// address, it will only ever trigger if the actor calls [`Context::stop`], as the address
     /// would prevent the actor being dropped due to too few strong addresses.
