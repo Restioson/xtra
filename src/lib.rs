@@ -14,6 +14,7 @@ pub mod address;
 mod context;
 mod drop_notice;
 mod envelope;
+mod inbox;
 mod manager;
 pub mod message_channel;
 mod receiver;

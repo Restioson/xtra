@@ -7,16 +7,13 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{cmp::Ordering, error::Error, hash::Hash};
 
-use flume::r#async::SendSink;
 use futures_core::Stream;
-use futures_sink::Sink;
-use futures_util::{future, StreamExt};
+use futures_util::{future, FutureExt, StreamExt};
 
-use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
-use crate::manager::AddressMessage;
+use crate::drop_notice::DropNotice;
+use crate::envelope::ReturningEnvelope;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
-use crate::send_future::{NameableSending, ResolveToHandlerReturn, SendFuture};
-use crate::{Handler, KeepRunning};
+use crate::{Handler, inbox, KeepRunning};
 
 /// The actor is no longer running and disconnected from the sending address. For why this could
 /// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and
@@ -42,7 +39,7 @@ impl Error for Disconnected {}
 /// [`Actor::create`](../trait.Actor.html#method.create) or
 /// [`Context::run`](../struct.Context.html#method.run) methods, or by cloning another `Address`.
 pub struct Address<A: 'static, Rc: RefCounter = Strong> {
-    pub(crate) sink: SendSink<'static, AddressMessage<A>>,
+    pub(crate) sender: inbox::Sender<A>,
     pub(crate) ref_counter: Rc,
 }
 
@@ -67,7 +64,7 @@ impl<A> Address<A, Strong> {
     /// addresses exist.
     pub fn downgrade(&self) -> WeakAddress<A> {
         WeakAddress {
-            sink: self.sink.clone(),
+            sender: self.sender.clone(),
             ref_counter: self.ref_counter.downgrade(),
         }
     }
@@ -78,7 +75,7 @@ impl<A> Address<A, Either> {
     /// Converts this address into a weak address.
     pub fn downgrade(&self) -> WeakAddress<A> {
         WeakAddress {
-            sink: self.sink.clone(),
+            sender: self.sender.clone(),
             ref_counter: self.ref_counter.clone().into_weak(),
         }
     }
@@ -114,17 +111,19 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// })
     /// ```
     pub fn is_connected(&self) -> bool {
-        !self.sink.is_disconnected()
+        self.sender.is_connected()
     }
 
     /// Returns the number of messages in the actor's mailbox.
     pub fn len(&self) -> usize {
-        self.sink.len()
+        todo!()
+        //self.sink.len()
     }
 
     /// The total capacity of the actor's mailbox.
     pub fn capacity(&self) -> Option<usize> {
-        self.sink.capacity()
+        todo!()
+        //self.sink.capacity()
     }
 
     /// Returns whether the actor's mailbox is empty.
@@ -135,43 +134,54 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// Convert this address into a generic address which can be weak or strong.
     pub fn as_either(&self) -> Address<A, Either> {
         Address {
-            sink: self.sink.clone(),
+            sender: self.sender.clone(),
             ref_counter: self.ref_counter.clone().into_either(),
         }
     }
 
-    /// Send a message to the actor.
-    ///
-    /// The actor must implement [`Handler<Message>`] for this to work.
-    ///
-    /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
-    /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
-    #[allow(clippy::type_complexity)]
-    pub fn send<M>(
-        &self,
-        message: M,
-    ) -> SendFuture<
-        <A as Handler<M>>::Return,
-        NameableSending<A, <A as Handler<M>>::Return>,
-        ResolveToHandlerReturn,
-    >
-    where
-        M: Send + 'static,
-        A: Handler<M>,
+    /// TODO
+    pub async fn send<M>(&self, message: M) -> Result<<A as Handler<M>>::Return, Disconnected>
+        where A: Handler<M>,
+              M: Send + 'static,
     {
         if self.is_connected() {
             let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-            let tx = self
-                .sink
-                .sender()
-                .clone()
-                .into_send_async(AddressMessage::Message(Box::new(envelope)));
-
-            SendFuture::sending_named(tx, rx)
+            self.sender.send_mpsc(Box::new(envelope), 1).map_err(|_| Disconnected)?;
+            rx.await.map_err(|_| Disconnected)
         } else {
-            SendFuture::disconnected()
+            Err(Disconnected)
         }
     }
+
+    // todo
+    // /// Send a message to the actor.
+    // ///
+    // /// The actor must implement [`Handler<Message>`] for this to work.
+    // ///
+    // /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
+    // /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
+    // #[allow(clippy::type_complexity)]
+    // pub fn send<M>(
+    //     &self,
+    //     message: M,
+    // ) -> SendFuture<
+    //     <A as Handler<M>>::Return,
+    //     NameableSending<A, <A as Handler<M>>::Return>,
+    //     ResolveToHandlerReturn,
+    // >
+    // where
+    //     M: Send + 'static,
+    //     A: Handler<M>,
+    // {
+    //     if self.is_connected() {
+    //         let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
+    //         let tx = self.sender.into_send_async(AddressMessage::Message(Box::new(envelope)));
+    //
+    //         SendFuture::sending_named(tx, rx)
+    //     } else {
+    //         SendFuture::disconnected()
+    //     }
+    // }
 
     /// Attaches a stream to this actor such that all messages produced by it are forwarded to the
     /// actor. This could, for instance, be used to forward messages from a socket to the actor
@@ -213,45 +223,11 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     }
 }
 
-impl<A, M, Rc> Sink<M> for Address<A, Rc>
-where
-    A: Handler<M, Return = ()>,
-    M: Send + 'static,
-    Rc: RefCounter,
-{
-    type Error = Disconnected;
-
-    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.sink)
-            .poll_ready(cx)
-            .map_err(|_| Disconnected)
-    }
-
-    fn start_send(mut self: Pin<&mut Self>, item: M) -> Result<(), Self::Error> {
-        let item = AddressMessage::Message(Box::new(NonReturningEnvelope::new(item)));
-        Pin::new(&mut self.sink)
-            .start_send(item)
-            .map_err(|_| Disconnected)
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.sink)
-            .poll_flush(cx)
-            .map_err(|_| Disconnected)
-    }
-
-    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.sink)
-            .poll_close(cx)
-            .map_err(|_| Disconnected)
-    }
-}
-
 // Required because #[derive] adds an A: Clone bound
 impl<A, Rc: RefCounter> Clone for Address<A, Rc> {
     fn clone(&self) -> Self {
         Address {
-            sink: self.sink.clone(),
+            sender: self.sender.clone(),
             ref_counter: self.ref_counter.clone(),
         }
     }
@@ -263,7 +239,7 @@ impl<A, Rc: RefCounter> Drop for Address<A, Rc> {
         // We should notify the ActorManager that there are no more strong Addresses and the actor
         // should be stopped.
         if self.ref_counter.is_last_strong() {
-            let _ = self.sink.sender().send(AddressMessage::LastAddress);
+            self.sender.shutdown();
         }
     }
 }

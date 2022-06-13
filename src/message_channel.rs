@@ -8,8 +8,6 @@ use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
 
 use crate::address::{Address, WeakAddress};
-use crate::envelope::ReturningEnvelope;
-use crate::manager::AddressMessage;
 use crate::private::Sealed;
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Shared, Strong};
@@ -203,24 +201,25 @@ where
         &self,
         message: M,
     ) -> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
-        if self.is_connected() {
-            let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
-            let sending = self
-                .sink
-                .sender()
-                .clone()
-                .into_send_async(AddressMessage::Message(Box::new(envelope)));
-
-            #[allow(clippy::async_yields_async)] // We only want to await the sending.
-            SendFuture::sending_boxed(async move {
-                match sending.await {
-                    Ok(()) => Receiver::new(rx),
-                    Err(_) => Receiver::disconnected(),
-                }
-            })
-        } else {
-            SendFuture::disconnected()
-        }
+        todo!()
+        // if self.is_connected() {
+        //     let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
+        //     let sending = self
+        //
+        //         .sender()
+        //         .clone()
+        //         .into_send_async(AddressMessage::Message(Box::new(envelope)));
+        //
+        //     #[allow(clippy::async_yields_async)] // We only want to await the sending.
+        //     SendFuture::sending_boxed(async move {
+        //         match sending.await {
+        //             Ok(()) => Receiver::new(rx),
+        //             Err(_) => Receiver::disconnected(),
+        //         }
+        //     })
+        // } else {
+        //     SendFuture::disconnected()
+        // }
     }
 
     fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
