@@ -1,7 +1,7 @@
-use xtra::prelude::*;
-use xtra::spawn::Tokio;
 use futures_util::future;
+use xtra::prelude::*;
 use xtra::scoped_task::ActorScopedExt;
+use xtra::spawn::Tokio;
 
 struct MyActor;
 

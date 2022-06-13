@@ -20,15 +20,15 @@ mod receiver;
 /// This module contains types representing the strength of an address's reference counting, which
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount;
+/// This module contains a way to scope a future to the lifetime of an actor, stopping it before it
+/// completes if the actor it is associated with stops too.
+pub mod scoped_task;
 mod send_future;
 /// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
 pub mod spawn;
 #[cfg(feature = "with-tracing-0_1")]
 /// Integration with [`tracing`](https://tracing.rs).
 pub mod tracing;
-/// This module contains a way to scope a future to the lifetime of an actor, stopping it before it
-/// completes if the actor it is associated with stops too.
-pub mod scoped_task;
 
 /// Commonly used types from xtra
 pub mod prelude {

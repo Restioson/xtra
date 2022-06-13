@@ -1,10 +1,10 @@
+use crate::drop_notice::DropNotice;
+use crate::refcount::RefCounter;
+use crate::Address;
+use futures_util::FutureExt;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use futures_util::FutureExt;
-use crate::Address;
-use crate::drop_notice::DropNotice;
-use crate::refcount::RefCounter;
 
 pin_project_lite::pin_project! {
     /// A task that is scoped to the lifecycle of an actor. This means that when the associated
@@ -21,7 +21,8 @@ pin_project_lite::pin_project! {
 }
 
 impl<F> Future for ScopedTask<F>
-    where F: Future
+where
+    F: Future,
 {
     type Output = Option<F::Output>;
 
@@ -33,7 +34,7 @@ impl<F> Future for ScopedTask<F>
             Poll::Pending => match this.drop_notice.poll_unpin(cx) {
                 Poll::Ready(()) => Poll::Ready(None),
                 Poll::Pending => Poll::Pending,
-            }
+            },
         }
     }
 }
@@ -43,14 +44,17 @@ impl<F> Future for ScopedTask<F>
 pub trait ActorScopedExt {
     /// Convert this future to a [`ScopedTask`].
     fn scoped<A, Rc>(self, address: &Address<A, Rc>) -> ScopedTask<Self>
-        where Rc: RefCounter;
+    where
+        Rc: RefCounter;
 }
 
 impl<F> ActorScopedExt for F
-    where F: Future
+where
+    F: Future,
 {
     fn scoped<A, Rc>(self, address: &Address<A, Rc>) -> ScopedTask<Self>
-        where Rc: RefCounter
+    where
+        Rc: RefCounter,
     {
         ScopedTask {
             drop_notice: address.ref_counter.disconnect_notice(),
