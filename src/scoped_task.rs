@@ -1,6 +1,5 @@
-use crate::drop_notice::DropNotice;
+use crate::address::{ActorJoinHandle, Address};
 use crate::refcount::RefCounter;
-use crate::Address;
 use futures_util::FutureExt;
 use std::future::Future;
 use std::pin::Pin;
@@ -14,7 +13,7 @@ pin_project_lite::pin_project! {
     /// is stopped before it could be polled to completion.
     #[must_use = "Futures do nothing unless polled"]
     pub struct ScopedTask<F: ?Sized> {
-        drop_notice: DropNotice,
+        join_handle: ActorJoinHandle,
         #[pin]
         fut: F,
     }
@@ -31,7 +30,7 @@ where
 
         match this.fut.poll(cx) {
             Poll::Ready(v) => Poll::Ready(Some(v)),
-            Poll::Pending => match this.drop_notice.poll_unpin(cx) {
+            Poll::Pending => match this.join_handle.poll_unpin(cx) {
                 Poll::Ready(()) => Poll::Ready(None),
                 Poll::Pending => Poll::Pending,
             },
@@ -57,7 +56,7 @@ where
         Rc: RefCounter,
     {
         ScopedTask {
-            drop_notice: address.ref_counter.disconnect_notice(),
+            join_handle: address.join(),
             fut: self,
         }
     }
