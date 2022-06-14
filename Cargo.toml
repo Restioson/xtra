@@ -22,6 +22,7 @@ futures-sink = { version = "0.3.5", default-features = false }
 futures-util = { version = "0.3.5", default-features = false, features = ["sink", "alloc"] }
 pollster = "0.2"
 event-listener = "2.4.0"
+spin = { version = "0.9.3", default-features = false, features = ["mutex"] }
 
 # Feature `timing`
 futures-timer = { version = "3.0", optional = true, default-features = false }
@@ -60,6 +61,9 @@ with-smol-1 = ["smol"]
 with-tokio-1 = ["tokio"]
 with-wasm_bindgen-0_2 = ["wasm-bindgen", "wasm-bindgen-futures"]
 with-tracing-0_1 = ["tracing"]
+
+[profile.release]
+debug = true
 
 [[example]]
 name = "basic_tokio"

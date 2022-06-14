@@ -11,7 +11,7 @@ use futures_core::Stream;
 use futures_util::{future, FutureExt, StreamExt};
 
 use crate::drop_notice::DropNotice;
-use crate::envelope::ReturningEnvelope;
+use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::{Handler, inbox, KeepRunning};
 
@@ -116,13 +116,13 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
 
     /// Returns the number of messages in the actor's mailbox.
     pub fn len(&self) -> usize {
-        todo!()
+        todo!("Len") // TODO(bounded)
         //self.sink.len()
     }
 
     /// The total capacity of the actor's mailbox.
     pub fn capacity(&self) -> Option<usize> {
-        todo!()
+        todo!("Bounded") // TODO(bounded)
         //self.sink.capacity()
     }
 
@@ -139,21 +139,25 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         }
     }
 
-    /// TODO
+    /// TODO(bounded)
+    pub fn do_send<M>(&self, message: M) -> Result<(), Disconnected>
+        where A: Handler<M>,
+              M: Send + 'static
+    {
+        let (envelope) = NonReturningEnvelope::<A, M>::new(message);
+        self.sender.send(Box::new(envelope), 1).map_err(|_| Disconnected)
+    }
+
+    /// TODO(bounded)
     pub async fn send<M>(&self, message: M) -> Result<<A as Handler<M>>::Return, Disconnected>
         where A: Handler<M>,
               M: Send + 'static,
     {
-        if self.is_connected() {
-            let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-            self.sender.send_mpsc(Box::new(envelope), 1).map_err(|_| Disconnected)?;
-            rx.await.map_err(|_| Disconnected)
-        } else {
-            Err(Disconnected)
-        }
+        let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
+        self.sender.send(Box::new(envelope), 0).map_err(|_| Disconnected)?;
+        rx.await.map_err(|_| Disconnected)
     }
 
-    // todo
     // /// Send a message to the actor.
     // ///
     // /// The actor must implement [`Handler<Message>`] for this to work.

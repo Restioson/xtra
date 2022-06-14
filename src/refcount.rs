@@ -8,7 +8,6 @@ use std::sync::{Arc, RwLock, Weak as ArcWeak};
 /// dropped as long as they live. Read the docs of [`Address`](../address/struct.Address.html) to find
 /// out more.
 #[derive(Clone)]
-// TODO AtomicBool for disconnected when forcibly stopped ?
 // The RwLock is there to prevent exposing a temporarily inconsistent strong_count caused by brief
 // Arc::upgrade calls in some `Weak` functions below. If exposed, it could lead to a race condition
 // that can prevent an Actor from being stopped.

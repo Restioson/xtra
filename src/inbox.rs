@@ -1,18 +1,22 @@
 //! Latency is prioritised over most accurate prioritisation. Specifically, at most one low priority
 //! message may be handled before piled-up higher priority messages will be handled.
-// TODO: bounding
+// TODO(bounded)
+
+mod heap;
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope};
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::VecDeque;
 use std::future::Future;
+use std::mem;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
+use tokio::time::Instant;
+use heap::BinaryHeap;
 
-type Spinlock<T> = Mutex<T>;
+type Spinlock<T> = spin::Mutex<T>;
 type MpmcMessage<A> = Box<dyn MessageEnvelope<Actor = A>>;
-// TODO make arc
 type BroadcastMessage<A> = Arc<dyn BroadcastEnvelope<Actor = A>>;
 type BroadcastQueue<A> = Arc<Spinlock<BinaryHeap<BroadcastMessageWrapper<A>>>>;
 
@@ -67,54 +71,66 @@ impl<A> Clone for Sender<A> {
 }
 
 impl<A> Sender<A> {
-    pub(crate) fn send_mpsc(&self, message: MpmcMessage<A>, priority: u32) -> Result<(), Disconnected> {
-        let mut inner = self.0.lock().unwrap();
-
-        if inner.shutdown {
-            return Err(Disconnected);
-        }
-
-        match inner.waiting_actors.pop_front() {
-            Some(actor) => actor
-                .lock()
-                .unwrap()
-                .fulfill(WakeReason::MpmcMessage(message)),
-            None => {
-                let msg = MpmcMessageWithPriority::new(Priority::Valued(priority), message);
-                inner.mpmc_queue.push(msg);
+    pub(crate) fn send(&self, message: MpmcMessage<A>, priority: u32) -> Result<(), Disconnected> {
+        // let t1 = Instant::now();
+        let waiting = {
+            let mut inner = self.0.lock().unwrap();
+            // let t = Instant::now();
+            if inner.shutdown {
+                return Err(Disconnected);
             }
-        }
+
+            let w = match inner.waiting_actors.pop_front() {
+                Some(actor) => actor,
+                None => {
+                    let msg = MpmcMessageWithPriority::new(Priority::Valued(priority), message);
+                    inner.mpmc_queue.push(msg);
+                    return Ok(())
+                }
+            };
+
+            // eprintln!("section {}ns", t.elapsed().as_nanos());
+            w
+        };
+
+        // eprintln!("total lock {}ns", t1.elapsed().as_nanos());
+
+        waiting.lock().fulfill(WakeReason::MpmcMessage(message));
 
         Ok(())
     }
 
     pub(crate) fn broadcast(&self, message: BroadcastMessage<A>) -> Result<(), Disconnected> {
-        let mut inner = self.0.lock().unwrap();
+        let waiting = {
+            let mut inner = self.0.lock().unwrap();
 
-        if inner.shutdown {
-            return Err(Disconnected);
-        }
+            if inner.shutdown {
+                return Err(Disconnected);
+            }
 
-        for queue in inner.broadcast_queues.iter_mut() {
-            queue.lock().unwrap().push(BroadcastMessageWrapper(message.clone()));
-        }
+            for queue in inner.broadcast_queues.iter_mut() {
+                queue.lock().push(BroadcastMessageWrapper(message.clone()));
+            }
 
-        for actor in inner.waiting_actors.drain(..) {
-            actor
-                .lock()
-                .unwrap()
-                .fulfill(WakeReason::BroadcastMessage);
+            mem::take(&mut inner.waiting_actors)
+        };
+
+        for actor in waiting {
+            actor.lock().fulfill(WakeReason::BroadcastMessage);
         }
 
         Ok(())
     }
 
     pub(crate) fn shutdown(&self) {
-        let mut inner = self.0.lock().unwrap();
-        inner.shutdown = true;
+        let waiting = {
+            let mut inner = self.0.lock().unwrap();
+            inner.shutdown = true;
+            mem::take(&mut inner.waiting_actors)
+        };
 
-        for actor in inner.waiting_actors.drain(..) {
-            actor.lock().unwrap().fulfill(WakeReason::Shutdown);
+        for actor in waiting {
+            actor.lock().fulfill(WakeReason::Shutdown);
         }
     }
 
@@ -123,6 +139,7 @@ impl<A> Sender<A> {
     }
 }
 
+// TODO drop from mailboxes
 pub(crate) struct Receiver<A> {
     inner: Arc<Mutex<Inner<A>>>,
     broadcast_mailbox: BroadcastQueue<A>,
@@ -152,7 +169,7 @@ impl<A> Receiver<A> {
 
     pub(crate) async fn receive(&self) -> ActorMessage<A> {
         let waiting = {
-            let mut broadcast = self.broadcast_mailbox.lock().unwrap();
+            let mut broadcast = self.broadcast_mailbox.lock();
             let broadcast_priority = broadcast.peek().map(|it| it.priority()).unwrap_or_default();
 
             // In case of a shutdown or max priority message, we can skip the critical section on inner
@@ -161,6 +178,7 @@ impl<A> Receiver<A> {
             }
 
             let mut inner = self.inner.lock().unwrap();
+            // let t = Instant::now(); // TODO recv timing
             if inner.shutdown {
                 return ActorMessage::Shutdown;
             }
@@ -169,24 +187,30 @@ impl<A> Receiver<A> {
             let mpsc_priority: Priority = mpsc.peek().map(|it| it.priority()).unwrap_or_default();
 
             match mpsc_priority.cmp(&broadcast_priority) {
-                Ordering::Greater => return ActorMessage::MpmcMessage(mpsc.pop().unwrap().val),
+                Ordering::Greater => {
+                    let m = ActorMessage::MpmcMessage(mpsc.pop().unwrap().val);
+                    drop(inner);
+                    // eprintln!("Recv: {}ns", t.elapsed().as_nanos());
+                    return m;
+                }
                 Ordering::Less => return ActorMessage::BroadcastMessage(broadcast.pop().unwrap().0),
                 Ordering::Equal if mpsc_priority != Priority::Min => return ActorMessage::MpmcMessage(mpsc.pop().unwrap().val),
                 Ordering::Equal => {
-                    let waiting = Arc::new(Mutex::new(WaitingActor::default()));
+                    let waiting = Arc::new(Spinlock::new(WaitingActor::default()));
                     inner.waiting_actors.push_back(waiting.clone());
                     waiting
                 },
             }
         };
 
+
         let waiting = WaitForSend(Some(waiting)).await;
-        let wake_reason = waiting.lock().unwrap().next_message.take();
+        let wake_reason = waiting.lock().next_message.take();
 
         match wake_reason.unwrap() {
             WakeReason::MpmcMessage(msg) => ActorMessage::MpmcMessage(msg),
             WakeReason::BroadcastMessage => {
-                let mut broadcast = self.broadcast_mailbox.lock().unwrap();
+                let mut broadcast = self.broadcast_mailbox.lock();
                 ActorMessage::BroadcastMessage(broadcast.pop().unwrap().0)
             }
             WakeReason::Shutdown => ActorMessage::Shutdown,
@@ -230,7 +254,7 @@ impl<A> MpmcMessageWithPriority<A> {
 
 impl<A> PartialEq for MpmcMessageWithPriority<A> {
     fn eq(&self, other: &Self) -> bool {
-        self.priority == other.priority // TODO
+        self.priority == other.priority // TODO(eq)
     }
 }
 
@@ -260,7 +284,7 @@ impl<A> Eq for BroadcastMessageWrapper<A> {}
 
 impl<A> PartialEq<Self> for BroadcastMessageWrapper<A> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.priority() == other.0.priority() // TODO
+        self.0.priority() == other.0.priority() // TODO(eq)
     }
 }
 
@@ -304,7 +328,7 @@ impl<A> Future for WaitForSend<A> {
     type Output = Arc<Spinlock<WaitingActor<A>>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut inner = self.0.as_ref().unwrap().lock().unwrap();
+        let mut inner = self.0.as_ref().unwrap().lock();
 
         match inner.next_message.as_ref() {
             Some(_) => {
@@ -323,7 +347,7 @@ impl<A> Future for WaitForSend<A> {
 mod test {
     use futures_util::FutureExt;
     use crate::prelude::{*, Context};
-    use crate::envelope::BroadcastEnvelopeConcrete;
+    use crate::envelope::{BroadcastEnvelopeConcrete, NonReturningEnvelope};
     use super::*;
 
     struct MyActor;
@@ -373,5 +397,15 @@ mod test {
 
         assert!(rx.receive().now_or_never().is_none());
         assert!(rx2.receive().now_or_never().is_none());
+    }
+
+    #[test]
+    fn test_() {
+        let (tx, rx) = unbounded::<MyActor>();
+        for _ in 0..1_000 {
+            tx.send(Box::new(NonReturningEnvelope::new("Hi")), 1).unwrap();
+        }
+
+        pollster::block_on(rx.receive());
     }
 }
