@@ -1,19 +1,19 @@
+use futures_util::future::{self, Either};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use futures_util::future::{self, Either};
 
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
 
 use crate::drop_notice::DropNotifier;
 use crate::envelope::BroadcastEnvelopeConcrete;
+use crate::inbox::ActorMessage;
 use crate::manager::ContinueManageLoop;
 use crate::refcount::{Strong, Weak};
-use crate::{Actor, Address, Handler, inbox, KeepRunning};
-use crate::inbox::ActorMessage;
+use crate::{inbox, Actor, Address, Handler, KeepRunning};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -67,14 +67,12 @@ impl<A: Actor> Context<A> {
     ///
     /// ```
     pub fn new(message_cap: Option<usize>) -> (Address<A>, Self) {
-        // TODO(bounded)
-
         let shared_drop_notifier = Arc::new(DropNotifier::new());
 
         let strong = Strong::new(AtomicBool::new(true), shared_drop_notifier.subscribe());
         let weak = strong.downgrade();
 
-        let (tx, rx) = inbox::unbounded();
+        let (tx, rx) = inbox::new(message_cap);
 
         let addr = Address {
             sender: tx.clone(),
@@ -179,11 +177,7 @@ impl<A: Actor> Context<A> {
 
     /// Handle a message and immediate notifications, returning whether to exit from the manage loop
     /// or not.
-    async fn tick(
-        &mut self,
-        msg: ActorMessage<A>,
-        actor: &mut A,
-    ) -> ContinueManageLoop {
+    async fn tick(&mut self, msg: ActorMessage<A>, actor: &mut A) -> ContinueManageLoop {
         match msg {
             ActorMessage::BroadcastMessage(msg) => msg.handle(actor, self).await,
             ActorMessage::Shutdown => {

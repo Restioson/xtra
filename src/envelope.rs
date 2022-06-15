@@ -6,8 +6,8 @@ use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 
 use crate::context::Context;
-use crate::{Actor, Handler};
 use crate::inbox::{HasPriority, Priority};
+use crate::{Actor, Handler};
 
 /// A message envelope is a struct that encapsulates a message and its return channel sender (if applicable).
 /// Firstly, this allows us to be generic over returning and non-returning messages (as all use the
@@ -129,7 +129,7 @@ impl<A: Handler<M>, M: Send + Sync + Clone + 'static> BroadcastMessageEnvelope
     fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>> {
         Box::new(NonReturningEnvelope {
             message: self.message.clone(),
-            phantom: PhantomData
+            phantom: PhantomData,
         })
     }
 }
@@ -168,8 +168,9 @@ impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
 }
 
 impl<A: Handler<M>, M> BroadcastEnvelope for BroadcastEnvelopeConcrete<A, M>
-    where A: Handler<M>,
-          M: Clone + Send + Sync + 'static
+where
+    A: Handler<M>,
+    M: Clone + Send + Sync + 'static,
 {
     type Actor = A;
 

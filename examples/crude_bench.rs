@@ -4,9 +4,9 @@ use futures_core::future::BoxFuture;
 use std::future::Future;
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
-use xtra::{Disconnected, NameableSending};
 use xtra::Receiver;
 use xtra::SendFuture;
+use xtra::{Disconnected, NameableSending};
 
 struct Counter {
     count: usize,
@@ -99,8 +99,7 @@ const COUNT: u32 = 10_000_000; // May take a while on some machines
 fn do_address_benchmark(
     name: &str,
     f: impl Fn(&Address<Counter>, u32) -> Result<(), Disconnected>,
-) where
-{
+) {
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
 
     let start = Instant::now();
@@ -110,7 +109,10 @@ fn do_address_benchmark(
         let _ = f(&addr, n);
     }
 
-    println!("Time to send avg: {}ns", start.elapsed().as_nanos() / COUNT as u128);
+    println!(
+        "Time to send avg: {}ns",
+        start.elapsed().as_nanos() / COUNT as u128
+    );
 
     // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
     // future tokio reschedule time because of the .await
@@ -118,7 +120,10 @@ fn do_address_benchmark(
 
     let average_ns = start.elapsed().as_nanos() / COUNT as u128; // <120-170ns on my machine
     println!("{} avg time of processing: {}ns", name, average_ns);
-    assert_eq!(total_count, COUNT as usize, "total_count should equal COUNT!");
+    assert_eq!(
+        total_count, COUNT as usize,
+        "total_count should equal COUNT!"
+    );
 }
 
 fn main() {
@@ -126,7 +131,7 @@ fn main() {
     let _g = rt.enter();
 
     do_address_benchmark("address split_receiver (ZST message)", |addr, n| {
-        addr.do_send(Increment)//.split_receiver()
+        addr.do_send(Increment) //.split_receiver()
     });
 
     // do_address_benchmark("address split_receiver (8-byte message)", |addr| {

@@ -200,7 +200,7 @@ where
     // TODO(bounded)
     fn send(
         &self,
-        message: M,
+        _message: M,
     ) -> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
         todo!()
         // if self.is_connected() {
