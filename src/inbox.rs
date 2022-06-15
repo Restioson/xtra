@@ -2,34 +2,32 @@
 //! message may be handled before piled-up higher priority messages will be handled.
 // TODO(bounded)
 
-mod heap;
-
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope};
 use std::cmp::Ordering;
-use std::collections::VecDeque;
+use std::collections::{BinaryHeap, VecDeque};
 use std::future::Future;
-use std::mem;
+use std::{cmp, mem};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll, Waker};
 use tokio::time::Instant;
-use heap::BinaryHeap;
 
 type Spinlock<T> = spin::Mutex<T>;
 type MpmcMessage<A> = Box<dyn MessageEnvelope<Actor = A>>;
 type BroadcastMessage<A> = Arc<dyn BroadcastEnvelope<Actor = A>>;
 type BroadcastQueue<A> = Spinlock<BinaryHeap<BroadcastMessageWrapper<A>>>;
 
+// TODO(priority)
 #[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone)]
 pub(crate) enum Priority {
     Min,
-    Valued(u32),
+    Valued(i32),
     Max,
 }
 
 impl Default for Priority {
     fn default() -> Self {
-        Priority::Min
+        Priority::Valued(0)
     }
 }
 
@@ -39,7 +37,8 @@ pub(crate) struct Disconnected;
 pub(crate) fn unbounded<A>() -> (Sender<A>, Receiver<A>) {
     let broadcast_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
     let inner = Inner {
-        mpmc_queue: BinaryHeap::new(),
+        default_queue: VecDeque::new(),
+        priority_queue: BinaryHeap::new(),
         broadcast_queues: vec![Arc::downgrade(&broadcast_mailbox)],
         waiting_actors: VecDeque::new(),
         shutdown: false,
@@ -56,7 +55,8 @@ pub(crate) fn unbounded<A>() -> (Sender<A>, Receiver<A>) {
 }
 
 struct Inner<A> {
-    mpmc_queue: BinaryHeap<MpmcMessageWithPriority<A>>,
+    default_queue: VecDeque<MpmcMessage<A>>,
+    priority_queue: BinaryHeap<MpmcMessageWithPriority<A>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
     waiting_actors: VecDeque<Arc<Spinlock<WaitingActor<A>>>>,
     shutdown: bool,
@@ -71,7 +71,28 @@ impl<A> Clone for Sender<A> {
 }
 
 impl<A> Sender<A> {
-    pub(crate) fn send(&self, message: MpmcMessage<A>, priority: u32) -> Result<(), Disconnected> {
+    pub(crate) fn send(&self, message: MpmcMessage<A>) -> Result<(), Disconnected> {
+        let waiting = {
+            let mut inner = self.0.lock().unwrap();
+            if inner.shutdown {
+                return Err(Disconnected);
+            }
+
+            match inner.waiting_actors.pop_front() {
+                Some(actor) => actor,
+                None => {
+                    inner.default_queue.push_back(message);
+                    return Ok(())
+                }
+            }
+        };
+
+        waiting.lock().fulfill(WakeReason::StolenMessage(message));
+
+        Ok(())
+    }
+
+    pub(crate) fn send_priority(&self, message: MpmcMessage<A>, priority: i32) -> Result<(), Disconnected> {
         let waiting = {
             let mut inner = self.0.lock().unwrap();
             if inner.shutdown {
@@ -82,13 +103,13 @@ impl<A> Sender<A> {
                 Some(actor) => actor,
                 None => {
                     let msg = MpmcMessageWithPriority::new(Priority::Valued(priority), message);
-                    inner.mpmc_queue.push(msg);
+                    inner.priority_queue.push(msg);
                     return Ok(())
                 }
             }
         };
 
-        waiting.lock().fulfill(WakeReason::MpmcMessage(message));
+        waiting.lock().fulfill(WakeReason::StolenMessage(message));
 
         Ok(())
     }
@@ -168,31 +189,35 @@ impl<A> Receiver<A> {
     pub(crate) async fn receive(&self) -> ActorMessage<A> {
         let waiting = {
             let mut broadcast = self.broadcast_mailbox.lock();
-            let broadcast_priority = broadcast.peek().map(|it| it.priority()).unwrap_or_default();
+            let broadcast_priority = broadcast.peek().map(|it| it.priority()).unwrap_or(Priority::Min);
 
-            // In case of a shutdown or max priority message, we can skip the critical section on inner
+            // In case of a shutdown, we can skip the critical section on inner
             if broadcast_priority == Priority::Max {
                 return ActorMessage::BroadcastMessage(broadcast.pop().unwrap().0);
             }
 
             let mut inner = self.inner.lock().unwrap();
-            // let t = Instant::now(); // TODO recv timing
+
             if inner.shutdown {
                 return ActorMessage::Shutdown;
             }
 
-            let mpsc = &mut inner.mpmc_queue;
-            let mpsc_priority: Priority = mpsc.peek().map(|it| it.priority()).unwrap_or_default();
+            let shared_priority: Priority = inner.priority_queue.peek().map(|it| it.priority()).unwrap_or(Priority::Min);
 
-            match mpsc_priority.cmp(&broadcast_priority) {
+            if !inner.default_queue.is_empty() &&
+                cmp::max(shared_priority, broadcast_priority) < Priority::default()
+            {
+                return ActorMessage::StolenMessage(inner.default_queue.pop_front().unwrap())
+            }
+
+            match shared_priority.cmp(&broadcast_priority) {
                 Ordering::Greater => {
-                    let m = ActorMessage::MpmcMessage(mpsc.pop().unwrap().val);
+                    let m = ActorMessage::StolenMessage(inner.priority_queue.pop().unwrap().val);
                     drop(inner);
-                    // eprintln!("Recv: {}ns", t.elapsed().as_nanos());
                     return m;
                 }
                 Ordering::Less => return ActorMessage::BroadcastMessage(broadcast.pop().unwrap().0),
-                Ordering::Equal if mpsc_priority != Priority::Min => return ActorMessage::MpmcMessage(mpsc.pop().unwrap().val),
+                Ordering::Equal if shared_priority != Priority::Min => return ActorMessage::StolenMessage(inner.priority_queue.pop().unwrap().val),
                 Ordering::Equal => {
                     let waiting = Arc::new(Spinlock::new(WaitingActor::default()));
                     inner.waiting_actors.push_back(waiting.clone());
@@ -206,7 +231,7 @@ impl<A> Receiver<A> {
         let wake_reason = waiting.lock().next_message.take();
 
         match wake_reason.unwrap() {
-            WakeReason::MpmcMessage(msg) => ActorMessage::MpmcMessage(msg),
+            WakeReason::StolenMessage(msg) => ActorMessage::StolenMessage(msg),
             WakeReason::BroadcastMessage => {
                 let mut broadcast = self.broadcast_mailbox.lock();
                 ActorMessage::BroadcastMessage(broadcast.pop().unwrap().0)
@@ -217,13 +242,13 @@ impl<A> Receiver<A> {
 }
 
 pub(crate) enum ActorMessage<A> {
-    MpmcMessage(MpmcMessage<A>),
+    StolenMessage(MpmcMessage<A>),
     BroadcastMessage(BroadcastMessage<A>),
     Shutdown,
 }
 
 enum WakeReason<A> {
-    MpmcMessage(MpmcMessage<A>),
+    StolenMessage(MpmcMessage<A>),
     // should be fetched from own receiver
     BroadcastMessage,
     Shutdown,

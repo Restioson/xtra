@@ -126,7 +126,7 @@ fn main() {
     let _g = rt.enter();
 
     do_address_benchmark("address split_receiver (ZST message)", |addr, n| {
-        addr.do_send(Increment, n)//.split_receiver()
+        addr.do_send(Increment)//.split_receiver()
     });
 
     // do_address_benchmark("address split_receiver (8-byte message)", |addr| {

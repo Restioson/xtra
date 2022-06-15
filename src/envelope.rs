@@ -153,12 +153,12 @@ pub(crate) trait BroadcastEnvelope: HasPriority + Send + Sync {
 
 pub(crate) struct BroadcastEnvelopeConcrete<A, M> {
     message: M,
-    priority: u32,
+    priority: i32,
     phantom: PhantomData<fn() -> A>,
 }
 
 impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
-    pub(crate) fn new(message: M, priority: u32) -> Self {
+    pub(crate) fn new(message: M, priority: i32) -> Self {
         BroadcastEnvelopeConcrete {
             message,
             priority,

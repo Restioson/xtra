@@ -190,7 +190,7 @@ impl<A: Actor> Context<A> {
                 self.running = RunningState::Stopped;
                 return ContinueManageLoop::ExitImmediately;
             }
-            ActorMessage::MpmcMessage(msg) => msg.handle(actor, self).await,
+            ActorMessage::StolenMessage(msg) => msg.handle(actor, self).await,
         }
 
         if !self.check_running(actor).await {

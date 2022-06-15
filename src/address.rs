@@ -140,12 +140,12 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     }
 
     /// TODO(bounded)
-    pub fn do_send<M>(&self, message: M, priority: u32) -> Result<(), Disconnected>
+    pub fn do_send<M>(&self, message: M) -> Result<(), Disconnected>
         where A: Handler<M>,
               M: Send + 'static
     {
         let (envelope) = NonReturningEnvelope::<A, M>::new(message);
-        self.sender.send(Box::new(envelope), priority).map_err(|_| Disconnected)
+        self.sender.send(Box::new(envelope)).map_err(|_| Disconnected)
     }
 
     /// TODO(bounded)
@@ -154,7 +154,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
               M: Send + 'static,
     {
         let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-        self.sender.send(Box::new(envelope), 0).map_err(|_| Disconnected)?;
+        self.sender.send(Box::new(envelope)).map_err(|_| Disconnected)?;
         rx.await.map_err(|_| Disconnected)
     }
 
