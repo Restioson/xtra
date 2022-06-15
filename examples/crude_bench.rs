@@ -46,7 +46,6 @@ impl Handler<GetCount> for Counter {
     type Return = usize;
 
     async fn handle(&mut self, _: GetCount, _ctx: &mut Context<Self>) -> usize {
-        println!("Handling GetCount with count = {}", self.count);
         let count = self.count;
         self.count = 0;
         count
@@ -95,11 +94,11 @@ impl Handler<TimeReturn> for ReturnTimer {
     }
 }
 
-const COUNT: usize = 10_000_000; // May take a while on some machines
+const COUNT: u32 = 10_000_000; // May take a while on some machines
 
 fn do_address_benchmark(
     name: &str,
-    f: impl Fn(&Address<Counter>) -> Result<(), Disconnected>,
+    f: impl Fn(&Address<Counter>, u32) -> Result<(), Disconnected>,
 ) where
 {
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
@@ -107,8 +106,8 @@ fn do_address_benchmark(
     let start = Instant::now();
 
     // rounding overflow
-    for _ in 0..COUNT {
-        let _ = f(&addr);
+    for n in 0..COUNT {
+        let _ = f(&addr, n);
     }
 
     println!("Time to send avg: {}ns", start.elapsed().as_nanos() / COUNT as u128);
@@ -119,15 +118,15 @@ fn do_address_benchmark(
 
     let average_ns = start.elapsed().as_nanos() / COUNT as u128; // <120-170ns on my machine
     println!("{} avg time of processing: {}ns", name, average_ns);
-    assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
+    assert_eq!(total_count, COUNT as usize, "total_count should equal COUNT!");
 }
 
 fn main() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let _g = rt.enter();
 
-    do_address_benchmark("address split_receiver (ZST message)", |addr| {
-        addr.do_send(Increment)//.split_receiver()
+    do_address_benchmark("address split_receiver (ZST message)", |addr, n| {
+        addr.do_send(Increment, n)//.split_receiver()
     });
 
     // do_address_benchmark("address split_receiver (8-byte message)", |addr| {

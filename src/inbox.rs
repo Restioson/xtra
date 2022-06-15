@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll, Waker};
 use tokio::time::Instant;
 use heap::BinaryHeap;
@@ -18,7 +18,7 @@ use heap::BinaryHeap;
 type Spinlock<T> = spin::Mutex<T>;
 type MpmcMessage<A> = Box<dyn MessageEnvelope<Actor = A>>;
 type BroadcastMessage<A> = Arc<dyn BroadcastEnvelope<Actor = A>>;
-type BroadcastQueue<A> = Arc<Spinlock<BinaryHeap<BroadcastMessageWrapper<A>>>>;
+type BroadcastQueue<A> = Spinlock<BinaryHeap<BroadcastMessageWrapper<A>>>;
 
 #[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone)]
 pub(crate) enum Priority {
@@ -40,7 +40,7 @@ pub(crate) fn unbounded<A>() -> (Sender<A>, Receiver<A>) {
     let broadcast_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
     let inner = Inner {
         mpmc_queue: BinaryHeap::new(),
-        broadcast_queues: vec![broadcast_mailbox.clone()],
+        broadcast_queues: vec![Arc::downgrade(&broadcast_mailbox)],
         waiting_actors: VecDeque::new(),
         shutdown: false,
     };
@@ -57,7 +57,7 @@ pub(crate) fn unbounded<A>() -> (Sender<A>, Receiver<A>) {
 
 struct Inner<A> {
     mpmc_queue: BinaryHeap<MpmcMessageWithPriority<A>>,
-    broadcast_queues: Vec<BroadcastQueue<A>>,
+    broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
     waiting_actors: VecDeque<Arc<Spinlock<WaitingActor<A>>>>,
     shutdown: bool,
 }
@@ -72,28 +72,21 @@ impl<A> Clone for Sender<A> {
 
 impl<A> Sender<A> {
     pub(crate) fn send(&self, message: MpmcMessage<A>, priority: u32) -> Result<(), Disconnected> {
-        // let t1 = Instant::now();
         let waiting = {
             let mut inner = self.0.lock().unwrap();
-            // let t = Instant::now();
             if inner.shutdown {
                 return Err(Disconnected);
             }
 
-            let w = match inner.waiting_actors.pop_front() {
+            match inner.waiting_actors.pop_front() {
                 Some(actor) => actor,
                 None => {
                     let msg = MpmcMessageWithPriority::new(Priority::Valued(priority), message);
                     inner.mpmc_queue.push(msg);
                     return Ok(())
                 }
-            };
-
-            // eprintln!("section {}ns", t.elapsed().as_nanos());
-            w
+            }
         };
-
-        // eprintln!("total lock {}ns", t1.elapsed().as_nanos());
 
         waiting.lock().fulfill(WakeReason::MpmcMessage(message));
 
@@ -108,9 +101,15 @@ impl<A> Sender<A> {
                 return Err(Disconnected);
             }
 
-            for queue in inner.broadcast_queues.iter_mut() {
-                queue.lock().push(BroadcastMessageWrapper(message.clone()));
-            }
+            inner.broadcast_queues.retain(|queue| {
+                match queue.upgrade() {
+                    Some(q) => {
+                        q.lock().push(BroadcastMessageWrapper(message.clone()));
+                        true
+                    },
+                    None => false,
+                }
+            });
 
             mem::take(&mut inner.waiting_actors)
         };
@@ -139,10 +138,9 @@ impl<A> Sender<A> {
     }
 }
 
-// TODO drop from mailboxes
 pub(crate) struct Receiver<A> {
     inner: Arc<Mutex<Inner<A>>>,
-    broadcast_mailbox: BroadcastQueue<A>,
+    broadcast_mailbox: Arc<BroadcastQueue<A>>,
 }
 
 impl<A> Receiver<A> {
@@ -159,7 +157,7 @@ impl<A> Receiver<A> {
 
     pub(crate) fn cloned_new_broadcast_mailbox(&self) -> Receiver<A> {
         let new_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
-        self.inner.lock().unwrap().broadcast_queues.push(new_mailbox.clone());
+        self.inner.lock().unwrap().broadcast_queues.push(Arc::downgrade(&new_mailbox));
 
         Receiver {
             inner: self.inner.clone(),
