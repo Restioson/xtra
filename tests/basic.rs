@@ -1,8 +1,8 @@
 use futures_util::FutureExt;
+use smol::stream;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use smol::stream;
 
 use smol_timeout::TimeoutExt;
 
@@ -144,7 +144,11 @@ async fn test_stream_cancel_join() {
     let jh = addr.join();
     let addr2 = addr.clone().downgrade();
     // attach a stream that blocks forever
-    let handle = smol::spawn(async move { addr2.attach_stream(stream::pending::<StreamCancelMessage>()).await });
+    let handle = smol::spawn(async move {
+        addr2
+            .attach_stream(stream::pending::<StreamCancelMessage>())
+            .await
+    });
     drop(addr); // stop the actor
 
     // Attach stream should return immediately

@@ -72,10 +72,10 @@ impl<A: Actor> Context<A> {
         let strong = Strong::new(AtomicBool::new(true), shared_drop_notifier.subscribe());
         let weak = strong.downgrade();
 
-        let (tx, rx) = inbox::new(message_cap);
+        let (sender, rx) = inbox::new(message_cap);
 
         let addr = Address {
-            sender: tx.clone(),
+            sender,
             ref_counter: strong,
         };
 

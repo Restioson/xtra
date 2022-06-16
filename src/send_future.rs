@@ -1,14 +1,13 @@
-use crate::manager::AddressMessage;
 use crate::receiver::Receiver;
 use crate::{inbox, Disconnected};
 use futures_core::future::BoxFuture;
+use futures_core::FusedFuture;
 use futures_util::FutureExt;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use futures_core::FusedFuture;
 
 /// A [`Future`] that represents the state of sending a message to an actor.
 ///
@@ -35,20 +34,12 @@ pub enum ResolveToHandlerReturn {}
 pub enum ResoleToReceiver {}
 
 enum SendFutureInner<R, F> {
-    Disconnected,
     Sending(F),
     Receiving(Receiver<R>),
     Done,
 }
 
 impl<R, F> SendFuture<R, F, ResolveToHandlerReturn> {
-    pub(crate) fn disconnected() -> Self {
-        Self {
-            inner: SendFutureInner::Disconnected,
-            phantom: PhantomData,
-        }
-    }
-
     /// Split off a [`Receiver`] from this [`SendFuture`].
     ///
     /// Splitting off a [`Receiver`] allows you to await the completion of the [`Handler`](crate::Handler) separately from the queuing of the message into the actor's mailbox.
@@ -120,10 +111,6 @@ where
         let this = self.get_mut();
 
         match mem::replace(&mut this.inner, SendFutureInner::Done) {
-            SendFutureInner::Disconnected => {
-                this.inner = SendFutureInner::Done;
-                Poll::Ready(Err(Disconnected))
-            }
             SendFutureInner::Sending(mut send_fut) => match send_fut.poll_unpin(ctx) {
                 Poll::Ready(rx) => {
                     this.inner = SendFutureInner::Receiving(rx);
@@ -161,10 +148,6 @@ where
         let this = self.get_mut();
 
         match mem::replace(&mut this.inner, SendFutureInner::Done) {
-            SendFutureInner::Disconnected => {
-                this.inner = SendFutureInner::Done;
-                Poll::Ready(Receiver::disconnected())
-            }
             SendFutureInner::Sending(mut send_fut) => match send_fut.poll_unpin(ctx) {
                 Poll::Ready(rx) => {
                     this.inner = SendFutureInner::Receiving(rx);
@@ -187,7 +170,8 @@ where
 }
 
 impl<R, F, TResolveMarker> FusedFuture for SendFuture<R, F, TResolveMarker>
-    where Self: Future
+where
+    Self: Future,
 {
     fn is_terminated(&self) -> bool {
         matches!(self.inner, SendFutureInner::Done)

@@ -7,13 +7,12 @@ use std::future::Future;
 use std::{cmp::Ordering, error::Error, hash::Hash};
 
 use futures_core::Stream;
-use futures_util::{future, FutureExt, StreamExt};
+use futures_util::{future, StreamExt};
 
 use crate::envelope::ReturningEnvelope;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
 use crate::{inbox, Handler, KeepRunning, NameableSending, SendFuture};
-use crate::inbox::SendSink;
 
 /// The actor is no longer running and disconnected from the sending address. For why this could
 /// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and
