@@ -5,6 +5,18 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+/// Scope a given task to the lifecycle of an actor - see [`ScopedTask`].
+pub fn scoped<Rc, F, R>(address: &Address<Rc>, task: F) -> ScopedTask<F>
+where
+    Rc: RefCounter,
+    F: Future<Output = R>,
+{
+    ScopedTask {
+        join_handle: address.join(),
+        fut: task,
+    }
+}
+
 pin_project_lite::pin_project! {
     /// A task that is scoped to the lifecycle of an actor. This means that when the associated
     /// actor stops, the task will stop too. This future will either complete when the inner future
@@ -34,30 +46,6 @@ where
                 Poll::Ready(()) => Poll::Ready(None),
                 Poll::Pending => Poll::Pending,
             },
-        }
-    }
-}
-
-/// Extension trait to allow a future to be conveniently converted to a [`ScopedTask`], which will
-/// end as soon as the actor is stopped, or when it completes (whichever comes first).
-pub trait ActorScopedExt {
-    /// Convert this future to a [`ScopedTask`].
-    fn scoped<A, Rc>(self, address: &Address<A, Rc>) -> ScopedTask<Self>
-    where
-        Rc: RefCounter;
-}
-
-impl<F> ActorScopedExt for F
-where
-    F: Future,
-{
-    fn scoped<A, Rc>(self, address: &Address<A, Rc>) -> ScopedTask<Self>
-    where
-        Rc: RefCounter,
-    {
-        ScopedTask {
-            join_handle: address.join(),
-            fut: self,
         }
     }
 }

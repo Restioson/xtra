@@ -44,7 +44,7 @@ async fn main() {
     };
 
     // This task will end as soon as the actor stops
-    let task = tokio::spawn(task.scoped(&addr));
+    let task = tokio::spawn(xtra::scoped(&addr, task));
 
     drop(addr);
     assert!(task.await.unwrap().is_none()); // should print "The other task has been ended."

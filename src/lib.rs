@@ -7,8 +7,8 @@ pub use self::address::{Address, Disconnected, WeakAddress};
 pub use self::context::{ActorShutdown, Context};
 pub use self::manager::ActorManager;
 pub use self::receiver::Receiver;
-pub use self::send_future::NameableSending;
-pub use self::send_future::SendFuture;
+pub use self::scoped_task::scoped;
+pub use self::send_future::{NameableSending, SendFuture};
 
 pub mod address;
 mod context;
