@@ -11,7 +11,9 @@ use futures_util::{future, FutureExt, StreamExt};
 
 use crate::envelope::ReturningEnvelope;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
-use crate::{inbox, Handler, KeepRunning};
+use crate::send_future::ResolveToHandlerReturn;
+use crate::{inbox, Handler, KeepRunning, NameableSending, SendFuture};
+use crate::inbox::SendSink;
 
 /// The actor is no longer running and disconnected from the sending address. For why this could
 /// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and
@@ -137,48 +139,29 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         }
     }
 
-    /// TODO(bounded)
-    pub async fn send<M>(&self, message: M) -> Result<<A as Handler<M>>::Return, Disconnected>
+    /// Send a message to the actor.
+    ///
+    /// The actor must implement [`Handler<Message>`] for this to work.
+    ///
+    /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
+    /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
+    #[allow(clippy::type_complexity)]
+    pub fn send<M>(
+        &self,
+        message: M,
+    ) -> SendFuture<
+        <A as Handler<M>>::Return,
+        NameableSending<A, <A as Handler<M>>::Return>,
+        ResolveToHandlerReturn,
+    >
     where
         A: Handler<M>,
         M: Send + 'static,
     {
         let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-        self.sender
-            .send(Box::new(envelope))
-            .await
-            .map_err(|_| Disconnected)?;
-        rx.await.map_err(|_| Disconnected)
+        let tx = self.sender.send(Box::new(envelope));
+        SendFuture::sending_named(tx, rx)
     }
-
-    // /// Send a message to the actor.
-    // ///
-    // /// The actor must implement [`Handler<Message>`] for this to work.
-    // ///
-    // /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
-    // /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
-    // #[allow(clippy::type_complexity)]
-    // pub fn send<M>(
-    //     &self,
-    //     message: M,
-    // ) -> SendFuture<
-    //     <A as Handler<M>>::Return,
-    //     NameableSending<A, <A as Handler<M>>::Return>,
-    //     ResolveToHandlerReturn,
-    // >
-    // where
-    //     M: Send + 'static,
-    //     A: Handler<M>,
-    // {
-    //     if self.is_connected() {
-    //         let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-    //         let tx = self.sender.into_send_async(AddressMessage::Message(Box::new(envelope)));
-    //
-    //         SendFuture::sending_named(tx, rx)
-    //     } else {
-    //         SendFuture::disconnected()
-    //     }
-    // }
 
     /// Attaches a stream to this actor such that all messages produced by it are forwarded to the
     /// actor. This could, for instance, be used to forward messages from a socket to the actor

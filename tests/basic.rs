@@ -2,6 +2,7 @@ use futures_util::FutureExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use smol::stream;
 
 use smol_timeout::TimeoutExt;
 
@@ -139,13 +140,11 @@ impl Handler<StreamCancelMessage> for StreamCancelTester {
 
 #[tokio::test]
 async fn test_stream_cancel_join() {
-    let (_tx, rx) = flume::unbounded::<StreamCancelMessage>();
-    let stream = rx.into_stream();
     let addr = StreamCancelTester {}.create(None).spawn_global();
     let jh = addr.join();
     let addr2 = addr.clone().downgrade();
     // attach a stream that blocks forever
-    let handle = smol::spawn(async move { addr2.attach_stream(stream).await });
+    let handle = smol::spawn(async move { addr2.attach_stream(stream::pending::<StreamCancelMessage>()).await });
     drop(addr); // stop the actor
 
     // Attach stream should return immediately

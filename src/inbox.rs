@@ -3,6 +3,7 @@
 // TODO(bounded)
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope};
+use crate::Disconnected;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
 use std::future::Future;
@@ -10,6 +11,9 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll, Waker};
 use std::{cmp, mem};
+use futures_core::FusedFuture;
+use futures_sink::Sink;
+use futures_util::FutureExt;
 
 type Spinlock<T> = spin::Mutex<T>;
 type StolenMessage<A> = Box<dyn MessageEnvelope<Actor = A>>;
@@ -30,18 +34,15 @@ impl Default for Priority {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct Disconnected;
-
 pub(crate) fn new<A>(bound: Option<usize>) -> (Sender<A>, Receiver<A>) {
     let broadcast_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
     let inner = Inner {
         default_queue: VecDeque::new(),
         bound,
         waiting_senders: VecDeque::new(),
+        waiting_receivers: VecDeque::new(),
         priority_queue: BinaryHeap::new(),
         broadcast_queues: vec![Arc::downgrade(&broadcast_mailbox)],
-        waiting_actors: VecDeque::new(),
         shutdown: false,
     };
 
@@ -61,17 +62,17 @@ pub(crate) fn new<A>(bound: Option<usize>) -> (Sender<A>, Receiver<A>) {
 struct Inner<A> {
     default_queue: VecDeque<StolenMessage<A>>,
     bound: Option<usize>,
-    waiting_senders: VecDeque<Arc<Spinlock<WaitingSender<A>>>>,
+    waiting_senders: VecDeque<Weak<Spinlock<WaitingSender<A>>>>,
+    waiting_receivers: VecDeque<Weak<Spinlock<WaitingReceiver<A>>>>,
     priority_queue: BinaryHeap<StolenMessageWithPriority<A>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
-    waiting_actors: VecDeque<Arc<Spinlock<WaitingActor<A>>>>,
     shutdown: bool,
 }
 
 impl<A> Inner<A> {
     fn is_full(&self) -> bool {
         self.bound
-            .map(|cap| self.default_queue.len() < cap)
+            .map(|cap| self.default_queue.len() >= cap)
             .unwrap_or(false)
     }
 
@@ -83,14 +84,62 @@ impl<A> Inner<A> {
         // If this message will result in the cap no long being reached, pop one waiting
         // sender, if there is one, and fulfill it, adding its message to the queue
         if self.is_full() {
-            self.waiting_senders
-                .pop_front()
+            self.pop_sender()
                 .and_then(|waiting| waiting.lock().fulfill())
                 .map(|message| self.default_queue.push_back(message));
         }
 
         self.default_queue.pop_front()
     }
+
+    fn pop_receiver(&mut self) -> Option<Arc<Spinlock<WaitingReceiver<A>>>> {
+        while !self.waiting_receivers.is_empty() {
+            if let Some(rx) = self.waiting_receivers.pop_front().and_then(|w| w.upgrade()) {
+                return Some(rx);
+            }
+        }
+
+        None
+    }
+
+    fn pop_sender(&mut self) -> Option<Arc<Spinlock<WaitingSender<A>>>> {
+        while !self.waiting_senders.is_empty() {
+            if let Some(tx) = self.waiting_senders.pop_front().and_then(|w| w.upgrade()) {
+                return Some(tx);
+            }
+        }
+
+        None
+    }
+
+    fn try_send(&mut self, message: StolenMessage<A>) -> Result<(), TrySendFail<A>> {
+        if self.shutdown {
+            return Err(TrySendFail::Disconnected);
+        }
+
+        match self.pop_receiver() {
+            Some(waiting) => {
+                // Contention is not anticipated here
+                waiting.lock().fulfill(WakeReason::StolenMessage(message));
+                return Ok(());
+            }
+            None if !self.is_full() => {
+                self.default_queue.push_back(message);
+                return Ok(());
+            }
+            _ => {
+                // No space, must wait
+                let waiting = WaitingSender::new(message);
+                self.waiting_senders.push_back(Arc::downgrade(&waiting));
+                Err(TrySendFail::Full(waiting))
+            }
+        }
+    }
+}
+
+enum TrySendFail<A> {
+    Full(Arc<Spinlock<WaitingSender<A>>>),
+    Disconnected,
 }
 
 pub(crate) struct Sender<A>(Arc<Mutex<Inner<A>>>);
@@ -102,41 +151,8 @@ impl<A> Clone for Sender<A> {
 }
 
 impl<A> Sender<A> {
-    pub(crate) async fn send(&self, message: StolenMessage<A>) -> Result<(), Disconnected> {
-        let waiting = {
-            let mut inner = self.0.lock().unwrap();
-            if inner.shutdown {
-                return Err(Disconnected);
-            }
-
-            match inner.waiting_actors.pop_front() {
-                Some(waiting) => {
-                    // Drop the lock early here as we are about to lock something else
-                    drop(inner);
-                    // Contention is not anticipated here, though, so it's just in case
-                    waiting.lock().fulfill(WakeReason::StolenMessage(message));
-                    return Ok(());
-                }
-                None if !inner.is_full() => {
-                    inner.default_queue.push_back(message);
-                    return Ok(());
-                }
-                _ => {
-                    // No space, must wait
-                    let waiting = WaitingSender::new(message);
-                    inner.waiting_senders.push_back(waiting.clone());
-                    waiting
-                }
-            }
-        };
-
-        // What happens if the channel is unlocked, then a message is received, and only THEN is this awaited?
-        // Surely, since the waker has not yet been stored, it will miss wakeup and poll forever?
-        // No, if a message is received, the `message` field will be set to `None`, which will
-        // cause the future to return `Ready` on its *first poll* - so, wakeup is not required.
-        WaitForReceiver(waiting).await;
-
-        Ok(())
+    pub(crate) fn send(&self, message: StolenMessage<A>) -> SendFuture<A> {
+        SendFuture::new(message, self.0.clone())
     }
 
     pub(crate) fn send_priority(
@@ -150,7 +166,7 @@ impl<A> Sender<A> {
                 return Err(Disconnected);
             }
 
-            match inner.waiting_actors.pop_front() {
+            match inner.pop_receiver() {
                 Some(actor) => actor,
                 None => {
                     let msg = StolenMessageWithPriority::new(Priority::Valued(priority), message);
@@ -166,7 +182,7 @@ impl<A> Sender<A> {
     }
 
     pub(crate) fn broadcast(&self, message: BroadcastMessage<A>) -> Result<(), Disconnected> {
-        let waiting = {
+        let waiting_receivers = {
             let mut inner = self.0.lock().unwrap();
 
             if inner.shutdown {
@@ -183,25 +199,32 @@ impl<A> Sender<A> {
                     None => false, // The corresponding receiver has been dropped - remove it
                 });
 
-            mem::take(&mut inner.waiting_actors)
+            mem::take(&mut inner.waiting_receivers)
         };
 
-        for actor in waiting {
-            actor.lock().fulfill(WakeReason::BroadcastMessage);
+        for rx in waiting_receivers.into_iter().flat_map(|w| w.upgrade()) {
+            rx.lock().fulfill(WakeReason::BroadcastMessage);
         }
 
         Ok(())
     }
 
+    pub(crate) fn into_sink(self) -> SendSink<A> {
+        SendSink {
+            inner: self.0,
+            future: SendFuture(SendFutureInner::Complete),
+        }
+    }
+
     pub(crate) fn shutdown(&self) {
-        let waiting = {
+        let waiting_receivers = {
             let mut inner = self.0.lock().unwrap();
             inner.shutdown = true;
-            mem::take(&mut inner.waiting_actors)
+            mem::take(&mut inner.waiting_receivers)
         };
 
-        for actor in waiting {
-            actor.lock().fulfill(WakeReason::Shutdown);
+        for rx in waiting_receivers.into_iter().flat_map(|w| w.upgrade()) {
+            rx.lock().fulfill(WakeReason::BroadcastMessage);
         }
     }
 
@@ -274,8 +297,8 @@ impl<A> Receiver<A> {
             Ordering::Less => Ok(broadcast.pop().unwrap().0.into()),
             // Equal, but both are empty, so wait
             _ => {
-                let waiting = Arc::new(Spinlock::new(WaitingActor::default()));
-                inner.waiting_actors.push_back(waiting.clone());
+                let waiting = Arc::new(Spinlock::new(WaitingReceiver::default()));
+                inner.waiting_receivers.push_back(Arc::downgrade(&waiting));
                 Err(WaitForSender(waiting))
             }
         }
@@ -393,21 +416,21 @@ impl<A> Ord for BroadcastMessageWrapper<A> {
     }
 }
 
-struct WaitingActor<A> {
+struct WaitingReceiver<A> {
     waker: Option<Waker>,
     wake_reason: Option<WakeReason<A>>,
 }
 
-impl<A> Default for WaitingActor<A> {
+impl<A> Default for WaitingReceiver<A> {
     fn default() -> Self {
-        WaitingActor {
+        WaitingReceiver {
             waker: None,
             wake_reason: None,
         }
     }
 }
 
-impl<A> WaitingActor<A> {
+impl<A> WaitingReceiver<A> {
     fn fulfill(&mut self, message: WakeReason<A>) {
         self.wake_reason = Some(message);
 
@@ -417,7 +440,7 @@ impl<A> WaitingActor<A> {
     }
 }
 
-struct WaitForSender<A>(Arc<Spinlock<WaitingActor<A>>>);
+struct WaitForSender<A>(Arc<Spinlock<WaitingReceiver<A>>>);
 
 impl<A> Future for WaitForSender<A> {
     type Output = WakeReason<A>;
@@ -459,22 +482,94 @@ impl<A> WaitingSender<A> {
     }
 }
 
-struct WaitForReceiver<A>(Arc<Spinlock<WaitingSender<A>>>);
+pub struct SendFuture<A>(SendFutureInner<A>);
 
-impl<A> Future for WaitForReceiver<A> {
-    type Output = ();
+impl<A> SendFuture<A> {
+    fn new(msg: StolenMessage<A>, inner: Arc<Mutex<Inner<A>>>) -> Self {
+        SendFuture(SendFutureInner::New { msg, inner })
+    }
+}
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut inner = self.0.lock();
+enum SendFutureInner<A> {
+    New {
+        msg: StolenMessage<A>,
+        inner: Arc<Mutex<Inner<A>>>,
+    },
+    WaitingToSend(Arc<Spinlock<WaitingSender<A>>>),
+    Complete,
+}
 
-        match inner.message {
-            Some(_) => {
-                // The message has not yet been taken
-                inner.waker = Some(cx.waker().clone());
-                Poll::Pending
+impl<A> Default for SendFutureInner<A> {
+    fn default() -> Self {
+        SendFutureInner::Complete
+    }
+}
+
+impl<A> Future for SendFuture<A> {
+    type Output = Result<(), Disconnected>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.0 = match mem::take(&mut self.0) {
+            SendFutureInner::New { msg, inner } => {
+                match inner.lock().unwrap().try_send(msg) {
+                Ok(()) => return Poll::Ready(Ok(())),
+                Err(TrySendFail::Disconnected) => return Poll::Ready(Err(Disconnected)),
+                Err(TrySendFail::Full(waiting)) => SendFutureInner::WaitingToSend(waiting),
+            }},
+            SendFutureInner::WaitingToSend(waiting) => {
+                {
+                    let mut inner = waiting.lock();
+
+                    match inner.message {
+                        Some(_) => inner.waker = Some(cx.waker().clone()), // The message has not yet been taken
+                        None => return Poll::Ready(Ok(())),
+                    }
+                }
+
+                SendFutureInner::WaitingToSend(waiting)
             }
-            None => Poll::Ready(()), // The message was taken - waiting is done
+            SendFutureInner::Complete => SendFutureInner::Complete,
+        };
+
+        Poll::Pending
+    }
+}
+
+impl<A> FusedFuture for SendFuture<A> {
+    fn is_terminated(&self) -> bool {
+        matches!(self.0, SendFutureInner::Complete)
+    }
+}
+
+pub(crate) struct SendSink<A> {
+    inner: Arc<Mutex<Inner<A>>>,
+    future: SendFuture<A>,
+}
+
+impl<A> Sink<StolenMessage<A>> for SendSink<A> {
+    type Error = Disconnected;
+
+    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        if let Poll::Ready(Err(Disconnected)) = self.future.poll_unpin(cx) {
+            Poll::Ready(Err(Disconnected))
+        } else if self.future.is_terminated() {
+            Poll::Ready(Ok(()))  // TODO check disconnected?
+        } else {
+            Poll::Pending
         }
+    }
+
+    fn start_send(mut self: Pin<&mut Self>, msg: StolenMessage<A>) -> Result<(), Self::Error> {
+        self.future = SendFuture::new(msg, self.inner.clone());
+        Ok(())
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.poll_ready(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.poll_flush(cx)
     }
 }
 

@@ -6,6 +6,7 @@ use std::fmt::Debug;
 
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
+use futures_sink::Sink;
 
 use crate::address::{Address, WeakAddress};
 use crate::private::Sealed;
@@ -13,6 +14,7 @@ use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Shared, Strong};
 use crate::send_future::{ResolveToHandlerReturn, SendFuture};
 use crate::{Handler, KeepRunning};
+use crate::envelope::ReturningEnvelope;
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
@@ -200,27 +202,18 @@ where
     // TODO(bounded)
     fn send(
         &self,
-        _message: M,
+        message: M,
     ) -> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
-        todo!()
-        // if self.is_connected() {
-        //     let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
-        //     let sending = self
-        //
-        //         .sender()
-        //         .clone()
-        //         .into_send_async(AddressMessage::Message(Box::new(envelope)));
-        //
-        //     #[allow(clippy::async_yields_async)] // We only want to await the sending.
-        //     SendFuture::sending_boxed(async move {
-        //         match sending.await {
-        //             Ok(()) => Receiver::new(rx),
-        //             Err(_) => Receiver::disconnected(),
-        //         }
-        //     })
-        // } else {
-        //     SendFuture::disconnected()
-        // }
+        let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
+        let sending = self.sender.send(Box::new(envelope));
+
+        #[allow(clippy::async_yields_async)] // We only want to await the sending.
+        SendFuture::sending_boxed(async move {
+            match sending.await {
+                Ok(()) => Receiver::new(rx),
+                Err(_) => Receiver::disconnected(),
+            }
+        })
     }
 
     fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>

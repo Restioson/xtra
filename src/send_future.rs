@@ -1,7 +1,6 @@
 use crate::manager::AddressMessage;
 use crate::receiver::Receiver;
-use crate::Disconnected;
-use flume::r#async::SendFut;
+use crate::{inbox, Disconnected};
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 use std::future::Future;
@@ -9,6 +8,7 @@ use std::marker::PhantomData;
 use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use futures_core::FusedFuture;
 
 /// A [`Future`] that represents the state of sending a message to an actor.
 ///
@@ -76,7 +76,7 @@ impl<R> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
 
 impl<A, R> SendFuture<R, NameableSending<A, R>, ResolveToHandlerReturn> {
     pub(crate) fn sending_named(
-        send_fut: SendFut<'static, AddressMessage<A>>,
+        send_fut: inbox::SendFuture<A>,
         receiver: catty::Receiver<R>,
     ) -> Self {
         Self {
@@ -90,8 +90,8 @@ impl<A, R> SendFuture<R, NameableSending<A, R>, ResolveToHandlerReturn> {
 }
 
 /// "Sending" state of [`SendFuture`] for cases where the actor type is known and we can there refer to it by name.
-pub struct NameableSending<A: 'static, R> {
-    inner: SendFut<'static, AddressMessage<A>>,
+pub struct NameableSending<A, R> {
+    inner: inbox::SendFuture<A>,
     receiver: Option<Receiver<R>>,
 }
 
@@ -183,5 +183,13 @@ where
                 panic!("Polled after completion")
             }
         }
+    }
+}
+
+impl<R, F, TResolveMarker> FusedFuture for SendFuture<R, F, TResolveMarker>
+    where Self: Future
+{
+    fn is_terminated(&self) -> bool {
+        matches!(self.inner, SendFutureInner::Done)
     }
 }

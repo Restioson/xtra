@@ -2,11 +2,12 @@ use std::time::{Duration, Instant};
 
 use futures_core::future::BoxFuture;
 use std::future::Future;
+use futures_util::FutureExt;
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
+use xtra::NameableSending;
 use xtra::Receiver;
 use xtra::SendFuture;
-use xtra::{Disconnected, NameableSending};
 
 struct Counter {
     count: usize,
@@ -94,79 +95,127 @@ impl Handler<TimeReturn> for ReturnTimer {
     }
 }
 
-const COUNT: u32 = 10_000_000; // May take a while on some machines
+const COUNT: usize = 10_000_000; // May take a while on some machines
 
-fn do_address_benchmark(
+async fn do_address_benchmark<R>(
     name: &str,
-    f: impl Fn(&Address<Counter>, u32) -> Result<(), Disconnected>,
-) {
+    f: impl Fn(&Address<Counter>) -> SendFuture<(), NameableSending<Counter, ()>, R>,
+) where
+    SendFuture<(), NameableSending<Counter, ()>, R>: Future,
+{
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
 
     let start = Instant::now();
 
     // rounding overflow
-    for n in 0..COUNT {
-        let _ = f(&addr, n);
+    for _ in 0..COUNT {
+        let _ = f(&addr).now_or_never();
     }
-
-    println!(
-        "Time to send avg: {}ns",
-        start.elapsed().as_nanos() / COUNT as u128
-    );
 
     // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
     // future tokio reschedule time because of the .await
-    let total_count = pollster::block_on(addr.send(GetCount)).unwrap();
+    let total_count = addr.send(GetCount).await.unwrap();
 
-    let average_ns = start.elapsed().as_nanos() / COUNT as u128; // <120-170ns on my machine
+    let duration = Instant::now() - start;
+    let average_ns = duration.as_nanos() / COUNT as u128; // <120-170ns on my machine
     println!("{} avg time of processing: {}ns", name, average_ns);
-    assert_eq!(
-        total_count, COUNT as usize,
-        "total_count should equal COUNT!"
-    );
+    assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
 }
 
-fn main() {
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let _g = rt.enter();
+async fn do_parallel_address_benchmark<R>(
+    name: &str,
+    workers: usize,
+    f: impl Fn(&Address<Counter>) -> SendFuture<(), NameableSending<Counter, ()>, R>,
+) where
+    SendFuture<(), NameableSending<Counter, ()>, R>: Future,
+{
+    let (addr, mut ctx) = Context::new(None);
+    let start = Instant::now();
+    for _ in 0..workers {
+        tokio::spawn(ctx.attach(Counter { count: 0 }));
+    }
 
-    do_address_benchmark("address split_receiver (ZST message)", |addr, n| {
-        addr.do_send(Increment) //.split_receiver()
-    });
+    for _ in 0..COUNT {
+        let _ = f(&addr).await;
+    }
 
-    // do_address_benchmark("address split_receiver (8-byte message)", |addr| {
-    //     addr.do_send(IncrementWithData(0))//.split_receiver()
-    // })
-    // .await;
-    //
-    // do_parallel_address_benchmark(
-    //     "address split_receiver 2 workers (ZST message)",
-    //     2,
-    //     |addr| addr.do_send(Increment)//.split_receiver(),
-    // )
-    // .await;
-    //
-    // do_parallel_address_benchmark(
-    //     "address split_receiver 2 workers (8-byte message)",
-    //     2,
-    //     |addr| addr.do_send(IncrementWithData(0))//.split_receiver(),
-    // )
-    // .await;
+    // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
+    // future tokio reschedule time because of the .await
+    let _ = addr.send(GetCount).await.unwrap();
 
-    // do_channel_benchmark("channel split_receiver (ZST message)", |chan| {
-    //     chan.do_send(Increment)//.split_receiver()
-    // })
-    // .await;
-    //
-    // do_channel_benchmark("channel split_receiver (8-byte message)", |chan| {
-    //     chan.do_send(IncrementWithData(0))//.split_receiver()
-    // })
-    // .await;
-    //
-    // do_channel_benchmark("channel send (ZST message)", |chan| chan.send(Increment)).await;
-    //
-    // do_channel_benchmark("channel send (8-byte message)", |chan| {
-    //     chan.do_send(IncrementWithData(0))
-    // })
-    // .await;
+    let duration = Instant::now() - start;
+    let average_ns = duration.as_nanos() / COUNT as u128; // <120-170ns on my machine
+    println!("{} avg time of processing: {}ns", name, average_ns);
+}
+
+async fn do_channel_benchmark<M, RM>(
+    name: &str,
+    f: impl Fn(
+        &dyn MessageChannel<M, Return = ()>,
+    ) -> SendFuture<(), BoxFuture<'static, Receiver<()>>, RM>,
+) where
+    Counter: Handler<M, Return = ()> + Send,
+    M: Send + 'static,
+    SendFuture<(), BoxFuture<'static, Receiver<()>>, RM>: Future,
+{
+    let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
+    let chan = &addr as &dyn MessageChannel<M, Return = ()>;
+
+    let start = Instant::now();
+    for _ in 0..COUNT {
+        let _ = f(chan).await;
+    }
+
+    // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
+    // future tokio reschedule time because of the .await
+    let total_count = addr.send::<GetCount>(GetCount).await.unwrap();
+
+    let duration = Instant::now() - start;
+    let average_ns = duration.as_nanos() / total_count as u128; // <120-170ns on my machine
+    println!("{} avg time of processing: {}ns", name, average_ns);
+    assert_eq!(total_count, COUNT, "total_count should equal COUNT!");
+}
+
+#[tokio::main]
+async fn main() {
+    do_address_benchmark("address split_receiver (ZST message)", |addr| {
+        addr.send(Increment).split_receiver()
+    })
+    .await;
+
+    do_address_benchmark("address split_receiver (8-byte message)", |addr| {
+        addr.send(IncrementWithData(0)).split_receiver()
+    })
+    .await;
+
+    do_parallel_address_benchmark(
+        "address split_receiver 2 workers (ZST message)",
+        2,
+        |addr| addr.send(Increment).split_receiver(),
+    )
+    .await;
+
+    do_parallel_address_benchmark(
+        "address split_receiver 2 workers (8-byte message)",
+        2,
+        |addr| addr.send(IncrementWithData(0)).split_receiver(),
+    )
+    .await;
+
+    do_channel_benchmark("channel split_receiver (ZST message)", |chan| {
+        chan.send(Increment).split_receiver()
+    })
+    .await;
+
+    do_channel_benchmark("channel split_receiver (8-byte message)", |chan| {
+        chan.send(IncrementWithData(0)).split_receiver()
+    })
+    .await;
+
+    do_channel_benchmark("channel send (ZST message)", |chan| chan.send(Increment)).await;
+
+    do_channel_benchmark("channel send (8-byte message)", |chan| {
+        chan.send(IncrementWithData(0))
+    })
+    .await;
 }
