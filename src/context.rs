@@ -387,6 +387,7 @@ impl<A: Actor> Context<A> {
     ///
     /// ```rust
     /// # use std::time::Duration;
+    /// use futures_util::future::Either;
     /// # use xtra::prelude::*;
     /// # use smol::future;
     /// # struct MyActor;
@@ -409,9 +410,11 @@ impl<A: Actor> Context<A> {
     ///     type Return = bool;
     ///
     ///     async fn handle(&mut self, _msg: Selecting, ctx: &mut Context<Self>) -> bool {
-    ///         // Actor is still running, so this will return Ok
-    ///         let ans = ctx.select(self, future::ready(1)).await.unwrap();
-    ///         println!("Answer is: {}", ans);
+    ///         // Actor is still running, so this will return Either::Left
+    ///         match ctx.select(self, future::ready(1)).await {
+    ///             Either::Left(ans) => println!("Answer is: {}", ans),
+    ///             Either::Right(_) => panic!("How did we get here?"),
+    ///         };
     ///
     ///         let addr = ctx.address().unwrap();
     ///         let select = ctx.select(self, future::pending::<()>());
@@ -420,7 +423,7 @@ impl<A: Actor> Context<A> {
     ///
     ///         // Actor is no longer running, so this will return Err, even though the future will
     ///         // usually never complete.
-    ///         select.await.is_err()
+    ///         assert!(matches!(Either::Right(_), select.await))
     ///     }
     /// }
     ///
@@ -432,7 +435,7 @@ impl<A: Actor> Context<A> {
     /// # })
     ///
     /// ```
-    pub async fn select<F, R>(&mut self, actor: &mut A, mut fut: F) -> Result<R, F>
+    pub async fn select<F, R>(&mut self, actor: &mut A, mut fut: F) -> Either<R, F>
     where
         F: Future<Output = R> + Unpin,
     {
@@ -450,7 +453,7 @@ impl<A: Actor> Context<A> {
                 let next_msg = future::select(addr_recv, broadcast_recv);
                 futures_util::pin_mut!(next_msg);
                 match future::select(fut, next_msg).await {
-                    Either::Left((future_res, _)) => return Ok(future_res),
+                    Either::Left((future_res, _)) => return Either::Left(future_res),
                     Either::Right(tuple) => tuple,
                 }
             };
@@ -477,7 +480,7 @@ impl<A: Actor> Context<A> {
             fut = unfinished;
         }
 
-        Err(fut)
+        Either::Right(fut)
     }
 
     /// Notify this actor with a message that is handled before any other messages from the general
