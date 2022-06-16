@@ -45,7 +45,7 @@ where
             Poll::Pending => match this.fut.poll(cx) {
                 Poll::Ready(v) => Poll::Ready(Some(v)),
                 Poll::Pending => Poll::Pending,
-            }
+            },
         }
     }
 }

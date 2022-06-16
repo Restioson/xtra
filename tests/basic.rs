@@ -1,9 +1,9 @@
+use futures_util::task::noop_waker_ref;
 use futures_util::FutureExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
-use futures_util::task::noop_waker_ref;
 
 use smol_timeout::TimeoutExt;
 
