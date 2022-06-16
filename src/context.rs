@@ -58,7 +58,7 @@ impl<A: Actor> Context<A> {
     /// #     }
     /// # }
     /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
-    /// # async {
+    /// # async { // This does not actually run because there is nothing to assert
     /// let (addr, mut ctx) = Context::new(Some(32));
     /// for n in 0..3 {
     ///     smol::spawn(ctx.attach(MyActor::new(n))).detach();
@@ -273,14 +273,19 @@ impl<A: Actor> Context<A> {
         }
     }
 
-    /// Handle any incoming messages for the actor while running a given future.
+    /// Joins on a future by handling all incoming messages whilst polling it. The future will
+    /// always be polled to completion, even if the actor is stopped. If the actor is stopped,
+    /// handling of messages will cease, and only the future will be polled. It is somewhat
+    /// analagous to [`futures::join`](https://docs.rs/futures/latest/futures/macro.join.html),
+    /// but it will not wait for the incoming stream of messages from addresses to end before
+    /// returning - it will return as soon as the provided future does.
     ///
     /// # Example
     ///
     #[cfg_attr(docsrs, doc("```"))]
     #[cfg_attr(docsrs, doc(include = "../examples/interleaved_messages.rs"))]
     #[cfg_attr(docsrs, doc("```"))]
-    pub async fn handle_while<F, R>(&mut self, actor: &mut A, fut: F) -> R
+    pub async fn join<F, R>(&mut self, actor: &mut A, fut: F) -> R
     where
         F: Future<Output = R>,
     {
@@ -293,12 +298,12 @@ impl<A: Actor> Context<A> {
         let mut addr_recv = addr_rx.recv_async();
         let mut broadcast_recv = broadcast_rx.recv_async();
 
-        loop {
+        while self.running {
             let (next_msg, unfinished) = {
                 let next_msg = future::select(addr_recv, broadcast_recv);
                 futures_util::pin_mut!(next_msg);
                 match future::select(fut, next_msg).await {
-                    Either::Left((future_res, _)) => break future_res,
+                    Either::Left((future_res, _)) => return future_res,
                     Either::Right(tuple) => tuple,
                 }
             };
@@ -324,6 +329,112 @@ impl<A: Actor> Context<A> {
             self.tick(msg, actor).await;
             fut = unfinished;
         }
+
+        fut.await
+    }
+
+    /// Handle any incoming messages for the actor while running a given future. This is similar to
+    /// [`Context::join`], but will exit if the actor is stopped, returning the future. Returns
+    /// `Ok` with the result of the future if it was successfully completed, or `Err` with the
+    /// future if the actor was stopped before it could complete. It is analagous to
+    /// [`futures::select`](https://docs.rs/futures/latest/futures/macro.select.html).
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// # use std::time::Duration;
+    /// use futures_util::future::Either;
+    /// # use xtra::prelude::*;
+    /// # use smol::future;
+    /// # struct MyActor;
+    /// # #[async_trait] impl Actor for MyActor { type Stop = (); async fn stopped(self) {} }
+    ///
+    /// struct Stop;
+    /// struct Selecting;
+    ///
+    /// #[async_trait]
+    /// impl Handler<Stop> for MyActor {
+    ///     type Return = ();
+    ///
+    ///     async fn handle(&mut self, _msg: Stop, ctx: &mut Context<Self>) {
+    ///         ctx.stop_self();
+    ///     }
+    /// }
+    ///
+    /// #[async_trait]
+    /// impl Handler<Selecting> for MyActor {
+    ///     type Return = bool;
+    ///
+    ///     async fn handle(&mut self, _msg: Selecting, ctx: &mut Context<Self>) -> bool {
+    ///         // Actor is still running, so this will return Either::Left
+    ///         match ctx.select(self, future::ready(1)).await {
+    ///             Either::Left(ans) => println!("Answer is: {}", ans),
+    ///             Either::Right(_) => panic!("How did we get here?"),
+    ///         };
+    ///
+    ///         let addr = ctx.address().unwrap();
+    ///         let select = ctx.select(self, future::pending::<()>());
+    ///         let send = addr.send(Stop).split_receiver();
+    ///         send.await;
+    ///
+    ///         // Actor is no longer running, so this will return Err, even though the future will
+    ///         // usually never complete.
+    ///         matches!(select.await, Either::Right(_))
+    ///     }
+    /// }
+    ///
+    /// # #[cfg(feature = "with-smol-1")]
+    /// # smol::block_on(async {
+    /// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
+    /// assert!(addr.is_connected());
+    /// assert_eq!(addr.send(Selecting).await, Ok(true)); // Assert that the select did end early
+    /// # })
+    ///
+    /// ```
+    pub async fn select<F, R>(&mut self, actor: &mut A, mut fut: F) -> Either<R, F>
+    where
+        F: Future<Output = R> + Unpin,
+    {
+        self.handle_self_notifications(actor).await;
+
+        let addr_rx = self.receiver.clone();
+        let broadcast_rx = self.broadcast_receiver.clone();
+        let mut addr_recv = addr_rx.recv_async();
+        let mut broadcast_recv = broadcast_rx.recv_async();
+
+        while self.running {
+            let (next_msg, unfinished) = {
+                let next_msg = future::select(addr_recv, broadcast_recv);
+                futures_util::pin_mut!(next_msg);
+                match future::select(fut, next_msg).await {
+                    Either::Left((future_res, _)) => return Either::Left(future_res),
+                    Either::Right(tuple) => tuple,
+                }
+            };
+
+            let msg = match next_msg {
+                Either::Left((res, other)) => {
+                    broadcast_recv = other;
+                    addr_recv = addr_rx.recv_async();
+                    Either::Right(res.unwrap())
+                }
+                Either::Right((res, other)) => {
+                    addr_recv = other;
+                    broadcast_recv = broadcast_rx.recv_async();
+                    Either::Left(res.unwrap())
+                }
+            };
+
+            // To avoid broadcast starvation, try receive a broadcast here
+            if let Ok(Some(broadcast)) = broadcast_rx.try_recv() {
+                self.tick(Either::Left(broadcast), actor).await;
+            }
+
+            self.tick(msg, actor).await;
+            fut = unfinished;
+        }
+
+        Either::Right(fut)
     }
 
     /// Notify this actor with a message that is handled before any other messages from the general

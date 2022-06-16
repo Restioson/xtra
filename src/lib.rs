@@ -7,8 +7,8 @@ pub use self::address::{Address, Disconnected, WeakAddress};
 pub use self::context::{ActorShutdown, Context};
 pub use self::manager::ActorManager;
 pub use self::receiver::Receiver;
-pub use self::send_future::NameableSending;
-pub use self::send_future::SendFuture;
+pub use self::scoped_task::scoped;
+pub use self::send_future::{NameableSending, SendFuture};
 
 pub mod address;
 mod context;
@@ -20,6 +20,9 @@ mod receiver;
 /// This module contains types representing the strength of an address's reference counting, which
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount;
+/// This module contains a way to scope a future to the lifetime of an actor, stopping it before it
+/// completes if the actor it is associated with stops too.
+pub mod scoped_task;
 mod send_future;
 /// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
 pub mod spawn;

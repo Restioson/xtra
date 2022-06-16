@@ -1,4 +1,4 @@
-use crate::drop_notice::{self, DropNotice};
+use crate::drop_notice::DropNotice;
 use crate::private::Sealed;
 use std::fmt::{Debug, Formatter};
 use std::sync::{Arc, RwLock, Weak as ArcWeak};
@@ -183,7 +183,7 @@ impl RefCounter for Weak {
                 drop(shared);
                 drop_notice
             }
-            None => drop_notice::dropped(),
+            None => DropNotice::dropped(),
         }
     }
 }
