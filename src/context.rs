@@ -321,7 +321,10 @@ impl<A: Actor> Context<A> {
 
     /// Joins on a future by handling all incoming messages whilst polling it. The future will
     /// always be polled to completion, even if the actor is stopped. If the actor is stopped,
-    /// handling of messages will cease, and only the future will be polled.
+    /// handling of messages will cease, and only the future will be polled. It is somewhat
+    /// analagous to [`futures::join`](https://docs.rs/futures/latest/futures/macro.join.html),
+    /// but it will not wait for the incoming stream of messages from addresses to end before
+    /// returning - it will return as soon as the provided future does.
     ///
     /// # Example
     ///
@@ -381,7 +384,8 @@ impl<A: Actor> Context<A> {
     /// Handle any incoming messages for the actor while running a given future. This is similar to
     /// [`Context::join`], but will exit if the actor is stopped, returning the future. Returns
     /// `Ok` with the result of the future if it was successfully completed, or `Err` with the
-    /// future if the actor was stopped before it could complete.
+    /// future if the actor was stopped before it could complete. It is analagous to
+    /// [`futures::select`](https://docs.rs/futures/latest/futures/macro.select.html).
     ///
     /// ## Example
     ///
