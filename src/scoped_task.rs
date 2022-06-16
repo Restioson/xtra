@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// Scope a given task to the lifecycle of an actor - see [`ScopedTask`].
-pub fn scoped<Rc, F, R>(address: &Address<Rc>, task: F) -> ScopedTask<F>
+pub fn scoped<A, Rc, F, R>(address: &Address<A, Rc>, task: F) -> ScopedTask<F>
 where
     Rc: RefCounter,
     F: Future<Output = R>,
@@ -40,12 +40,12 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
 
-        match this.fut.poll(cx) {
-            Poll::Ready(v) => Poll::Ready(Some(v)),
-            Poll::Pending => match this.join_handle.poll_unpin(cx) {
-                Poll::Ready(()) => Poll::Ready(None),
+        match this.join_handle.poll_unpin(cx) {
+            Poll::Ready(()) => Poll::Ready(None),
+            Poll::Pending => match this.fut.poll(cx) {
+                Poll::Ready(v) => Poll::Ready(Some(v)),
                 Poll::Pending => Poll::Pending,
-            },
+            }
         }
     }
 }
