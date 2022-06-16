@@ -423,7 +423,7 @@ impl<A: Actor> Context<A> {
     ///
     ///         // Actor is no longer running, so this will return Err, even though the future will
     ///         // usually never complete.
-    ///         assert!(matches!(Either::Right(_), select.await))
+    ///         matches!(select.await, Either::Right(_))
     ///     }
     /// }
     ///
