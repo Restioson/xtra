@@ -32,7 +32,7 @@ pub enum ResolveToHandlerReturn {}
 /// Marker type for resolving the [`SendFuture`] to a [`Receiver`] once the message is queued into the actor's mailbox.
 ///
 /// The [`Receiver`] can be used to await the completion of the handler separately.
-pub enum ResolveToReceiver {}
+pub enum ResoleToReceiver {}
 
 enum SendFutureInner<R, F> {
     Disconnected,
@@ -54,7 +54,7 @@ impl<R, F> SendFuture<R, F, ResolveToHandlerReturn> {
     /// Splitting off a [`Receiver`] allows you to await the completion of the [`Handler`](crate::Handler) separately from the queuing of the message into the actor's mailbox.
     ///
     /// Calling this function will change the [`Output`](Future::Output) of this [`Future`] from [`Handler::Return`](crate::Handler::Return) to [`Receiver<Handler::Return>`](Receiver<crate::Handler::Return>).
-    pub fn split_receiver(self) -> SendFuture<R, F, ResolveToReceiver> {
+    pub fn split_receiver(self) -> SendFuture<R, F, ResoleToReceiver> {
         SendFuture {
             inner: self.inner,
             phantom: PhantomData,
@@ -151,7 +151,7 @@ where
     }
 }
 
-impl<R, F> Future for SendFuture<R, F, ResolveToReceiver>
+impl<R, F> Future for SendFuture<R, F, ResoleToReceiver>
 where
     F: Future<Output = Receiver<R>> + Unpin,
 {
