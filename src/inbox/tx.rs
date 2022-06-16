@@ -29,23 +29,21 @@ impl<A> Sender<A> {
             return Err(TrySendFail::Disconnected);
         }
 
-        match inner.pop_receiver() {
-            Some(waiting) => {
-                // Contention is not anticipated here
-                let message = StolenMessageWithPriority::new(Priority::default(), message);
-                waiting.lock().fulfill(WakeReason::StolenMessage(message));
-                Ok(())
+        let message = StolenMessageWithPriority::new(Priority::default(), message);
+        match inner.try_fulfill_receiver(WakeReason::StolenMessage(message)) {
+            Ok(()) => Ok(()),
+            Err(WakeReason::StolenMessage(message)) => {
+                if !inner.is_full() {
+                    inner.default_queue.push_back(message.val);
+                    Ok(())
+                } else {
+                    // No space, must wait
+                    let waiting = WaitingSender::new(message.val);
+                    inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+                    Err(TrySendFail::Full(waiting))
+                }
             }
-            None if !inner.is_full() => {
-                inner.default_queue.push_back(message);
-                Ok(())
-            }
-            _ => {
-                // No space, must wait
-                let waiting = WaitingSender::new(message);
-                inner.waiting_senders.push_back(Arc::downgrade(&waiting));
-                Err(TrySendFail::Full(waiting))
-            }
+            Err(_) => unreachable!("Got wrong wake reason back from try_fulfill_receiver"),
         }
     }
 
@@ -56,24 +54,19 @@ impl<A> Sender<A> {
     ) -> Result<(), Disconnected> {
         let message = StolenMessageWithPriority::new(Priority::Valued(priority), message);
 
-        let waiting = {
-            let mut inner = self.0.lock().unwrap();
-            if inner.shutdown {
-                return Err(Disconnected);
+        let mut inner = self.0.lock().unwrap();
+        if inner.shutdown {
+            return Err(Disconnected);
+        }
+
+        match inner.try_fulfill_receiver(WakeReason::StolenMessage(message)) {
+            Ok(()) => Ok(()),
+            Err(WakeReason::StolenMessage(message)) => {
+                inner.priority_queue.push(message);
+                Ok(())
             }
-
-            match inner.pop_receiver() {
-                Some(actor) => actor,
-                None => {
-                    inner.priority_queue.push(message);
-                    return Ok(());
-                }
-            }
-        };
-
-        waiting.lock().fulfill(WakeReason::StolenMessage(message));
-
-        Ok(())
+            Err(_) => unreachable!("Got wrong wake reason back from try_fulfill_receiver"),
+        }
     }
 
     pub(crate) fn broadcast(&self, message: BroadcastMessage<A>) -> Result<(), Disconnected> {
@@ -98,7 +91,7 @@ impl<A> Sender<A> {
         };
 
         for rx in waiting_receivers.into_iter().flat_map(|w| w.upgrade()) {
-            rx.lock().fulfill(WakeReason::BroadcastMessage);
+            let _ = rx.lock().fulfill(WakeReason::BroadcastMessage);
         }
 
         Ok(())
@@ -119,7 +112,7 @@ impl<A> Sender<A> {
         };
 
         for rx in waiting_receivers.into_iter().flat_map(|w| w.upgrade()) {
-            rx.lock().fulfill(WakeReason::Shutdown);
+            let _ = rx.lock().fulfill(WakeReason::Shutdown);
         }
     }
 
@@ -128,6 +121,7 @@ impl<A> Sender<A> {
     }
 }
 
+#[must_use = "Futures do nothing unless polled"]
 pub(crate) struct SendFuture<A>(SendFutureInner<A>);
 
 impl<A> SendFuture<A> {
@@ -159,7 +153,7 @@ impl<A> Future for SendFuture<A> {
                     // WaitingSender would be fulfilled, but not properly woken.
                     self.0 = SendFutureInner::WaitingToSend(waiting);
                     self.poll_unpin(cx)
-                },
+                }
             },
             SendFutureInner::WaitingToSend(waiting) => {
                 {

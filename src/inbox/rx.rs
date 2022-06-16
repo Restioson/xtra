@@ -1,4 +1,5 @@
 use crate::inbox::*;
+use futures_util::FutureExt;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::future::Future;
@@ -6,7 +7,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 use std::{cmp, mem};
-use futures_util::FutureExt;
+use futures_core::FusedFuture;
 
 pub(crate) struct Receiver<A> {
     pub(super) inner: Chan<A>,
@@ -91,6 +92,7 @@ impl<A> Receiver<A> {
     }
 }
 
+#[must_use = "Futures do nothing unless polled"]
 pub(crate) struct ReceiveFuture<A>(ReceiveFutureInner<A>);
 
 impl<A> ReceiveFuture<A> {
@@ -121,7 +123,7 @@ impl<A> Future for ReceiveFuture<A> {
                     // WaitingReceiver would be fulfilled, but not properly woken.
                     self.0 = ReceiveFutureInner::Waiting { rx, waiting };
                     self.poll_unpin(cx)
-                },
+                }
             },
             ReceiveFutureInner::Waiting { rx, waiting } => {
                 {
@@ -134,6 +136,9 @@ impl<A> Future for ReceiveFuture<A> {
                                 WakeReason::StolenMessage(msg) => msg.into(),
                                 WakeReason::BroadcastMessage => rx.pop_broadcast().unwrap(),
                                 WakeReason::Shutdown => ActorMessage::Shutdown,
+                                WakeReason::Cancelled => {
+                                    unreachable!("Waiting receive future cannot be interrupted")
+                                }
                             })
                         }
                         // Message has not been delivered - continue waiting
@@ -149,29 +154,60 @@ impl<A> Future for ReceiveFuture<A> {
     }
 }
 
+impl<A> ReceiveFuture<A> {
+    /// Cancel the receiving future, returning a message if it had been fulfilled with one, but had
+    /// not yet been polled after wakeup. Future calls to `Future::poll` will return `Poll::Pending`,
+    /// and `FusedFuture::is_terminated` will return `true`.
+    ///
+    /// This is important to do over `Drop`, as with `Drop` messages may be sent back into the
+    /// channel and could be observed as received out of order, if multiple receives are concurrent
+    /// on one thread.
+    #[must_use = "If dropped, messages could be lost"]
+    fn cancel(&mut self) -> Option<ActorMessage<A>> {
+        if let ReceiveFutureInner::Waiting { waiting, .. } =
+            mem::replace(&mut self.0, ReceiveFutureInner::Complete)
+        {
+            if let Some(WakeReason::StolenMessage(msg)) = waiting.lock().cancel() {
+                return Some(msg.into());
+            }
+        }
+
+        None
+    }
+}
+
 impl<A> Drop for ReceiveFuture<A> {
     fn drop(&mut self) {
-        if let ReceiveFutureInner::Waiting { waiting, rx } = mem::replace(&mut self.0, ReceiveFutureInner::Complete) {
+        if let ReceiveFutureInner::Waiting { waiting, rx } =
+            mem::replace(&mut self.0, ReceiveFutureInner::Complete)
+        {
             let mut inner = rx.inner.lock().unwrap();
 
             // This receive future was woken with a message - send in back into the channel.
             // Ordering is compromised somewhat when concurrent receives are involved, and the cap
             // may overflow (probably not enough to cause backpressure issues), but this is better
             // than dropping a message.
-            if let Some(WakeReason::StolenMessage(msg)) = waiting.lock().wake_reason.take() {
-                match inner.pop_receiver() {
-                    Some(rx) => rx.lock().fulfill(WakeReason::StolenMessage(msg)),
-                    None => {
+            if let Some(WakeReason::StolenMessage(msg)) = waiting.lock().cancel() {
+                match inner.try_fulfill_receiver(WakeReason::StolenMessage(msg)) {
+                    Ok(()) => (),
+                    Err(WakeReason::StolenMessage(msg)) => {
                         if msg.priority == Priority::default() {
                             // Preserve ordering as much as possible by pushing to the front
                             inner.default_queue.push_front(msg.val)
                         } else {
                             inner.priority_queue.push(msg);
                         }
-                    },
+                    }
+                    Err(_) => unreachable!("Got wrong wake reason back from try_fulfill_receiver"),
                 }
             }
         }
+    }
+}
+
+impl<A> FusedFuture for ReceiveFuture<A> {
+    fn is_terminated(&self) -> bool {
+        matches!(self.0, ReceiveFutureInner::Complete)
     }
 }
 
@@ -190,11 +226,23 @@ impl<A> Default for WaitingReceiver<A> {
 }
 
 impl<A> WaitingReceiver<A> {
-    pub(super) fn fulfill(&mut self, message: WakeReason<A>) {
-        self.wake_reason = Some(message);
+    pub(super) fn fulfill(&mut self, reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
+        match self.wake_reason {
+            // Receive was interrupted, so this cannot be fulfilled
+            Some(WakeReason::Cancelled) => return Err(reason),
+            Some(_) => unreachable!("Waiting receiver was fulfilled but not popped!"),
+            None => self.wake_reason = Some(reason),
+        }
 
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }
+
+        Ok(())
+    }
+
+    /// Signify that this waiting receiver was cancelled through [`ReceiveFuture::cancel`]
+    fn cancel(&mut self) -> Option<WakeReason<A>> {
+        mem::replace(&mut self.wake_reason, Some(WakeReason::Cancelled))
     }
 }

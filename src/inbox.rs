@@ -92,14 +92,17 @@ impl<A> Inner<A> {
         self.default_queue.pop_front()
     }
 
-    fn pop_receiver(&mut self) -> Option<Arc<Spinlock<WaitingReceiver<A>>>> {
+    fn try_fulfill_receiver(&mut self, mut reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
         while !self.waiting_receivers.is_empty() {
             if let Some(rx) = self.waiting_receivers.pop_front().and_then(|w| w.upgrade()) {
-                return Some(rx);
+                reason = match rx.lock().fulfill(reason) {
+                    Ok(()) => return Ok(()),
+                    Err(reason) => reason,
+                }
             }
         }
 
-        None
+        Err(reason)
     }
 
     fn try_fulfill_sender(&mut self) {
@@ -151,6 +154,8 @@ enum WakeReason<A> {
     // should be fetched from own receiver
     BroadcastMessage,
     Shutdown,
+    // ReceiveFuture::cancel was called
+    Cancelled,
 }
 
 pub(crate) trait HasPriority {
