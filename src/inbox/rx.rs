@@ -59,14 +59,14 @@ impl<A> Receiver<A> {
             .map(|it| it.priority())
             .unwrap_or(Priority::Min);
 
-        // Try to take from default channel if both shared & broadcast are below default priority
-        if cmp::max(shared_priority, broadcast_priority) < Priority::default() {
+        // Try take from default channel
+        if cmp::max(shared_priority, broadcast_priority) <= Priority::default() {
             if let Some(msg) = inner.pop_default() {
                 return Ok(msg.into());
             }
         }
 
-        // Choose which channel to take from
+        // Choose which priority channel to take from
         match shared_priority.cmp(&broadcast_priority) {
             // Shared priority is greater or equal (and it is not empty)
             Ordering::Greater | Ordering::Equal if shared_priority != Priority::Min => {
@@ -145,6 +145,32 @@ impl<A> Future for ReceiveFuture<A> {
                 Poll::Pending
             }
             ReceiveFutureInner::Complete => Poll::Pending,
+        }
+    }
+}
+
+impl<A> Drop for ReceiveFuture<A> {
+    fn drop(&mut self) {
+        if let ReceiveFutureInner::Waiting { waiting, rx } = mem::replace(&mut self.0, ReceiveFutureInner::Complete) {
+            let mut inner = rx.inner.lock().unwrap();
+
+            // This receive future was woken with a message - send in back into the channel.
+            // Ordering is compromised somewhat when concurrent receives are involved, and the cap
+            // may overflow (probably not enough to cause backpressure issues), but this is better
+            // than dropping a message.
+            if let Some(WakeReason::StolenMessage(msg)) = waiting.lock().wake_reason.take() {
+                match inner.pop_receiver() {
+                    Some(rx) => rx.lock().fulfill(WakeReason::StolenMessage(msg)),
+                    None => {
+                        if msg.priority == Priority::default() {
+                            // Preserve ordering as much as possible by pushing to the front
+                            inner.default_queue.push_front(msg.val)
+                        } else {
+                            inner.priority_queue.push(msg);
+                        }
+                    },
+                }
+            }
         }
     }
 }

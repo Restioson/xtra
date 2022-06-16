@@ -134,6 +134,12 @@ impl<A> From<StolenMessage<A>> for ActorMessage<A> {
     }
 }
 
+impl<A> From<StolenMessageWithPriority<A>> for ActorMessage<A> {
+    fn from(msg: StolenMessageWithPriority<A>) -> Self {
+        ActorMessage::StolenMessage(msg.val)
+    }
+}
+
 impl<A> From<BroadcastMessage<A>> for ActorMessage<A> {
     fn from(msg: BroadcastMessage<A>) -> Self {
         ActorMessage::BroadcastMessage(msg)
@@ -141,7 +147,7 @@ impl<A> From<BroadcastMessage<A>> for ActorMessage<A> {
 }
 
 enum WakeReason<A> {
-    StolenMessage(StolenMessage<A>),
+    StolenMessage(StolenMessageWithPriority<A>),
     // should be fetched from own receiver
     BroadcastMessage,
     Shutdown,

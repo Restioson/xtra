@@ -32,6 +32,7 @@ impl<A> Sender<A> {
         match inner.pop_receiver() {
             Some(waiting) => {
                 // Contention is not anticipated here
+                let message = StolenMessageWithPriority::new(Priority::default(), message);
                 waiting.lock().fulfill(WakeReason::StolenMessage(message));
                 Ok(())
             }
@@ -53,6 +54,8 @@ impl<A> Sender<A> {
         message: StolenMessage<A>,
         priority: i32,
     ) -> Result<(), Disconnected> {
+        let message = StolenMessageWithPriority::new(Priority::Valued(priority), message);
+
         let waiting = {
             let mut inner = self.0.lock().unwrap();
             if inner.shutdown {
@@ -62,8 +65,7 @@ impl<A> Sender<A> {
             match inner.pop_receiver() {
                 Some(actor) => actor,
                 None => {
-                    let msg = StolenMessageWithPriority::new(Priority::Valued(priority), message);
-                    inner.priority_queue.push(msg);
+                    inner.priority_queue.push(message);
                     return Ok(());
                 }
             }
