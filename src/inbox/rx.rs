@@ -1,12 +1,12 @@
-use crate::inbox::tx::Sender;
-use crate::inbox::{
-    ActorMessage, BroadcastQueue, Chan, HasPriority, Priority, Spinlock, WaitForSender,
-    WaitingReceiver, WakeReason,
-};
-use std::cmp;
+use crate::inbox::*;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll, Waker};
+use std::{cmp, mem};
+use futures_util::FutureExt;
 
 pub(crate) struct Receiver<A> {
     pub(super) inner: Chan<A>,
@@ -36,7 +36,11 @@ impl<A> Receiver<A> {
         }
     }
 
-    fn try_recv(&self) -> Result<ActorMessage<A>, WaitForSender<A>> {
+    pub(crate) fn receive(&self) -> ReceiveFuture<A> {
+        ReceiveFuture::new(self.cloned_same_broadcast_mailbox())
+    }
+
+    fn try_recv(&self) -> Result<ActorMessage<A>, Arc<Spinlock<WaitingReceiver<A>>>> {
         let mut inner = self.inner.lock().unwrap();
         let mut broadcast = self.broadcast_mailbox.lock();
 
@@ -74,25 +78,97 @@ impl<A> Receiver<A> {
             _ => {
                 let waiting = Arc::new(Spinlock::new(WaitingReceiver::default()));
                 inner.waiting_receivers.push_back(Arc::downgrade(&waiting));
-                Err(WaitForSender(waiting))
+                Err(waiting)
             }
         }
     }
 
-    pub(crate) async fn receive(&self) -> ActorMessage<A> {
-        let waiting = match self.try_recv() {
-            Ok(msg) => return msg,
-            Err(waiting) => waiting,
-        };
+    fn pop_broadcast(&self) -> Option<ActorMessage<A>> {
+        self.broadcast_mailbox
+            .lock()
+            .pop()
+            .map(|msg| ActorMessage::BroadcastMessage(msg.0))
+    }
+}
 
-        // What happens if the channel is unlocked, then a message is sent, and only THEN is this awaited?
-        // Surely, since the waker has not yet been stored, it will miss wakeup and poll forever?
-        // No, if a message is sent, the `next_message` field will be set to `Some`, which will
-        // cause the future to return `Ready` on its *first poll* - so, wakeup is not required.
-        match waiting.await {
-            WakeReason::StolenMessage(msg) => msg.into(),
-            WakeReason::BroadcastMessage => self.broadcast_mailbox.lock().pop().unwrap().0.into(),
-            WakeReason::Shutdown => ActorMessage::Shutdown,
+pub(crate) struct ReceiveFuture<A>(ReceiveFutureInner<A>);
+
+impl<A> ReceiveFuture<A> {
+    fn new(rx: Receiver<A>) -> Self {
+        ReceiveFuture(ReceiveFutureInner::New(rx))
+    }
+}
+
+enum ReceiveFutureInner<A> {
+    New(Receiver<A>),
+    Waiting {
+        rx: Receiver<A>,
+        waiting: Arc<Spinlock<WaitingReceiver<A>>>,
+    },
+    Complete,
+}
+
+impl<A> Future for ReceiveFuture<A> {
+    type Output = ActorMessage<A>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<ActorMessage<A>> {
+        match mem::replace(&mut self.0, ReceiveFutureInner::Complete) {
+            ReceiveFutureInner::New(rx) => match rx.try_recv() {
+                Ok(message) => Poll::Ready(message),
+                Err(waiting) => {
+                    // Start waiting. The waiting receiver should be immediately polled, in case a
+                    // send operation happened between `try_recv` and here, in which case the
+                    // WaitingReceiver would be fulfilled, but not properly woken.
+                    self.0 = ReceiveFutureInner::Waiting { rx, waiting };
+                    self.poll_unpin(cx)
+                },
+            },
+            ReceiveFutureInner::Waiting { rx, waiting } => {
+                {
+                    let mut inner = waiting.lock();
+
+                    match inner.wake_reason.take() {
+                        // Message has been delivered
+                        Some(reason) => {
+                            return Poll::Ready(match reason {
+                                WakeReason::StolenMessage(msg) => msg.into(),
+                                WakeReason::BroadcastMessage => rx.pop_broadcast().unwrap(),
+                                WakeReason::Shutdown => ActorMessage::Shutdown,
+                            })
+                        }
+                        // Message has not been delivered - continue waiting
+                        None => inner.waker = Some(cx.waker().clone()),
+                    }
+                }
+
+                self.0 = ReceiveFutureInner::Waiting { rx, waiting };
+                Poll::Pending
+            }
+            ReceiveFutureInner::Complete => Poll::Pending,
+        }
+    }
+}
+
+pub struct WaitingReceiver<A> {
+    waker: Option<Waker>,
+    wake_reason: Option<WakeReason<A>>,
+}
+
+impl<A> Default for WaitingReceiver<A> {
+    fn default() -> Self {
+        WaitingReceiver {
+            waker: None,
+            wake_reason: None,
+        }
+    }
+}
+
+impl<A> WaitingReceiver<A> {
+    pub(super) fn fulfill(&mut self, message: WakeReason<A>) {
+        self.wake_reason = Some(message);
+
+        if let Some(waker) = self.waker.take() {
+            waker.wake();
         }
     }
 }

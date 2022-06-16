@@ -19,7 +19,33 @@ impl<A> Clone for Sender<A> {
 
 impl<A> Sender<A> {
     pub(crate) fn send(&self, message: StolenMessage<A>) -> SendFuture<A> {
-        SendFuture::new(message, self.0.clone())
+        SendFuture::new(message, self.clone())
+    }
+
+    fn try_send(&self, message: StolenMessage<A>) -> Result<(), TrySendFail<A>> {
+        let mut inner = self.0.lock().unwrap();
+
+        if inner.shutdown {
+            return Err(TrySendFail::Disconnected);
+        }
+
+        match inner.pop_receiver() {
+            Some(waiting) => {
+                // Contention is not anticipated here
+                waiting.lock().fulfill(WakeReason::StolenMessage(message));
+                Ok(())
+            }
+            None if !inner.is_full() => {
+                inner.default_queue.push_back(message);
+                Ok(())
+            }
+            _ => {
+                // No space, must wait
+                let waiting = WaitingSender::new(message);
+                inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+                Err(TrySendFail::Full(waiting))
+            }
+        }
     }
 
     pub(crate) fn send_priority(
@@ -78,7 +104,7 @@ impl<A> Sender<A> {
 
     pub(crate) fn into_sink(self) -> SendSink<A> {
         SendSink {
-            inner: self.0,
+            tx: self,
             future: SendFuture(SendFutureInner::Complete),
         }
     }
@@ -91,7 +117,7 @@ impl<A> Sender<A> {
         };
 
         for rx in waiting_receivers.into_iter().flat_map(|w| w.upgrade()) {
-            rx.lock().fulfill(WakeReason::BroadcastMessage);
+            rx.lock().fulfill(WakeReason::Shutdown);
         }
     }
 
@@ -103,35 +129,35 @@ impl<A> Sender<A> {
 pub(crate) struct SendFuture<A>(SendFutureInner<A>);
 
 impl<A> SendFuture<A> {
-    fn new(msg: StolenMessage<A>, inner: Chan<A>) -> Self {
-        SendFuture(SendFutureInner::New { msg, inner })
+    fn new(msg: StolenMessage<A>, tx: Sender<A>) -> Self {
+        SendFuture(SendFutureInner::New { msg, tx })
     }
 }
 
 enum SendFutureInner<A> {
     New {
         msg: StolenMessage<A>,
-        inner: Chan<A>,
+        tx: Sender<A>,
     },
     WaitingToSend(Arc<Spinlock<WaitingSender<A>>>),
     Complete,
 }
 
-impl<A> Default for SendFutureInner<A> {
-    fn default() -> Self {
-        SendFutureInner::Complete
-    }
-}
-
 impl<A> Future for SendFuture<A> {
     type Output = Result<(), Disconnected>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.0 = match mem::take(&mut self.0) {
-            SendFutureInner::New { msg, inner } => match inner.lock().unwrap().try_send(msg) {
-                Ok(()) => return Poll::Ready(Ok(())),
-                Err(TrySendFail::Disconnected) => return Poll::Ready(Err(Disconnected)),
-                Err(TrySendFail::Full(waiting)) => SendFutureInner::WaitingToSend(waiting),
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Disconnected>> {
+        match mem::replace(&mut self.0, SendFutureInner::Complete) {
+            SendFutureInner::New { msg, tx } => match tx.try_send(msg) {
+                Ok(()) => Poll::Ready(Ok(())),
+                Err(TrySendFail::Disconnected) => Poll::Ready(Err(Disconnected)),
+                Err(TrySendFail::Full(waiting)) => {
+                    // Start waiting. The waiting sender should be immediately polled, in case a
+                    // receive operation happened between `try_send` and here, in which case the
+                    // WaitingSender would be fulfilled, but not properly woken.
+                    self.0 = SendFutureInner::WaitingToSend(waiting);
+                    self.poll_unpin(cx)
+                },
             },
             SendFutureInner::WaitingToSend(waiting) => {
                 {
@@ -143,12 +169,11 @@ impl<A> Future for SendFuture<A> {
                     }
                 }
 
-                SendFutureInner::WaitingToSend(waiting)
+                self.0 = SendFutureInner::WaitingToSend(waiting);
+                Poll::Pending
             }
-            SendFutureInner::Complete => SendFutureInner::Complete,
-        };
-
-        Poll::Pending
+            SendFutureInner::Complete => Poll::Pending,
+        }
     }
 }
 
@@ -182,7 +207,7 @@ impl<A> FusedFuture for SendFuture<A> {
 }
 
 pub(crate) struct SendSink<A> {
-    inner: Chan<A>,
+    tx: Sender<A>,
     future: SendFuture<A>,
 }
 
@@ -200,7 +225,7 @@ impl<A> Sink<StolenMessage<A>> for SendSink<A> {
     }
 
     fn start_send(mut self: Pin<&mut Self>, msg: StolenMessage<A>) -> Result<(), Self::Error> {
-        self.future = SendFuture::new(msg, self.inner.clone());
+        self.future = SendFuture::new(msg, self.tx.clone());
         Ok(())
     }
 

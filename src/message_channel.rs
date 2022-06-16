@@ -198,7 +198,6 @@ where
         self.capacity()
     }
 
-    // TODO(bounded)
     fn send(
         &self,
         message: M,

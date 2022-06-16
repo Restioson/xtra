@@ -62,7 +62,7 @@ impl Clone for DropNotice {
 impl Future for DropNotice {
     type Output = ();
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<()> {
         if self.listener.is_none() {
             let event = match &self.drop_event {
                 Some(drop_event) => match drop_event.upgrade() {

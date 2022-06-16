@@ -89,7 +89,7 @@ pub struct NameableSending<A, R> {
 impl<A, R> Future for NameableSending<A, R> {
     type Output = Receiver<R>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Receiver<R>> {
         let this = self.get_mut();
 
         let result = futures_util::ready!(this.inner.poll_unpin(cx));
@@ -107,7 +107,7 @@ where
 {
     type Output = Result<R, Disconnected>;
 
-    fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Result<R, Disconnected>> {
         let this = self.get_mut();
 
         match mem::replace(&mut this.inner, SendFutureInner::Done) {
@@ -144,7 +144,7 @@ where
 {
     type Output = Receiver<R>;
 
-    fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Receiver<R>> {
         let this = self.get_mut();
 
         match mem::replace(&mut this.inner, SendFutureInner::Done) {
