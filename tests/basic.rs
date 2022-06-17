@@ -1,7 +1,9 @@
+use futures_util::task::noop_waker_ref;
 use futures_util::FutureExt;
 use smol::stream;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::task::Poll;
 use std::time::Duration;
 
 use smol_timeout::TimeoutExt;
@@ -297,4 +299,40 @@ fn address_debug() {
         "Address<basic::Greeter> { \
         ref_counter: Weak { connected: true, strong_count: 2, weak_count: 2 } }"
     );
+}
+
+#[test]
+fn scoped_task() {
+    // Completes when address is connected
+    let (addr, ctx) = Context::<Greeter>::new(None);
+    let scoped = xtra::scoped(&addr, futures_util::future::ready(()));
+    assert!(scoped.now_or_never().is_some());
+
+    // Does not complete when address starts off from a disconnected weak
+    let weak = addr.downgrade();
+    drop(addr);
+    assert!(ctx.run(Greeter).now_or_never().is_some());
+    let scoped = xtra::scoped(&weak, futures_util::future::ready(()));
+    assert_eq!(scoped.now_or_never(), Some(None));
+
+    // Does not complete when address starts off from a disconnected strong
+    let (addr, ctx) = Context::<ActorReturningStopSelf>::new(None);
+    let _ = addr.send(Stop).split_receiver().now_or_never().unwrap();
+    assert!(ctx.run(ActorReturningStopSelf).now_or_never().is_some());
+    let scoped = xtra::scoped(&addr, futures_util::future::ready(()));
+    assert_eq!(scoped.now_or_never(), Some(None));
+
+    // Does not complete when address disconnects after ScopedTask creation but before first poll
+    let (addr, ctx) = Context::<Greeter>::new(None);
+    drop(ctx);
+    let scoped = xtra::scoped(&addr, futures_util::future::ready(()));
+    assert_eq!(scoped.now_or_never(), Some(None));
+
+    // Does not complete when address disconnects after ScopedTask creation but before first poll
+    let (addr, act_ctx) = Context::<Greeter>::new(None);
+    let mut scoped = xtra::scoped(&addr, futures_util::future::pending::<()>()).boxed();
+    let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
+    assert!(scoped.poll_unpin(&mut fut_ctx).is_pending());
+    drop(act_ctx);
+    assert_eq!(scoped.poll_unpin(&mut fut_ctx), Poll::Ready(None));
 }

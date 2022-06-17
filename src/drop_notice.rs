@@ -41,12 +41,14 @@ pub struct DropNotice {
     listener: Option<EventListener>,
 }
 
-/// Returns a `DropNotice` that is not linked to a `DropNotifier`. Instead, it resolves
-/// immediately when polled.
-pub fn dropped() -> DropNotice {
-    DropNotice {
-        drop_event: None,
-        listener: None,
+impl DropNotice {
+    /// Returns a `DropNotice` that is not linked to a `DropNotifier`. Instead, it resolves
+    /// immediately when polled.
+    pub fn dropped() -> DropNotice {
+        DropNotice {
+            drop_event: None,
+            listener: None,
+        }
     }
 }
 

@@ -163,7 +163,7 @@ impl<A> ReceiveFuture<A> {
     /// channel and could be observed as received out of order, if multiple receives are concurrent
     /// on one thread.
     #[must_use = "If dropped, messages could be lost"]
-    fn cancel(&mut self) -> Option<ActorMessage<A>> {
+    pub(crate) fn cancel(&mut self) -> Option<ActorMessage<A>> {
         if let ReceiveFutureInner::Waiting { waiting, .. } =
             mem::replace(&mut self.0, ReceiveFutureInner::Complete)
         {

@@ -5,10 +5,12 @@ use std::fmt::{self, Debug, Display, Formatter};
 use std::future::Future;
 
 use std::{cmp::Ordering, error::Error, hash::Hash};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use futures_core::Stream;
-use futures_util::{future, StreamExt};
-
+use futures_util::{future, FutureExt, StreamExt};
+use crate::drop_notice::DropNotice;
 use crate::envelope::ReturningEnvelope;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
@@ -197,8 +199,21 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     }
 
     /// Waits until this address becomes disconnected.
-    pub fn join(&self) -> impl Future<Output = ()> + Send + Unpin {
-        self.ref_counter.disconnect_notice()
+    pub fn join(&self) -> ActorJoinHandle {
+        ActorJoinHandle(self.ref_counter.disconnect_notice())
+    }
+}
+
+/// A future which will complete when the corresponding actor stops and its address becomes
+/// disconnected.
+#[must_use = "Futures do nothing unless polled"]
+pub struct ActorJoinHandle(DropNotice);
+
+impl Future for ActorJoinHandle {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.0.poll_unpin(cx)
     }
 }
 
