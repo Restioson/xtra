@@ -1,14 +1,12 @@
 use crate::drop_notice::DropNotice;
 use crate::private::Sealed;
 use std::fmt::{Debug, Formatter};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock, Weak as ArcWeak};
 
 /// The reference count of a strong address. Strong addresses will prevent the actor from being
 /// dropped as long as they live. Read the docs of [`Address`](../address/struct.Address.html) to find
 /// out more.
 #[derive(Clone)]
-// TODO AtomicBool for disconnected when forcibly stopped ?
 // The RwLock is there to prevent exposing a temporarily inconsistent strong_count caused by brief
 // Arc::upgrade calls in some `Weak` functions below. If exposed, it could lead to a race condition
 // that can prevent an Actor from being stopped.
@@ -20,7 +18,6 @@ pub struct Strong {
 impl Debug for Strong {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Strong")
-            .field("connected", &self.is_connected())
             .field("strong_count", &self.strong_count())
             .field("weak_count", &self.weak_count())
             .finish()
@@ -29,17 +26,13 @@ impl Debug for Strong {
 
 #[doc(hidden)]
 pub struct Shared {
-    connected: AtomicBool,
     drop_notice: DropNotice,
 }
 
 impl Strong {
-    pub(crate) fn new(connected: AtomicBool, drop_notice: DropNotice) -> Self {
+    pub(crate) fn new(drop_notice: DropNotice) -> Self {
         Self {
-            shared: Arc::new(Shared {
-                connected,
-                drop_notice,
-            }),
+            shared: Arc::new(Shared { drop_notice }),
             lock: Arc::new(RwLock::new(())),
         }
     }
@@ -54,10 +47,6 @@ impl Strong {
             lock: self.lock.clone(),
         }
     }
-
-    pub(crate) fn mark_disconnected(&self) {
-        self.shared.connected.store(false, Ordering::Release)
-    }
 }
 
 /// The reference count of a weak address. Weak addresses will bit prevent the actor from being
@@ -71,7 +60,6 @@ pub struct Weak {
 impl Debug for Weak {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Weak")
-            .field("connected", &self.is_connected())
             .field("strong_count", &self.strong_count())
             .field("weak_count", &self.weak_count())
             .finish()
@@ -131,13 +119,14 @@ pub trait RefCounter: Sealed + Clone + Unpin + Debug + Send + Sync + 'static {
     #[doc(hidden)]
     fn as_ptr(&self) -> *const Shared;
 
-    /// Returns a `DropNotice` that resolves once this address becomes disconnected.
+    // Returns a `DropNotice` that resolves once this address becomes disconnected.
+    #[doc(hidden)]
     fn disconnect_notice(&self) -> DropNotice;
 }
 
 impl RefCounter for Strong {
     fn is_connected(&self) -> bool {
-        self.strong_count() > 0 && self.shared.connected.load(Ordering::Acquire)
+        self.strong_count() > 0
     }
 
     fn is_last_strong(&self) -> bool {
@@ -165,20 +154,7 @@ impl RefCounter for Strong {
 
 impl RefCounter for Weak {
     fn is_connected(&self) -> bool {
-        let lock = self.lock.write().unwrap();
-
-        let running = self
-            .shared
-            .upgrade()
-            .map(|shared| {
-                let connected = shared.connected.load(Ordering::Acquire);
-                drop(shared);
-                connected
-            })
-            .unwrap_or(false);
-
-        drop(lock);
-        self.strong_count() > 0 && running
+        self.strong_count() > 0
     }
 
     fn is_last_strong(&self) -> bool {
