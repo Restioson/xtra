@@ -169,7 +169,7 @@ impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
 
 impl<A: Handler<M>, M> BroadcastEnvelope for BroadcastEnvelopeConcrete<A, M>
 where
-    A: Handler<M>,
+    A: Handler<M, Return = ()>,
     M: Clone + Send + Sync + 'static,
 {
     type Actor = A;

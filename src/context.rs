@@ -321,7 +321,7 @@ impl<A: Actor> Context<A> {
     pub fn notify_all<M>(&mut self, msg: M) -> Result<(), ActorShutdown>
     where
         M: Clone + Sync + Send + 'static,
-        A: Handler<M>,
+        A: Handler<M, Return = ()>,
     {
         let envelope = BroadcastEnvelopeConcrete::<A, M>::new(msg, 1);
         self.receiver

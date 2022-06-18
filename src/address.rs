@@ -141,8 +141,8 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         ResolveToHandlerReturn,
     >
     where
-        A: Handler<M>,
         M: Send + 'static,
+        A: Handler<M>,
     {
         let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
         let tx = self.0.send(Box::new(envelope));
