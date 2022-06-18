@@ -112,8 +112,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
 
     /// The total capacity of the actor's mailbox.
     pub fn capacity(&self) -> Option<usize> {
-        todo!("Bounded")
-        //self.sink.capacity()
+        self.0.capacity()
     }
 
     /// Returns whether the actor's mailbox is empty.

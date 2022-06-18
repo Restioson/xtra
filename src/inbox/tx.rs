@@ -47,7 +47,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         match inner.try_fulfill_receiver(WakeReason::StolenMessage(message)) {
             Ok(()) => Ok(()),
             Err(WakeReason::StolenMessage(message)) => {
-                if !inner.is_full() {
+                if !inner.is_full(self.inner.capacity) {
                     inner.ordered_queue.push_back(message.val);
                     Ok(())
                 } else {
@@ -132,6 +132,10 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
 
     pub(crate) fn is_strong(&self) -> bool {
         self.rc.is_strong()
+    }
+
+    pub(crate) fn capacity(&self) -> Option<usize> {
+        self.inner.capacity
     }
 
     pub(crate) fn inner_ptr(&self) -> *const Chan<A> {
@@ -444,8 +448,8 @@ mod private {
 
         fn is_strong(&self) -> bool {
             match self {
-                TxEither::Strong(strong) => true,
-                TxEither::Weak(weak) => false,
+                TxEither::Strong(_) => true,
+                TxEither::Weak(_) => false,
             }
         }
     }

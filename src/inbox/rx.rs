@@ -71,7 +71,7 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
 
         // Try take from ordered channel
         if cmp::max(shared_priority, broadcast_priority) <= Priority::default() {
-            if let Some(msg) = inner.pop_ordered() {
+            if let Some(msg) = inner.pop_ordered(self.inner.capacity) {
                 return Ok(msg.into());
             }
         }

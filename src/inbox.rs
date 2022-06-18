@@ -35,17 +35,17 @@ impl Default for Priority {
     }
 }
 
-pub(crate) fn new<A>(bound: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
+pub(crate) fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
     let broadcast_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
     let inner = Arc::new(Chan {
         chan: Mutex::new(ChanInner {
             ordered_queue: VecDeque::new(),
-            bound,
             waiting_senders: VecDeque::new(),
             waiting_receivers: VecDeque::new(),
             priority_queue: BinaryHeap::new(),
             broadcast_queues: vec![Arc::downgrade(&broadcast_mailbox)],
         }),
+        capacity,
         on_shutdown: Event::new(),
         shutdown: AtomicBool::new(false),
         sender_count: AtomicUsize::new(1),
@@ -69,6 +69,7 @@ pub(crate) fn new<A>(bound: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, 
 // Public because of private::RefCounterInner. This should never actually be exported, though.
 pub struct Chan<A> {
     chan: Mutex<ChanInner<A>>,
+    capacity: Option<usize>,
     on_shutdown: Event,
     shutdown: AtomicBool,
     sender_count: AtomicUsize,
@@ -103,7 +104,6 @@ impl<A> Chan<A> {
 // overall performance gains, but these likely won't in crude_bench or any throughput testing
 struct ChanInner<A> {
     ordered_queue: VecDeque<StolenMessage<A>>,
-    bound: Option<usize>,
     waiting_senders: VecDeque<Weak<Spinlock<WaitingSender<A>>>>,
     waiting_receivers: VecDeque<Weak<Spinlock<WaitingReceiver<A>>>>,
     priority_queue: BinaryHeap<StolenMessageWithPriority<A>>,
@@ -111,8 +111,8 @@ struct ChanInner<A> {
 }
 
 impl<A> ChanInner<A> {
-    fn is_full(&self) -> bool {
-        self.bound
+    fn is_full(&self, capacity: Option<usize>) -> bool {
+        capacity
             .map(|cap| self.ordered_queue.len() >= cap)
             .unwrap_or(false)
     }
@@ -121,9 +121,9 @@ impl<A> ChanInner<A> {
         self.priority_queue.pop().map(|msg| msg.val)
     }
 
-    fn pop_ordered(&mut self) -> Option<StolenMessage<A>> {
+    fn pop_ordered(&mut self, capacity: Option<usize>) -> Option<StolenMessage<A>> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
-        if self.is_full() {
+        if self.is_full(capacity) {
             self.try_fulfill_sender();
         }
 
