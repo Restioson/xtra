@@ -4,15 +4,15 @@
 
 use std::fmt::Debug;
 
-use crate::address::{Address, WeakAddress};
+use crate::address::{ActorJoinHandle, Address, WeakAddress};
 use crate::envelope::ReturningEnvelope;
-use crate::private::Sealed;
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Strong};
 use crate::send_future::{ResolveToHandlerReturn, SendFuture};
 use crate::{Handler, KeepRunning};
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
+use crate::message_channel::private::MessageChannelInner;
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
@@ -76,7 +76,7 @@ use futures_core::stream::BoxStream;
 ///     })
 /// }
 /// ```
-pub trait MessageChannel<M>: Sealed + Unpin + Debug + Send {
+pub trait MessageChannel<M>: MessageChannelInner + Unpin + Debug + Send {
     /// The return value of the handler for `M`.
     type Return: Send + 'static;
     /// Returns whether the actor referred to by this address is running and accepting messages.
@@ -125,9 +125,40 @@ pub trait MessageChannel<M>: Sealed + Unpin + Debug + Send {
     /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn MessageChannel<M, Return = Self::Return>>;
 
+    /// Waits until this address becomes disconnected.
+    fn join(&self) -> ActorJoinHandle;
+
     /// Determines whether this and the other message channel address the same actor mailbox.
+    fn same_actor(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool;
+
+    /// Determines whether this and the other message channel address the same actor mailbox **and**
+    /// they have reference count type equality. This means that this will only return true if
+    /// [`MessageChannel::same_actor`] returns true **and** if they both have weak or strong reference
+    /// counts. [`Either`](crate::refcount::Either) will compare as whichever reference count type
+    /// it wraps.
     fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool;
 }
+
+mod private {
+    use crate::refcount::RefCounter;
+    use crate::{Actor, Address};
+
+    pub trait MessageChannelInner {
+        fn is_strong(&self) -> bool;
+        fn inner_ptr(&self) -> *const ();
+    }
+
+    impl<A: Actor, Rc: RefCounter> MessageChannelInner for Address<A, Rc> {
+        fn is_strong(&self) -> bool {
+            self.0.is_strong()
+        }
+
+        fn inner_ptr(&self) -> *const () {
+            self.0.inner_ptr() as *const ()
+        }
+    }
+}
+
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
@@ -220,8 +251,16 @@ where
         Box::new(self.clone())
     }
 
-    fn eq(&self, _other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
-        todo!("eq")
+    fn join(&self) -> ActorJoinHandle {
+        self.join()
+    }
+
+    fn same_actor(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
+        self.inner_ptr() == other.inner_ptr()
+    }
+
+    fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
+        MessageChannel::same_actor(self, other) && (self.is_strong() == other.is_strong())
     }
 }
 

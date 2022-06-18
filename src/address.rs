@@ -1,6 +1,7 @@
 //! An address to an actor is a way to send it a message. An address allows an actor to be sent any
 //! kind of message that it can receive.
 
+use std::cmp::Ordering;
 use crate::envelope::ReturningEnvelope;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
@@ -11,6 +12,7 @@ use futures_util::{future, FutureExt, StreamExt};
 use std::error::Error;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::future::Future;
+use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -186,6 +188,13 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     pub fn join(&self) -> ActorJoinHandle {
         ActorJoinHandle(self.0.disconnect_notice())
     }
+
+    /// Returns true if this address and the other address point to the same actor. This is
+    /// distinct from the implementation of `PartialEq` as it ignores reference count type, which
+    /// must be the same for `PartialEq` to return `true`.
+    pub fn same_actor<Rc2: RefCounter>(&self, other: &Address<A, Rc2>) -> bool {
+        self.0.inner_ptr() == other.0.inner_ptr()
+    }
 }
 
 /// A future which will complete when the corresponding actor stops and its address becomes
@@ -218,27 +227,39 @@ impl<A, Rc: RefCounter> Clone for Address<A, Rc> {
 }
 
 // TODO(eq)
-// // Pointer identity for Address equality/comparison
-// impl<A, Rc: RefCounter, Rc2: RefCounter> PartialEq<Address<A, Rc2>> for Address<A, Rc> {
-//     fn eq(&self, other: &Address<A, Rc2>) -> bool {
-//         PartialEq::eq(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
-//     }
-// }
-//
-// impl<A, Rc: RefCounter> Eq for Address<A, Rc> {}
-//
-// impl<A, Rc: RefCounter, Rc2: RefCounter> PartialOrd<Address<A, Rc2>> for Address<A, Rc> {
-//     fn partial_cmp(&self, other: &Address<A, Rc2>) -> Option<Ordering> {
-//         PartialOrd::partial_cmp(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
-//     }
-// }
-// impl<A, Rc: RefCounter> Ord for Address<A, Rc> {
-//     fn cmp(&self, other: &Self) -> Ordering {
-//         Ord::cmp(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
-//     }
-// }
-// impl<A, Rc: RefCounter> Hash for Address<A, Rc> {
-//     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-//         Hash::hash(&self.ref_counter.as_ptr(), state)
-//     }
-// }
+/// Determines whether this and the other message channel address the same actor mailbox **and**
+/// they have reference count type equality. This means that this will only return true if
+/// [`MessageChannel::same_actor`] returns true **and** if they both have weak or strong reference
+/// counts. [`Either`](crate::refcount::Either) will compare as whichever reference count type
+/// it wraps.
+impl<A, Rc: RefCounter, Rc2: RefCounter> PartialEq<Address<A, Rc2>> for Address<A, Rc> {
+    fn eq(&self, other: &Address<A, Rc2>) -> bool {
+        (self.same_actor(other)) && (self.0.is_strong() == other.0.is_strong())
+    }
+}
+
+impl<A, Rc: RefCounter> Eq for Address<A, Rc> {}
+
+/// TODO(doc)
+impl<A, Rc: RefCounter, Rc2: RefCounter> PartialOrd<Address<A, Rc2>> for Address<A, Rc> {
+    fn partial_cmp(&self, other: &Address<A, Rc2>) -> Option<Ordering> {
+        Some(match self.0.inner_ptr().cmp(&other.0.inner_ptr()) {
+            Ordering::Equal => self.0.is_strong().cmp(&other.0.is_strong()),
+            ord => ord,
+        })
+    }
+}
+
+impl<A, Rc: RefCounter> Ord for Address<A, Rc> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.inner_ptr().cmp(&other.0.inner_ptr())
+    }
+}
+
+impl<A, Rc: RefCounter> Hash for Address<A, Rc> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(self.0.inner_ptr() as *const _ as usize);
+        state.write_u8(self.0.is_strong() as u8);
+        state.finish();
+    }
+}

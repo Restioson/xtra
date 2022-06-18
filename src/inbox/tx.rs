@@ -130,6 +130,14 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         !self.inner.is_shutdown()
     }
 
+    pub(crate) fn is_strong(&self) -> bool {
+        self.rc.is_strong()
+    }
+
+    pub(crate) fn inner_ptr(&self) -> *const Chan<A> {
+        (&self.inner as &Chan<A>) as *const Chan<A>
+    }
+
     pub(crate) fn disconnect_notice(&self) -> Option<EventListener> {
         // Listener is created before checking connectivity to avoid the following race scenario:
         //
@@ -365,6 +373,8 @@ mod private {
         fn decrement<A>(&self, inner: &Chan<A>) -> bool;
         /// TODO(doc)
         fn into_either(self) -> TxEither;
+        /// TODO(doc)
+        fn is_strong(&self) -> bool;
     }
 
     impl RefCounterInner for TxStrong {
@@ -387,6 +397,10 @@ mod private {
         fn into_either(self) -> TxEither {
             TxEither::Strong(self)
         }
+
+        fn is_strong(&self) -> bool {
+            true
+        }
     }
 
     impl RefCounterInner for TxWeak {
@@ -403,6 +417,9 @@ mod private {
 
         fn into_either(self) -> TxEither {
             TxEither::Weak(self)
+        }
+        fn is_strong(&self) -> bool {
+            false
         }
     }
 
@@ -423,6 +440,13 @@ mod private {
 
         fn into_either(self) -> TxEither {
             self
+        }
+
+        fn is_strong(&self) -> bool {
+            match self {
+                TxEither::Strong(strong) => true,
+                TxEither::Weak(weak) => false,
+            }
         }
     }
 }

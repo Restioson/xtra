@@ -255,11 +255,3 @@ impl From<()> for KeepRunning {
         KeepRunning::Yes
     }
 }
-
-mod private {
-    use crate::refcount::RefCounter;
-    use crate::{Actor, Address};
-
-    pub trait Sealed {}
-    impl<A: Actor, Rc: RefCounter> Sealed for Address<A, Rc> {}
-}
