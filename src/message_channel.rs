@@ -4,16 +4,15 @@
 
 use std::fmt::Debug;
 
-use futures_core::future::BoxFuture;
-use futures_core::stream::BoxStream;
-
 use crate::address::{Address, WeakAddress};
 use crate::envelope::ReturningEnvelope;
 use crate::private::Sealed;
 use crate::receiver::Receiver;
-use crate::refcount::{RefCounter, Shared, Strong};
+use crate::refcount::{RefCounter, Strong};
 use crate::send_future::{ResolveToHandlerReturn, SendFuture};
 use crate::{Handler, KeepRunning};
+use futures_core::future::BoxFuture;
+use futures_core::stream::BoxStream;
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
@@ -128,10 +127,6 @@ pub trait MessageChannel<M>: Sealed + Unpin + Debug + Send {
 
     /// Determines whether this and the other message channel address the same actor mailbox.
     fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool;
-
-    /// This is an internal method and should never be called manually.
-    #[doc(hidden)]
-    fn _ref_counter_eq(&self, other: *const Shared) -> bool;
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
@@ -203,7 +198,7 @@ where
         message: M,
     ) -> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
         let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
-        let sending = self.sender.send(Box::new(envelope));
+        let sending = self.0.send(Box::new(envelope));
 
         #[allow(clippy::async_yields_async)] // We only want to await the sending.
         SendFuture::sending_boxed(async move {
@@ -225,12 +220,8 @@ where
         Box::new(self.clone())
     }
 
-    fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
-        other._ref_counter_eq(self.ref_counter.as_ptr())
-    }
-
-    fn _ref_counter_eq(&self, other: *const Shared) -> bool {
-        self.ref_counter.as_ptr() == other
+    fn eq(&self, _other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
+        todo!("eq")
     }
 }
 

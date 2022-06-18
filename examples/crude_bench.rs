@@ -1,8 +1,7 @@
-use std::time::{Duration, Instant};
-
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 use std::future::Future;
+use std::time::{Duration, Instant};
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
 use xtra::NameableSending;

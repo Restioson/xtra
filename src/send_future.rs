@@ -1,4 +1,5 @@
 use crate::receiver::Receiver;
+use crate::refcount::{RefCounter, Strong};
 use crate::{inbox, Disconnected};
 use futures_core::future::BoxFuture;
 use futures_core::FusedFuture;
@@ -65,9 +66,9 @@ impl<R> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
     }
 }
 
-impl<A, R> SendFuture<R, NameableSending<A, R>, ResolveToHandlerReturn> {
+impl<A, R, Rc: RefCounter> SendFuture<R, NameableSending<A, R, Rc>, ResolveToHandlerReturn> {
     pub(crate) fn sending_named(
-        send_fut: inbox::SendFuture<A>,
+        send_fut: inbox::SendFuture<A, Rc>,
         receiver: catty::Receiver<R>,
     ) -> Self {
         Self {
@@ -81,12 +82,12 @@ impl<A, R> SendFuture<R, NameableSending<A, R>, ResolveToHandlerReturn> {
 }
 
 /// "Sending" state of [`SendFuture`] for cases where the actor type is known and we can there refer to it by name.
-pub struct NameableSending<A, R> {
-    inner: inbox::SendFuture<A>,
+pub struct NameableSending<A, R, Rc: RefCounter = Strong> {
+    inner: inbox::SendFuture<A, Rc>,
     receiver: Option<Receiver<R>>,
 }
 
-impl<A, R> Future for NameableSending<A, R> {
+impl<A, R, Rc: RefCounter> Future for NameableSending<A, R, Rc> {
     type Output = Receiver<R>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Receiver<R>> {

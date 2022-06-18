@@ -1,24 +1,22 @@
 //! Latency is prioritised over most accurate prioritisation. Specifically, at most one low priority
 //! message may be handled before piled-up higher priority messages will be handled.
-// TODO(bounded)
 
-mod rx;
-mod tx;
+pub(crate) mod rx;
+pub mod tx;
 
 pub(crate) use rx::Receiver;
 pub(crate) use tx::{SendFuture, Sender};
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope};
-
-use crate::inbox::tx::WaitingSender;
+use crate::inbox::rx::{RxStrong, WaitingReceiver};
+use crate::inbox::tx::{TxStrong, WaitingSender};
+use event_listener::Event;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
+use std::mem;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::{atomic, Arc, Mutex, Weak};
 
-use std::sync::{Arc, Mutex, Weak};
-
-use crate::inbox::rx::WaitingReceiver;
-
-type Chan<A> = Arc<Mutex<Inner<A>>>;
 type Spinlock<T> = spin::Mutex<T>;
 type StolenMessage<A> = Box<dyn MessageEnvelope<Actor = A>>;
 type BroadcastMessage<A> = Arc<dyn BroadcastEnvelope<Actor = A>>;
@@ -37,45 +35,85 @@ impl Default for Priority {
     }
 }
 
-pub(crate) fn new<A>(bound: Option<usize>) -> (Sender<A>, Receiver<A>) {
+pub(crate) fn new<A>(bound: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
     let broadcast_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
-    let inner = Inner {
-        default_queue: VecDeque::new(),
-        bound,
-        waiting_senders: VecDeque::new(),
-        waiting_receivers: VecDeque::new(),
-        priority_queue: BinaryHeap::new(),
-        broadcast_queues: vec![Arc::downgrade(&broadcast_mailbox)],
-        shutdown: false,
-    };
+    let inner = Arc::new(Chan {
+        chan: Mutex::new(ChanInner {
+            ordered_queue: VecDeque::new(),
+            bound,
+            waiting_senders: VecDeque::new(),
+            waiting_receivers: VecDeque::new(),
+            priority_queue: BinaryHeap::new(),
+            broadcast_queues: vec![Arc::downgrade(&broadcast_mailbox)],
+        }),
+        on_shutdown: Event::new(),
+        shutdown: AtomicBool::new(false),
+        sender_count: AtomicUsize::new(1),
+        receiver_count: AtomicUsize::new(1),
+    });
 
-    let inner = Arc::new(Mutex::new(inner));
+    let tx = Sender {
+        inner: inner.clone(),
+        rc: TxStrong(()),
+    };
 
     let rx = Receiver {
-        inner: inner.clone(),
+        inner,
         broadcast_mailbox,
+        rc: RxStrong(()),
     };
 
-    (Sender(inner), rx)
+    (tx, rx)
+}
+
+// Public because of private::RefCounterInner. This should never actually be exported, though.
+pub struct Chan<A> {
+    chan: Mutex<ChanInner<A>>,
+    on_shutdown: Event,
+    shutdown: AtomicBool,
+    sender_count: AtomicUsize,
+    receiver_count: AtomicUsize,
+}
+
+impl<A> Chan<A> {
+    fn is_shutdown(&self) -> bool {
+        // TODO(atomic) what ordering to use here
+        self.shutdown.load(atomic::Ordering::SeqCst)
+    }
+
+    pub(crate) fn shutdown(&self) {
+        let waiting_receivers = {
+            let mut inner = self.chan.lock().unwrap();
+
+            // TODO(atomic) what ordering to use here?
+            self.shutdown.store(true, atomic::Ordering::SeqCst);
+            self.on_shutdown.notify(usize::MAX);
+
+            mem::take(&mut inner.waiting_receivers)
+        };
+
+        for rx in waiting_receivers.into_iter().flat_map(|w| w.upgrade()) {
+            let _ = rx.lock().fulfill(WakeReason::Shutdown);
+        }
+    }
 }
 
 // TODO(perf): try and reduce contention on Inner as much as possible
 // Might be able to move some stuff out to atomics, or lock it separately. This should net some
 // overall performance gains, but these likely won't in crude_bench or any throughput testing
-struct Inner<A> {
-    default_queue: VecDeque<StolenMessage<A>>,
+struct ChanInner<A> {
+    ordered_queue: VecDeque<StolenMessage<A>>,
     bound: Option<usize>,
     waiting_senders: VecDeque<Weak<Spinlock<WaitingSender<A>>>>,
     waiting_receivers: VecDeque<Weak<Spinlock<WaitingReceiver<A>>>>,
     priority_queue: BinaryHeap<StolenMessageWithPriority<A>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
-    shutdown: bool,
 }
 
-impl<A> Inner<A> {
+impl<A> ChanInner<A> {
     fn is_full(&self) -> bool {
         self.bound
-            .map(|cap| self.default_queue.len() >= cap)
+            .map(|cap| self.ordered_queue.len() >= cap)
             .unwrap_or(false)
     }
 
@@ -83,13 +121,13 @@ impl<A> Inner<A> {
         self.priority_queue.pop().map(|msg| msg.val)
     }
 
-    fn pop_default(&mut self) -> Option<StolenMessage<A>> {
+    fn pop_ordered(&mut self) -> Option<StolenMessage<A>> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
         if self.is_full() {
             self.try_fulfill_sender();
         }
 
-        self.default_queue.pop_front()
+        self.ordered_queue.pop_front()
     }
 
     fn try_fulfill_receiver(&mut self, mut reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
@@ -113,7 +151,7 @@ impl<A> Inner<A> {
                 .and_then(|w| w.upgrade())
                 .and_then(|tx| tx.lock().fulfill())
             {
-                self.default_queue.push_back(msg);
+                self.ordered_queue.push_back(msg);
                 return;
             }
         }
@@ -261,7 +299,7 @@ mod test {
     #[tokio::test]
     async fn test_broadcast() {
         let (tx, rx) = new(None);
-        let rx2 = rx.cloned_new_broadcast_mailbox();
+        let rx2 = rx.shallow_weak_clone();
 
         let orig = Arc::new(BroadcastEnvelopeConcrete::new("Hi", 1));
         let orig = orig as Arc<dyn BroadcastEnvelope<Actor = MyActor>>;

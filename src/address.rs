@@ -1,20 +1,18 @@
 //! An address to an actor is a way to send it a message. An address allows an actor to be sent any
 //! kind of message that it can receive.
 
-use std::fmt::{self, Debug, Display, Formatter};
-use std::future::Future;
-
-use std::{cmp::Ordering, error::Error, hash::Hash};
-use std::pin::Pin;
-use std::task::{Context, Poll};
-
-use futures_core::Stream;
-use futures_util::{future, FutureExt, StreamExt};
-use crate::drop_notice::DropNotice;
 use crate::envelope::ReturningEnvelope;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
 use crate::{inbox, Handler, KeepRunning, NameableSending, SendFuture};
+use event_listener::EventListener;
+use futures_core::Stream;
+use futures_util::{future, FutureExt, StreamExt};
+use std::error::Error;
+use std::fmt::{self, Debug, Display, Formatter};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// The actor is no longer running and disconnected from the sending address. For why this could
 /// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and
@@ -39,16 +37,11 @@ impl Error for Disconnected {}
 /// should be used instead. An address is created by calling the
 /// [`Actor::create`](../trait.Actor.html#method.create) or
 /// [`Context::run`](../struct.Context.html#method.run) methods, or by cloning another `Address`.
-pub struct Address<A: 'static, Rc: RefCounter = Strong> {
-    pub(crate) sender: inbox::Sender<A>,
-    pub(crate) ref_counter: Rc,
-}
+pub struct Address<A: 'static, Rc: RefCounter = Strong>(pub(crate) inbox::Sender<A, Rc>);
 
 impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct(&format!("Address<{}>", std::any::type_name::<A>()))
-            .field("ref_counter", &self.ref_counter)
-            .finish()
+        f.debug_tuple("Address").field(&self.0).finish()
     }
 }
 
@@ -64,10 +57,7 @@ impl<A> Address<A, Strong> {
     /// an actor will not be prevented from being dropped if only weak sinks, channels, and
     /// addresses exist.
     pub fn downgrade(&self) -> WeakAddress<A> {
-        WeakAddress {
-            sender: self.sender.clone(),
-            ref_counter: self.ref_counter.downgrade(),
-        }
+        Address(self.0.downgrade())
     }
 }
 
@@ -75,10 +65,7 @@ impl<A> Address<A, Strong> {
 impl<A> Address<A, Either> {
     /// Converts this address into a weak address.
     pub fn downgrade(&self) -> WeakAddress<A> {
-        WeakAddress {
-            sender: self.sender.clone(),
-            ref_counter: self.ref_counter.clone().into_weak(),
-        }
+        Address(self.0.downgrade())
     }
 }
 
@@ -112,19 +99,19 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// })
     /// ```
     pub fn is_connected(&self) -> bool {
-        self.sender.is_connected()
+        self.0.is_connected()
     }
 
     /// Returns the number of messages in the actor's mailbox.
     pub fn len(&self) -> usize {
-        todo!("Len") // TODO(bounded)
-                     //self.sink.len()
+        todo!("Len")
+        //self.sink.len()
     }
 
     /// The total capacity of the actor's mailbox.
     pub fn capacity(&self) -> Option<usize> {
-        todo!("Bounded") // TODO(bounded)
-                         //self.sink.capacity()
+        todo!("Bounded")
+        //self.sink.capacity()
     }
 
     /// Returns whether the actor's mailbox is empty.
@@ -134,10 +121,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
 
     /// Convert this address into a generic address which can be weak or strong.
     pub fn as_either(&self) -> Address<A, Either> {
-        Address {
-            sender: self.sender.clone(),
-            ref_counter: self.ref_counter.clone().into_either(),
-        }
+        Address(self.0.clone().into_either_rc())
     }
 
     /// Send a message to the actor.
@@ -152,7 +136,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         message: M,
     ) -> SendFuture<
         <A as Handler<M>>::Return,
-        NameableSending<A, <A as Handler<M>>::Return>,
+        NameableSending<A, <A as Handler<M>>::Return, Rc>,
         ResolveToHandlerReturn,
     >
     where
@@ -160,7 +144,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         M: Send + 'static,
     {
         let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-        let tx = self.sender.send(Box::new(envelope));
+        let tx = self.0.send(Box::new(envelope));
         SendFuture::sending_named(tx, rx)
     }
 
@@ -182,7 +166,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         A: Handler<M, Return = K>,
         S: Stream<Item = M> + Send,
     {
-        let mut stopped = self.ref_counter.disconnect_notice();
+        let mut stopped = self.join();
         futures_util::pin_mut!(stream);
 
         loop {
@@ -200,65 +184,61 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
 
     /// Waits until this address becomes disconnected.
     pub fn join(&self) -> ActorJoinHandle {
-        ActorJoinHandle(self.ref_counter.disconnect_notice())
+        ActorJoinHandle(self.0.disconnect_notice())
     }
 }
 
 /// A future which will complete when the corresponding actor stops and its address becomes
 /// disconnected.
 #[must_use = "Futures do nothing unless polled"]
-pub struct ActorJoinHandle(DropNotice);
+pub struct ActorJoinHandle(Option<EventListener>);
 
 impl Future for ActorJoinHandle {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.0.poll_unpin(cx)
+        match self.0.take() {
+            Some(mut listener) => match listener.poll_unpin(cx) {
+                Poll::Ready(()) => Poll::Ready(()),
+                Poll::Pending => {
+                    self.0 = Some(listener);
+                    Poll::Pending
+                }
+            },
+            None => Poll::Ready(()),
+        }
     }
 }
 
 // Required because #[derive] adds an A: Clone bound
 impl<A, Rc: RefCounter> Clone for Address<A, Rc> {
     fn clone(&self) -> Self {
-        Address {
-            sender: self.sender.clone(),
-            ref_counter: self.ref_counter.clone(),
-        }
+        Address(self.0.clone())
     }
 }
 
-// Drop impls cannot be specialised, so a little bit of fanagling is used in the RefCounter impl
-impl<A, Rc: RefCounter> Drop for Address<A, Rc> {
-    fn drop(&mut self) {
-        // We should notify the ActorManager that there are no more strong Addresses and the actor
-        // should be stopped.
-        if self.ref_counter.is_last_strong() {
-            self.sender.shutdown();
-        }
-    }
-}
-
-// Pointer identity for Address equality/comparison
-impl<A, Rc: RefCounter, Rc2: RefCounter> PartialEq<Address<A, Rc2>> for Address<A, Rc> {
-    fn eq(&self, other: &Address<A, Rc2>) -> bool {
-        PartialEq::eq(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
-    }
-}
-
-impl<A, Rc: RefCounter> Eq for Address<A, Rc> {}
-
-impl<A, Rc: RefCounter, Rc2: RefCounter> PartialOrd<Address<A, Rc2>> for Address<A, Rc> {
-    fn partial_cmp(&self, other: &Address<A, Rc2>) -> Option<Ordering> {
-        PartialOrd::partial_cmp(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
-    }
-}
-impl<A, Rc: RefCounter> Ord for Address<A, Rc> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        Ord::cmp(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
-    }
-}
-impl<A, Rc: RefCounter> Hash for Address<A, Rc> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        Hash::hash(&self.ref_counter.as_ptr(), state)
-    }
-}
+// TODO(eq)
+// // Pointer identity for Address equality/comparison
+// impl<A, Rc: RefCounter, Rc2: RefCounter> PartialEq<Address<A, Rc2>> for Address<A, Rc> {
+//     fn eq(&self, other: &Address<A, Rc2>) -> bool {
+//         PartialEq::eq(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
+//     }
+// }
+//
+// impl<A, Rc: RefCounter> Eq for Address<A, Rc> {}
+//
+// impl<A, Rc: RefCounter, Rc2: RefCounter> PartialOrd<Address<A, Rc2>> for Address<A, Rc> {
+//     fn partial_cmp(&self, other: &Address<A, Rc2>) -> Option<Ordering> {
+//         PartialOrd::partial_cmp(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
+//     }
+// }
+// impl<A, Rc: RefCounter> Ord for Address<A, Rc> {
+//     fn cmp(&self, other: &Self) -> Ordering {
+//         Ord::cmp(&self.ref_counter.as_ptr(), &other.ref_counter.as_ptr())
+//     }
+// }
+// impl<A, Rc: RefCounter> Hash for Address<A, Rc> {
+//     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+//         Hash::hash(&self.ref_counter.as_ptr(), state)
+//     }
+// }

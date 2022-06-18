@@ -12,15 +12,11 @@ pub use self::send_future::{NameableSending, SendFuture};
 
 pub mod address;
 mod context;
-mod drop_notice;
 mod envelope;
 mod inbox;
 mod manager;
 pub mod message_channel;
 mod receiver;
-/// This module contains types representing the strength of an address's reference counting, which
-/// influences whether the address will keep the actor alive for as long as it lives.
-pub mod refcount;
 /// This module contains a way to scope a future to the lifetime of an actor, stopping it before it
 /// completes if the actor it is associated with stops too.
 pub mod scoped_task;
@@ -42,6 +38,14 @@ pub mod prelude {
     pub use crate::{Actor, Handler};
 
     pub use async_trait::async_trait;
+}
+
+/// TODO(doc)
+pub mod refcount {
+    pub use crate::inbox::tx::TxEither as Either;
+    pub use crate::inbox::tx::TxRefCounter as RefCounter;
+    pub use crate::inbox::tx::TxStrong as Strong;
+    pub use crate::inbox::tx::TxWeak as Weak;
 }
 
 /// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
@@ -253,13 +257,9 @@ impl From<()> for KeepRunning {
 }
 
 mod private {
-    use crate::refcount::{Either, RefCounter, Strong, Weak};
+    use crate::refcount::RefCounter;
     use crate::{Actor, Address};
 
     pub trait Sealed {}
-
-    impl Sealed for Strong {}
-    impl Sealed for Weak {}
-    impl Sealed for Either {}
     impl<A: Actor, Rc: RefCounter> Sealed for Address<A, Rc> {}
 }

@@ -162,11 +162,9 @@ async fn test_stream_cancel_join() {
 
 #[tokio::test]
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
-    let address = ActorReturningStopSelf.create(None).spawn_global();
-
-    address.send(Stop).await.unwrap();
-    smol::Timer::after(Duration::from_secs(1)).await;
-
+    let (address, fut) = ActorReturningStopSelf.create(None).run();
+    let _ = address.send(Stop).split_receiver().await;
+    assert!(fut.now_or_never().is_some());
     assert!(!address.is_connected());
 }
 
@@ -286,18 +284,19 @@ fn address_debug() {
     let addr2 = addr1.clone();
     let weak_addr = addr2.downgrade();
 
+    // TODO(debug) this could maybe be prettier
     assert_eq!(
         format!("{:?}", addr1),
-        "Address<basic::Greeter> { \
-        ref_counter: Strong { connected: true, strong_count: 2, weak_count: 2 } }"
+        "Address(Sender<basic::Greeter> { \
+        shutdown: false, rx_count: 1, tx_count: 2, rc: TxStrong(()) })"
     );
 
     assert_eq!(format!("{:?}", addr1), format!("{:?}", addr2));
 
     assert_eq!(
         format!("{:?}", weak_addr),
-        "Address<basic::Greeter> { \
-        ref_counter: Weak { connected: true, strong_count: 2, weak_count: 2 } }"
+        "Address(Sender<basic::Greeter> { \
+        shutdown: false, rx_count: 1, tx_count: 2, rc: TxWeak(()) })"
     );
 }
 

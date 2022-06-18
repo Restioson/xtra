@@ -1,19 +1,14 @@
+use crate::envelope::BroadcastEnvelopeConcrete;
+use crate::inbox::{rx::RxStrong, ActorMessage};
+use crate::manager::ContinueManageLoop;
+use crate::{inbox, Actor, Address, Handler, KeepRunning};
 use futures_util::future::{self, Either};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::future::Future;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
-
-use crate::drop_notice::DropNotifier;
-use crate::envelope::BroadcastEnvelopeConcrete;
-use crate::inbox::ActorMessage;
-use crate::manager::ContinueManageLoop;
-use crate::refcount::{Strong, Weak};
-use crate::{inbox, Actor, Address, Handler, KeepRunning};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
@@ -21,15 +16,7 @@ pub struct Context<A> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
     /// for it to call the `stopping` method on the actor
     running: RunningState,
-    /// Kept by the context to allow for it to check how many strong addresses exist to the actor
-    ref_counter: Weak,
-    receiver: inbox::Receiver<A>,
-    /// Shared between all contexts on the same address
-    shared_drop_notifier: Arc<DropNotifier>,
-    /// Activates when this context is dropped. Used in [`Context::notify_interval`] and [`Context::notify_after`]
-    /// to shutdown the tasks as soon as the context stops.
-    #[cfg_attr(not(feature = "timing"), allow(dead_code))]
-    drop_notifier: DropNotifier,
+    receiver: inbox::Receiver<A, RxStrong>,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -67,26 +54,14 @@ impl<A: Actor> Context<A> {
     ///
     /// ```
     pub fn new(message_cap: Option<usize>) -> (Address<A>, Self) {
-        let shared_drop_notifier = Arc::new(DropNotifier::new());
-
-        let strong = Strong::new(AtomicBool::new(true), shared_drop_notifier.subscribe());
-        let weak = strong.downgrade();
-
-        let (sender, rx) = inbox::new(message_cap);
-
-        let addr = Address {
-            sender,
-            ref_counter: strong,
-        };
+        let (tx, rx) = inbox::new(message_cap);
 
         let context = Context {
             running: RunningState::Running,
-            ref_counter: weak,
             receiver: rx,
-            shared_drop_notifier,
-            drop_notifier: DropNotifier::new(),
         };
-        (addr, context)
+
+        (Address(tx), context)
     }
 
     /// Attaches an actor of the same type listening to the same address as this actor is.
@@ -94,10 +69,7 @@ impl<A: Actor> Context<A> {
     pub fn attach(&mut self, actor: A) -> impl Future<Output = A::Stop> {
         let ctx = Context {
             running: RunningState::Running,
-            ref_counter: self.ref_counter.clone(),
-            receiver: self.receiver.cloned_new_broadcast_mailbox(),
-            shared_drop_notifier: self.shared_drop_notifier.clone(),
-            drop_notifier: DropNotifier::new(),
+            receiver: self.receiver.deep_clone(),
         };
         ctx.run(actor)
     }
@@ -110,19 +82,15 @@ impl<A: Actor> Context<A> {
 
     /// Get an address to the current actor if there are still external addresses to the actor.
     pub fn address(&self) -> Result<Address<A>, ActorShutdown> {
-        Ok(Address {
-            sender: self.receiver.sender(),
-            ref_counter: self.ref_counter.upgrade().ok_or(ActorShutdown)?,
-        })
+        self.receiver.sender().ok_or(ActorShutdown).map(Address)
     }
 
     /// Stop all actors on this address
     fn stop_all(&mut self) {
-        if let Some(strong) = self.ref_counter.upgrade() {
-            strong.mark_disconnected();
+        // We only need to shut down if there are still any strong senders left
+        if let Some(sender) = self.receiver.sender() {
+            sender.shutdown();
         }
-
-        self.receiver.sender().shutdown();
     }
 
     /// Check if the Context is still set to running, returning whether to continue the manage loop
@@ -257,7 +225,7 @@ impl<A: Actor> Context<A> {
     {
         futures_util::pin_mut!(fut);
         match self.select(actor, fut).await {
-            Either::Left(res) => return res,
+            Either::Left(res) => res,
             Either::Right(fut) => fut.await,
         }
     }
@@ -320,12 +288,12 @@ impl<A: Actor> Context<A> {
     ///
     /// ```
     pub async fn select<F, R>(&mut self, actor: &mut A, mut fut: F) -> Either<R, F>
-        where
-            F: Future<Output = R> + Unpin,
+    where
+        F: Future<Output = R> + Unpin,
     {
         while self.running == RunningState::Running {
             let (msg, unfinished) = {
-                let  mut next_msg = self.receiver.receive();
+                let mut next_msg = self.receiver.receive();
                 match future::select(fut, &mut next_msg).await {
                     Either::Left((future_res, _)) => {
                         // TODO(?) should this be here? Preserves ordering but may increase time for
@@ -334,8 +302,8 @@ impl<A: Actor> Context<A> {
                             self.tick(msg, actor).await;
                         }
 
-                        return Either::Left(future_res)
-                    },
+                        return Either::Left(future_res);
+                    }
                     Either::Right(tuple) => tuple,
                 }
             };
@@ -350,16 +318,17 @@ impl<A: Actor> Context<A> {
     /// Notify all actors on this address with a given message, in a broadcast fashion. The message
     /// will be received once by all actors. Note that currently there is no message cap on the
     /// broadcast channel (it is unbounded).
-    pub fn notify_all<M>(&mut self, msg: M)
+    pub fn notify_all<M>(&mut self, msg: M) -> Result<(), ActorShutdown>
     where
         M: Clone + Sync + Send + 'static,
         A: Handler<M>,
     {
         let envelope = BroadcastEnvelopeConcrete::<A, M>::new(msg, 1);
-        let _ = self
-            .receiver
-            .sender() // TODO inefficient
-            .broadcast(Arc::new(envelope));
+        self.receiver
+            .sender()
+            .ok_or(ActorShutdown)?
+            .broadcast(Arc::new(envelope))
+            .map_err(|_| ActorShutdown)
     }
 
     /// Notify the actor with a message every interval until it is stopped (either directly with
@@ -381,7 +350,7 @@ impl<A: Actor> Context<A> {
         A: Handler<M>,
     {
         let addr = self.address()?.downgrade();
-        let mut stopped = self.drop_notifier.subscribe();
+        let mut stopped = addr.join();
 
         let fut = async move {
             loop {
@@ -419,7 +388,7 @@ impl<A: Actor> Context<A> {
         A: Handler<M>,
     {
         let addr = self.address()?.downgrade();
-        let mut stopped = self.drop_notifier.subscribe();
+        let mut stopped = addr.join();
 
         let fut = async move {
             let delay = Delay::new(duration);
