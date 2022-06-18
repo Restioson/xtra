@@ -6,13 +6,13 @@ use std::fmt::Debug;
 
 use crate::address::{ActorJoinHandle, Address, WeakAddress};
 use crate::envelope::ReturningEnvelope;
+use crate::message_channel::private::MessageChannelInner;
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Strong};
 use crate::send_future::{ResolveToHandlerReturn, SendFuture};
 use crate::{Handler, KeepRunning};
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
-use crate::message_channel::private::MessageChannelInner;
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
@@ -158,7 +158,6 @@ mod private {
         }
     }
 }
-
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with

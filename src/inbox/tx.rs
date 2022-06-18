@@ -83,7 +83,10 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         }
     }
 
-    pub(crate) fn broadcast(&self, message: Arc<dyn BroadcastEnvelope<Actor = A>>) -> Result<(), Disconnected> {
+    pub(crate) fn broadcast(
+        &self,
+        message: Arc<dyn BroadcastEnvelope<Actor = A>>,
+    ) -> Result<(), Disconnected> {
         let waiting_receivers = {
             let mut inner = self.inner.chan.lock().unwrap();
 

@@ -1,7 +1,6 @@
 //! An address to an actor is a way to send it a message. An address allows an actor to be sent any
 //! kind of message that it can receive.
 
-use std::cmp::Ordering;
 use crate::envelope::ReturningEnvelope;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
@@ -9,6 +8,7 @@ use crate::{inbox, Handler, KeepRunning, NameableSending, SendFuture};
 use event_listener::EventListener;
 use futures_core::Stream;
 use futures_util::{future, FutureExt, StreamExt};
+use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::future::Future;
