@@ -225,7 +225,6 @@ impl<A, Rc: RefCounter> Clone for Address<A, Rc> {
     }
 }
 
-// TODO(eq)
 /// Determines whether this and the other message channel address the same actor mailbox **and**
 /// they have reference count type equality. This means that this will only return true if
 /// [`MessageChannel::same_actor`] returns true **and** if they both have weak or strong reference

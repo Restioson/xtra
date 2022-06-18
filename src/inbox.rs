@@ -19,8 +19,7 @@ use std::sync::{atomic, Arc, Mutex, Weak};
 
 type Spinlock<T> = spin::Mutex<T>;
 type StolenMessage<A> = Box<dyn MessageEnvelope<Actor = A>>;
-type BroadcastMessage<A> = Arc<dyn BroadcastEnvelope<Actor = A>>;
-type BroadcastQueue<A> = Spinlock<BinaryHeap<BroadcastMessageWrapper<A>>>;
+type BroadcastQueue<A> = Spinlock<BinaryHeap<BroadcastMessage<A>>>;
 
 // TODO(priority)
 #[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone)]
@@ -165,7 +164,7 @@ enum TrySendFail<A> {
 
 pub(crate) enum ActorMessage<A> {
     StolenMessage(StolenMessage<A>),
-    BroadcastMessage(BroadcastMessage<A>),
+    BroadcastMessage(Arc<dyn BroadcastEnvelope<Actor = A>>),
     Shutdown,
 }
 
@@ -181,8 +180,8 @@ impl<A> From<StolenMessageWithPriority<A>> for ActorMessage<A> {
     }
 }
 
-impl<A> From<BroadcastMessage<A>> for ActorMessage<A> {
-    fn from(msg: BroadcastMessage<A>) -> Self {
+impl<A> From<Arc<dyn BroadcastEnvelope<Actor = A>>> for ActorMessage<A> {
+    fn from(msg: Arc<dyn BroadcastEnvelope<Actor = A>>) -> Self {
         ActorMessage::BroadcastMessage(msg)
     }
 }
@@ -219,7 +218,7 @@ impl<A> StolenMessageWithPriority<A> {
 
 impl<A> PartialEq for StolenMessageWithPriority<A> {
     fn eq(&self, other: &Self) -> bool {
-        self.priority == other.priority // TODO(eq)
+        self.priority == other.priority
     }
 }
 
@@ -237,29 +236,29 @@ impl<A> Ord for StolenMessageWithPriority<A> {
     }
 }
 
-struct BroadcastMessageWrapper<A>(BroadcastMessage<A>);
+struct BroadcastMessage<A>(Arc<dyn BroadcastEnvelope<Actor = A>>);
 
-impl<A> HasPriority for BroadcastMessageWrapper<A> {
+impl<A> HasPriority for BroadcastMessage<A> {
     fn priority(&self) -> Priority {
         self.0.priority()
     }
 }
 
-impl<A> Eq for BroadcastMessageWrapper<A> {}
+impl<A> Eq for BroadcastMessage<A> {}
 
-impl<A> PartialEq<Self> for BroadcastMessageWrapper<A> {
+impl<A> PartialEq<Self> for BroadcastMessage<A> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.priority() == other.0.priority() // TODO(eq)
+        self.0.priority() == other.0.priority()
     }
 }
 
-impl<A> PartialOrd<Self> for BroadcastMessageWrapper<A> {
+impl<A> PartialOrd<Self> for BroadcastMessage<A> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<A> Ord for BroadcastMessageWrapper<A> {
+impl<A> Ord for BroadcastMessage<A> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.priority().cmp(&other.priority())
     }
