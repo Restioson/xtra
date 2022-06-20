@@ -125,11 +125,6 @@ impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<
     }
 }
 
-/// Like MessageEnvelope, but can be cloned.
-pub trait BroadcastMessageEnvelope: MessageEnvelope + Sync {
-    fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>>;
-}
-
 /// Like MessageEnvelope, but with an Arc instead of Box
 pub trait BroadcastEnvelope: MessageEnvelope + Send + Sync {
     fn clone(&self) -> Box<dyn BroadcastEnvelope<Actor = Self::Actor>>;
