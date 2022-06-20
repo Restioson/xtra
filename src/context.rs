@@ -115,10 +115,7 @@ impl<A: Actor> Context<A> {
     async fn tick(&mut self, msg: ActorMessage<A>, actor: &mut A) -> ControlFlow<()> {
         match msg {
             ActorMessage::ToAllActors(msg) => msg.handle(actor, self).await,
-            ActorMessage::Shutdown => {
-                self.running = false;
-                return ControlFlow::Break(());
-            }
+            ActorMessage::Shutdown => self.running = false,
             ActorMessage::ToOneActor(msg) => msg.handle(actor, self).await,
         }
 
