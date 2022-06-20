@@ -47,20 +47,12 @@ pub(crate) fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<
         capacity,
         on_shutdown: Event::new(),
         shutdown: AtomicBool::new(false),
-        sender_count: AtomicUsize::new(1),
-        receiver_count: AtomicUsize::new(1),
+        sender_count: AtomicUsize::new(0),
+        receiver_count: AtomicUsize::new(0),
     });
 
-    let tx = Sender {
-        inner: inner.clone(),
-        rc: TxStrong(()),
-    };
-
-    let rx = Receiver {
-        inner,
-        broadcast_mailbox,
-        rc: RxStrong(()),
-    };
+    let tx = Sender::new(inner.clone());
+    let rx = Receiver::new(inner, broadcast_mailbox);
 
     (tx, rx)
 }

@@ -1,4 +1,3 @@
-use crate::inbox::tx::TxWeak;
 use crate::inbox::*;
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
@@ -16,11 +15,24 @@ pub(crate) struct Receiver<A, Rc: RxRefCounter> {
     pub(super) rc: Rc,
 }
 
+impl<A> Receiver<A, RxStrong> {
+    pub(super) fn new(inner: Arc<Chan<A>>, broadcast_mailbox: Arc<BroadcastQueue<A>>) -> Self {
+        let rc = RxStrong(());
+        rc.increment(&inner);
+
+        Receiver {
+            inner,
+            broadcast_mailbox,
+            rc,
+        }
+    }
+}
+
 impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
     pub(crate) fn sender(&self) -> Option<Sender<A, TxStrong>> {
         Some(Sender {
             inner: self.inner.clone(),
-            rc: TxWeak(()).upgrade(&self.inner)?,
+            rc: TxStrong::new(&self.inner)?,
         })
     }
 
@@ -272,7 +284,7 @@ pub(crate) trait RxRefCounter: Unpin {
     fn decrement<A>(&self, inner: &Chan<A>) -> bool;
 }
 
-pub(crate) struct RxStrong(pub(crate) ());
+pub(crate) struct RxStrong(());
 
 impl RxRefCounter for RxStrong {
     fn increment<A>(&self, inner: &Chan<A>) -> Self {
@@ -291,7 +303,7 @@ impl RxRefCounter for RxStrong {
     }
 }
 
-pub(crate) struct RxWeak(pub(crate) ());
+pub(crate) struct RxWeak(());
 
 impl RxRefCounter for RxWeak {
     fn increment<A>(&self, _inner: &Chan<A>) -> Self {

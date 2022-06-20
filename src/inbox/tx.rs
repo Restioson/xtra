@@ -17,6 +17,15 @@ pub(crate) struct Sender<A, Rc: TxRefCounter> {
     pub(super) rc: Rc,
 }
 
+impl<A> Sender<A, TxStrong> {
+    pub(crate) fn new(inner: Arc<Chan<A>>) -> Self {
+        let rc = TxStrong(());
+        rc.increment(&inner);
+
+        Sender { inner, rc }
+    }
+}
+
 impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     pub(crate) fn send(&self, message: StolenMessage<A>) -> SendFuture<A, Rc> {
         SendFuture::new(message, self.clone())
@@ -318,14 +327,14 @@ impl TxRefCounter for TxEither {}
 
 /// TODO(doc)
 #[derive(Debug)]
-pub struct TxStrong(pub(crate) ());
+pub struct TxStrong(());
 
 /// TODO(doc)
 #[derive(Debug)]
-pub struct TxWeak(pub(crate) ());
+pub struct TxWeak(());
 
-impl TxWeak {
-    pub(crate) fn upgrade<A>(&self, inner: &Chan<A>) -> Option<TxStrong> {
+impl TxStrong {
+    pub(crate) fn new<A>(inner: &Chan<A>) -> Option<TxStrong> {
         // All code taken from Weak::upgrade in std
         use std::sync::atomic::Ordering::*;
 
