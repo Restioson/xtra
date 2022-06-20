@@ -113,7 +113,11 @@ impl<A, M: Clone> Clone for NonReturningEnvelope<A, M> {
     }
 }
 
-impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<A, M> {
+impl<A, M> MessageEnvelope for NonReturningEnvelope<A, M>
+where
+    A: Handler<M, Return = ()>,
+    M: Send + 'static,
+{
     type Actor = A;
 
     fn handle<'a>(
@@ -121,7 +125,7 @@ impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> BoxFuture<'a, ()> {
-        Box::pin(act.handle(self.message, ctx).map(|_| ()))
+        Box::pin(act.handle(self.message, ctx))
     }
 }
 
@@ -133,7 +137,7 @@ pub trait BroadcastEnvelope: MessageEnvelope + Send + Sync {
 impl<A, M> BroadcastEnvelope for NonReturningEnvelope<A, M>
 where
     M: Clone + Send + Sync + 'static,
-    A: Handler<M>,
+    A: Handler<M, Return = ()>,
 {
     fn clone(&self) -> Box<dyn BroadcastEnvelope<Actor = Self::Actor>> {
         Box::new(<NonReturningEnvelope<A, M> as Clone>::clone(self))
