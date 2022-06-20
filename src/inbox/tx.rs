@@ -26,23 +26,6 @@ impl<A> Sender<A, TxStrong> {
 }
 
 impl<Rc: TxRefCounter, A> Sender<A, Rc> {
-    pub fn send(&self, message: MessageToOneActor<A>) -> SendFuture<A, Rc> {
-        SendFuture::new(message, self.clone())
-    }
-
-    pub fn downgrade(&self) -> Sender<A, TxWeak> {
-        Sender {
-            inner: self.inner.clone(),
-            rc: TxWeak(()),
-        }
-    }
-
-    pub fn into_either_rc(self) -> Sender<A, TxEither> {
-        Sender {
-            inner: self.inner.clone(),
-            rc: self.rc.increment(&self.inner).into_either(),
-        }
-    }
 
     fn try_send(&self, message: MessageToOneActor<A>) -> Result<(), TrySendFail<A>> {
         let mut inner = self.inner.chan.lock().unwrap();
@@ -67,6 +50,10 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
             }
             Err(_) => unreachable!("Got wrong wake reason back from try_fulfill_receiver"),
         }
+    }
+
+    pub fn send(&self, message: MessageToOneActor<A>) -> SendFuture<A, Rc> {
+        SendFuture::new(message, self.clone())
     }
 
     pub fn send_priority(
@@ -122,6 +109,28 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         Ok(())
     }
 
+    pub fn downgrade(&self) -> Sender<A, TxWeak> {
+        Sender {
+            inner: self.inner.clone(),
+            rc: TxWeak(()),
+        }
+    }
+
+    pub fn is_strong(&self) -> bool {
+        self.rc.is_strong()
+    }
+
+    pub fn inner_ptr(&self) -> *const Chan<A> {
+        (&self.inner as &Chan<A>) as *const Chan<A>
+    }
+
+    pub fn into_either_rc(self) -> Sender<A, TxEither> {
+        Sender {
+            inner: self.inner.clone(),
+            rc: self.rc.increment(&self.inner).into_either(),
+        }
+    }
+
     pub fn shutdown_and_drain(&self) {
         self.inner.shutdown_and_drain();
     }
@@ -130,16 +139,8 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         !self.inner.is_shutdown()
     }
 
-    pub fn is_strong(&self) -> bool {
-        self.rc.is_strong()
-    }
-
     pub fn capacity(&self) -> Option<usize> {
         self.inner.capacity
-    }
-
-    pub fn inner_ptr(&self) -> *const Chan<A> {
-        (&self.inner as &Chan<A>) as *const Chan<A>
     }
 
     pub fn disconnect_notice(&self) -> Option<EventListener> {
