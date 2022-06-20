@@ -220,7 +220,7 @@ impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
                     Err(WakeReason::MessageToOneActor(msg)) => {
                         if msg.priority == Priority::default() {
                             // Preserve ordering as much as possible by pushing to the front
-                            inner.ordered_queue.push_front(msg.val)
+                            inner.ordered_queue.push_front(msg.message)
                         } else {
                             inner.priority_queue.push(msg);
                         }

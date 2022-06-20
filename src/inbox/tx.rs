@@ -52,16 +52,16 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
             return Err(TrySendFail::Disconnected);
         }
 
-        let message = PriorityMessageToOne::new(Priority::default(), message);
+        let message = Prioritized::new(Priority::default(), message);
         match inner.try_fulfill_receiver(WakeReason::MessageToOneActor(message)) {
             Ok(()) => Ok(()),
             Err(WakeReason::MessageToOneActor(message)) => {
                 if !inner.is_full(self.inner.capacity) {
-                    inner.ordered_queue.push_back(message.val);
+                    inner.ordered_queue.push_back(message.message);
                     Ok(())
                 } else {
                     // No space, must wait
-                    let waiting = WaitingSender::new(message.val);
+                    let waiting = WaitingSender::new(message.message);
                     inner.waiting_senders.push_back(Arc::downgrade(&waiting));
                     Err(TrySendFail::Full(waiting))
                 }
@@ -75,7 +75,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         message: MessageToOneActor<A>,
         priority: i32,
     ) -> Result<(), Disconnected> {
-        let message = PriorityMessageToOne::new(Priority::Valued(priority), message);
+        let message = Prioritized::new(Priority::Valued(priority), message);
         let mut inner = self.inner.chan.lock().unwrap();
 
         if self.inner.is_shutdown() {

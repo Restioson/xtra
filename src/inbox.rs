@@ -121,7 +121,7 @@ struct ChanInner<A> {
     ordered_queue: VecDeque<MessageToOneActor<A>>,
     waiting_senders: VecDeque<Weak<Spinlock<WaitingSender<A>>>>,
     waiting_receivers: VecDeque<Weak<Spinlock<WaitingReceiver<A>>>>,
-    priority_queue: BinaryHeap<PriorityMessageToOne<A>>,
+    priority_queue: BinaryHeap<Prioritized<MessageToOneActor<A>>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
 }
 
@@ -131,7 +131,7 @@ impl<A> ChanInner<A> {
     }
 
     fn pop_priority(&mut self) -> Option<MessageToOneActor<A>> {
-        Some(self.priority_queue.pop()?.val)
+        Some(self.priority_queue.pop()?.message)
     }
 
     fn pop_ordered(&mut self, capacity: Option<usize>) -> Option<MessageToOneActor<A>> {
@@ -183,9 +183,9 @@ impl<A> From<MessageToOneActor<A>> for ActorMessage<A> {
     }
 }
 
-impl<A> From<PriorityMessageToOne<A>> for ActorMessage<A> {
-    fn from(msg: PriorityMessageToOne<A>) -> Self {
-        ActorMessage::ToOneActor(msg.val)
+impl<A> From<Prioritized<MessageToOneActor<A>>> for ActorMessage<A> {
+    fn from(msg: Prioritized<MessageToOneActor<A>>) -> Self {
+        ActorMessage::ToOneActor(msg.message)
     }
 }
 
@@ -196,7 +196,7 @@ impl<A> From<Arc<dyn BroadcastEnvelope<Actor = A>>> for ActorMessage<A> {
 }
 
 enum WakeReason<A> {
-    MessageToOneActor(PriorityMessageToOne<A>),
+    MessageToOneActor(Prioritized<MessageToOneActor<A>>),
     // should be fetched from own receiver
     MessageToAllActors,
     Shutdown,
@@ -208,38 +208,38 @@ pub trait HasPriority {
     fn priority(&self) -> Priority;
 }
 
-impl<A> HasPriority for PriorityMessageToOne<A> {
+impl<A> HasPriority for Prioritized<A> {
     fn priority(&self) -> Priority {
         self.priority
     }
 }
 
-struct PriorityMessageToOne<A> {
+struct Prioritized<M> {
     priority: Priority,
-    val: MessageToOneActor<A>,
+    message: M,
 }
 
-impl<A> PriorityMessageToOne<A> {
-    fn new(priority: Priority, val: MessageToOneActor<A>) -> Self {
-        PriorityMessageToOne { priority, val }
+impl<M> Prioritized<M> {
+    fn new(priority: Priority, message: M) -> Self {
+        Self { priority, message }
     }
 }
 
-impl<A> PartialEq for PriorityMessageToOne<A> {
+impl<A> PartialEq for Prioritized<A> {
     fn eq(&self, other: &Self) -> bool {
         self.priority == other.priority
     }
 }
 
-impl<A> Eq for PriorityMessageToOne<A> {}
+impl<A> Eq for Prioritized<A> {}
 
-impl<A> PartialOrd for PriorityMessageToOne<A> {
+impl<A> PartialOrd for Prioritized<A> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<A> Ord for PriorityMessageToOne<A> {
+impl<A> Ord for Prioritized<A> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.priority.cmp(&other.priority)
     }
