@@ -14,7 +14,7 @@ rust-version = "1.56.0"
 
 [dependencies]
 async-trait = "0.1.36"
-catty = "0.1.4"
+catty = "0.1.5"
 futures-core = { version = "0.3.21", default-features = false, features = ["alloc"] }
 futures-sink = { version = "0.3.21", default-features = false }
 futures-util = { version = "0.3.21", default-features = false, features = ["sink", "alloc"] }
@@ -60,9 +60,6 @@ with-smol-1 = ["smol"]
 with-tokio-1 = ["tokio"]
 with-wasm_bindgen-0_2 = ["wasm-bindgen", "wasm-bindgen-futures"]
 with-tracing-0_1 = ["tracing"]
-
-[profile.release]
-debug = true
 
 [[example]]
 name = "basic_tokio"
