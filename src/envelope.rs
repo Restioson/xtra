@@ -123,12 +123,6 @@ pub trait BroadcastMessageEnvelope: MessageEnvelope + Sync {
     fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>>;
 }
 
-impl<A> Clone for Box<dyn BroadcastMessageEnvelope<Actor = A>> {
-    fn clone(&self) -> Self {
-        BroadcastMessageEnvelope::clone(&**self)
-    }
-}
-
 /// Like MessageEnvelope, but with an Arc instead of Box
 pub trait BroadcastEnvelope: HasPriority + Send + Sync {
     type Actor;
