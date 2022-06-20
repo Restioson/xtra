@@ -19,7 +19,7 @@ use std::sync::{atomic, Arc, Mutex, Weak};
 
 type Spinlock<T> = spin::Mutex<T>;
 type MessageToOneActor<A> = Box<dyn MessageEnvelope<Actor = A>>;
-type MessageToAllActors<A> = Arc<dyn BroadcastEnvelope<Actor = A>>;
+type MessageToAllActors<A> = Box<dyn BroadcastEnvelope<Actor = A>>;
 type BroadcastQueue<A> = Spinlock<BinaryHeap<Prioritized<MessageToAllActors<A>>>>;
 
 // TODO(priority)
@@ -174,7 +174,7 @@ enum TrySendFail<A> {
 
 pub enum ActorMessage<A> {
     ToOneActor(MessageToOneActor<A>),
-    ToAllActors(Arc<dyn BroadcastEnvelope<Actor = A>>),
+    ToAllActors(MessageToAllActors<A>),
     Shutdown,
 }
 
@@ -205,7 +205,6 @@ enum WakeReason<A> {
     Cancelled,
 }
 
-#[derive(Clone)]
 struct Prioritized<M> {
     priority: Priority,
     message: M,
@@ -218,6 +217,15 @@ impl<M> Prioritized<M> {
 
     fn priority(&self) -> Priority {
         self.priority
+    }
+}
+
+impl<A> Prioritized<Box<dyn BroadcastEnvelope<Actor = A>>> {
+    fn clone(&self) -> Self {
+        Self {
+            priority: self.priority,
+            message: self.message.clone(),
+        }
     }
 }
 
@@ -244,7 +252,7 @@ impl<A> Ord for Prioritized<A> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::envelope::BroadcastEnvelopeConcrete;
+    use crate::envelope::NonReturningEnvelope;
     use crate::prelude::{Context, *};
     use futures_util::FutureExt;
 
@@ -277,17 +285,17 @@ mod test {
         let (tx, rx) = new(None);
         let rx2 = rx.shallow_weak_clone();
 
-        let orig = Arc::new(BroadcastEnvelopeConcrete::new("Hi", 1));
-        let orig = orig as Arc<dyn BroadcastEnvelope<Actor = MyActor>>;
-        tx.broadcast(orig.clone()).unwrap();
+        let orig = Box::new(NonReturningEnvelope::new("Hi"));
+        let orig = orig as Box<dyn BroadcastEnvelope<Actor = MyActor>>;
+        tx.broadcast(orig.clone(), 1).unwrap();
 
         match rx.receive().await {
-            ActorMessage::ToAllActors(msg) => assert!(Arc::ptr_eq(&msg, &orig)),
+            ActorMessage::ToAllActors(_) => {}
             _ => panic!("Expected broadcast message, got something else"),
         }
 
         match rx2.receive().await {
-            ActorMessage::ToAllActors(msg) => assert!(Arc::ptr_eq(&msg, &orig)),
+            ActorMessage::ToAllActors(_) => {}
             _ => panic!("Expected broadcast message, got something else"),
         }
 

@@ -94,7 +94,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
 
     pub fn broadcast(
         &self,
-        message: Arc<dyn BroadcastEnvelope<Actor = A>>,
+        message: Box<dyn BroadcastEnvelope<Actor = A>>,
         priority: i32,
     ) -> Result<(), Disconnected> {
         let message = Prioritized::new(Priority::Valued(priority), message);

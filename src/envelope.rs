@@ -1,5 +1,4 @@
 use std::marker::PhantomData;
-use std::sync::Arc;
 
 use catty::{Receiver, Sender};
 use futures_core::future::BoxFuture;
@@ -105,6 +104,15 @@ impl<A: Actor, M> NonReturningEnvelope<A, M> {
     }
 }
 
+impl<A, M: Clone> Clone for NonReturningEnvelope<A, M> {
+    fn clone(&self) -> Self {
+        Self {
+            message: self.message.clone(),
+            phantom: PhantomData::default(),
+        }
+    }
+}
+
 impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<A, M> {
     type Actor = A;
 
@@ -123,42 +131,16 @@ pub trait BroadcastMessageEnvelope: MessageEnvelope + Sync {
 }
 
 /// Like MessageEnvelope, but with an Arc instead of Box
-pub trait BroadcastEnvelope: Send + Sync {
-    type Actor;
-
-    fn handle<'a>(
-        self: Arc<Self>,
-        act: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
-    ) -> BoxFuture<'a, ()>;
+pub trait BroadcastEnvelope: MessageEnvelope + Send + Sync {
+    fn clone(&self) -> Box<dyn BroadcastEnvelope<Actor = Self::Actor>>;
 }
 
-pub struct BroadcastEnvelopeConcrete<A, M> {
-    message: M,
-    phantom: PhantomData<fn() -> A>,
-}
-
-impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
-    pub fn new(message: M) -> Self {
-        BroadcastEnvelopeConcrete {
-            message,
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<A: Handler<M>, M> BroadcastEnvelope for BroadcastEnvelopeConcrete<A, M>
+impl<A, M> BroadcastEnvelope for NonReturningEnvelope<A, M>
 where
-    A: Handler<M, Return = ()>,
     M: Clone + Send + Sync + 'static,
+    A: Handler<M>,
 {
-    type Actor = A;
-
-    fn handle<'a>(
-        self: Arc<Self>,
-        act: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
-    ) -> BoxFuture<'a, ()> {
-        Box::pin(act.handle(self.message.clone(), ctx))
+    fn clone(&self) -> Box<dyn BroadcastEnvelope<Actor = Self::Actor>> {
+        Box::new(<NonReturningEnvelope<A, M> as Clone>::clone(self))
     }
 }

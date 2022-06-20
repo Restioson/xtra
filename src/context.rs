@@ -1,4 +1,4 @@
-use crate::envelope::BroadcastEnvelopeConcrete;
+use crate::envelope::NonReturningEnvelope;
 use crate::inbox::{rx::RxStrong, ActorMessage};
 use crate::{inbox, Actor, Address, Handler};
 use futures_util::future::{self, Either};
@@ -6,7 +6,6 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::ops::ControlFlow;
-use std::sync::Arc;
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
 
@@ -290,11 +289,11 @@ impl<A: Actor> Context<A> {
         M: Clone + Sync + Send + 'static,
         A: Handler<M, Return = ()>,
     {
-        let envelope = BroadcastEnvelopeConcrete::<A, M>::new(msg);
+        let envelope = NonReturningEnvelope::<A, M>::new(msg);
         self.receiver
             .sender()
             .ok_or(ActorShutdown)?
-            .broadcast(Arc::new(envelope), 1)
+            .broadcast(Box::new(envelope), 1)
             .map_err(|_| ActorShutdown)
     }
 
