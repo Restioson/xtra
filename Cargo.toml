@@ -14,8 +14,8 @@ rust-version = "1.56.0"
 
 [dependencies]
 async-trait = "0.1.36"
-barrage = "0.2.1"
-catty = "0.1.4"
+barrage = "0.2.2"
+catty = "0.1.5"
 flume = { version = "0.10.13", default-features = false, features = ["async"] }
 futures-core = { version = "0.3.21", default-features = false, features = ["alloc"] }
 futures-sink = { version = "0.3.21", default-features = false }
