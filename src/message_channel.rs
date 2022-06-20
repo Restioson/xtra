@@ -6,7 +6,6 @@ use std::fmt::Debug;
 
 use crate::address::{ActorJoinHandle, Address, WeakAddress};
 use crate::envelope::ReturningEnvelope;
-use crate::message_channel::private::MessageChannelInner;
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Strong};
 use crate::send_future::{ResolveToHandlerReturn, SendFuture};
@@ -76,7 +75,9 @@ use futures_core::stream::BoxStream;
 ///     })
 /// }
 /// ```
-pub trait MessageChannel<M>: MessageChannelInner + Unpin + Debug + Send {
+pub trait MessageChannel<M>:
+    private::IsStrong + private::ToInnerPtr + Unpin + Debug + Send
+{
     /// The return value of the handler for `M`.
     type Return: Send + 'static;
     /// Returns whether the actor referred to by this address is running and accepting messages.
@@ -137,26 +138,6 @@ pub trait MessageChannel<M>: MessageChannelInner + Unpin + Debug + Send {
     /// counts. [`Either`](crate::refcount::Either) will compare as whichever reference count type
     /// it wraps.
     fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool;
-}
-
-mod private {
-    use crate::refcount::RefCounter;
-    use crate::{Actor, Address};
-
-    pub trait MessageChannelInner {
-        fn is_strong(&self) -> bool;
-        fn inner_ptr(&self) -> *const ();
-    }
-
-    impl<A: Actor, Rc: RefCounter> MessageChannelInner for Address<A, Rc> {
-        fn is_strong(&self) -> bool {
-            self.0.is_strong()
-        }
-
-        fn inner_ptr(&self) -> *const () {
-            self.0.inner_ptr() as *const ()
-        }
-    }
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
@@ -255,11 +236,42 @@ where
     }
 
     fn same_actor(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
-        self.inner_ptr() == other.inner_ptr()
+        use private::ToInnerPtr;
+
+        self.to_inner_ptr() == other.to_inner_ptr()
     }
 
     fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
+        use private::IsStrong;
+
         MessageChannel::same_actor(self, other) && (self.is_strong() == other.is_strong())
+    }
+}
+
+/// Contains crate-private traits to allow implementations of [`MessageChannel::same_actor`] and [`MessageChannel::eq`].
+///
+/// Both of these functions only operate on type-erased [`MessageChannel`]s and thus cannot access the underlying [`Address`].
+mod private {
+    use super::*;
+
+    pub trait IsStrong {
+        fn is_strong(&self) -> bool;
+    }
+
+    pub trait ToInnerPtr {
+        fn to_inner_ptr(&self) -> *const ();
+    }
+
+    impl<A, Rc: RefCounter> IsStrong for Address<A, Rc> {
+        fn is_strong(&self) -> bool {
+            self.0.is_strong()
+        }
+    }
+
+    impl<A, Rc: RefCounter> ToInnerPtr for Address<A, Rc> {
+        fn to_inner_ptr(&self) -> *const () {
+            self.0.inner_ptr() as *const ()
+        }
     }
 }
 
