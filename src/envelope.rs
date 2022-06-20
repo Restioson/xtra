@@ -88,23 +88,22 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
     }
 }
 
-/// An envelope that does not return a result from a message. Constructed  by the `AddressExt::do_send`
-/// method.
-pub struct NonReturningEnvelope<A, M> {
+/// Special-case envelope for handlers which return `()`.
+pub struct UnitReturnEnvelope<A, M> {
     message: M,
     phantom: PhantomData<fn() -> A>,
 }
 
-impl<A: Actor, M> NonReturningEnvelope<A, M> {
+impl<A: Actor, M> UnitReturnEnvelope<A, M> {
     pub fn new(message: M) -> Self {
-        NonReturningEnvelope {
+        UnitReturnEnvelope {
             message,
             phantom: PhantomData,
         }
     }
 }
 
-impl<A, M: Clone> Clone for NonReturningEnvelope<A, M> {
+impl<A, M: Clone> Clone for UnitReturnEnvelope<A, M> {
     fn clone(&self) -> Self {
         Self {
             message: self.message.clone(),
@@ -113,7 +112,7 @@ impl<A, M: Clone> Clone for NonReturningEnvelope<A, M> {
     }
 }
 
-impl<A, M> MessageEnvelope for NonReturningEnvelope<A, M>
+impl<A, M> MessageEnvelope for UnitReturnEnvelope<A, M>
 where
     A: Handler<M, Return = ()>,
     M: Send + 'static,
@@ -129,17 +128,17 @@ where
     }
 }
 
-/// Like MessageEnvelope, but with an Arc instead of Box
+/// A [`BroadcastEnvelope`] is a [`MessageEnvelope`] which can be cloned and thus used several times.
 pub trait BroadcastEnvelope: MessageEnvelope + Send + Sync {
     fn clone(&self) -> Box<dyn BroadcastEnvelope<Actor = Self::Actor>>;
 }
 
-impl<A, M> BroadcastEnvelope for NonReturningEnvelope<A, M>
+impl<A, M> BroadcastEnvelope for UnitReturnEnvelope<A, M>
 where
     M: Clone + Send + Sync + 'static,
     A: Handler<M, Return = ()>,
 {
     fn clone(&self) -> Box<dyn BroadcastEnvelope<Actor = Self::Actor>> {
-        Box::new(<NonReturningEnvelope<A, M> as Clone>::clone(self))
+        Box::new(<UnitReturnEnvelope<A, M> as Clone>::clone(self))
     }
 }

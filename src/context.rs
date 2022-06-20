@@ -1,4 +1,4 @@
-use crate::envelope::NonReturningEnvelope;
+use crate::envelope::UnitReturnEnvelope;
 use crate::inbox::{rx::RxStrong, ActorMessage};
 use crate::{inbox, Actor, Address, Handler};
 use futures_util::future::{self, Either};
@@ -289,7 +289,7 @@ impl<A: Actor> Context<A> {
         M: Clone + Sync + Send + 'static,
         A: Handler<M, Return = ()>,
     {
-        let envelope = NonReturningEnvelope::<A, M>::new(msg);
+        let envelope = UnitReturnEnvelope::<A, M>::new(msg);
         self.receiver
             .sender()
             .ok_or(ActorShutdown)?

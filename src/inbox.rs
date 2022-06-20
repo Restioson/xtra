@@ -252,7 +252,7 @@ impl<A> Ord for Prioritized<A> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::envelope::NonReturningEnvelope;
+    use crate::envelope::UnitReturnEnvelope;
     use crate::prelude::{Context, *};
     use futures_util::FutureExt;
 
@@ -285,7 +285,7 @@ mod test {
         let (tx, rx) = new(None);
         let rx2 = rx.shallow_weak_clone();
 
-        let orig = Box::new(NonReturningEnvelope::new("Hi"));
+        let orig = Box::new(UnitReturnEnvelope::new("Hi"));
         let orig = orig as Box<dyn BroadcastEnvelope<Actor = MyActor>>;
         tx.broadcast(orig.clone(), 1).unwrap();
 
