@@ -108,13 +108,12 @@ impl<A: Actor> Context<A> {
         }
     }
 
-    /// Handle a message and immediate notifications, returning whether to exit from the manage loop
-    /// or not.
+    /// Handle a one message and return whether to exit from the manage loop or not.
     async fn tick(&mut self, msg: ActorMessage<A>, actor: &mut A) -> ControlFlow<()> {
         match msg {
+            ActorMessage::ToOneActor(msg) => msg.handle(actor, self).await,
             ActorMessage::ToAllActors(msg) => msg.handle(actor, self).await,
             ActorMessage::Shutdown => self.running = false,
-            ActorMessage::ToOneActor(msg) => msg.handle(actor, self).await,
         }
 
         if !self.running {
