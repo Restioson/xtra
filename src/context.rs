@@ -1,4 +1,3 @@
-use crate::envelope::BroadcastEnvelopeConcrete;
 use crate::inbox::{rx::RxStrong, ActorMessage};
 use crate::{inbox, Actor, Address, Handler};
 use futures_util::future::{self, Either};
@@ -6,7 +5,6 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::ops::ControlFlow;
-use std::sync::Arc;
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
 
@@ -277,22 +275,6 @@ impl<A: Actor> Context<A> {
         }
 
         Either::Right(fut)
-    }
-
-    /// Notify all actors on this address with a given message, in a broadcast fashion. The message
-    /// will be received once by all actors. Note that currently there is no message cap on the
-    /// broadcast channel (it is unbounded).
-    pub fn notify_all<M>(&mut self, msg: M) -> Result<(), ActorShutdown>
-    where
-        M: Clone + Sync + Send + 'static,
-        A: Handler<M, Return = ()>,
-    {
-        let envelope = BroadcastEnvelopeConcrete::<A, M>::new(msg, 1);
-        self.receiver
-            .sender()
-            .ok_or(ActorShutdown)?
-            .broadcast(Arc::new(envelope))
-            .map_err(|_| ActorShutdown)
     }
 
     /// Notify the actor with a message every interval until it is stopped (either directly with

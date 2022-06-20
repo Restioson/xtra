@@ -48,7 +48,12 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
     /// Clone this receiver, giving the clone a new broadcast mailbox.
     pub fn cloned_new_broadcast_mailbox(&self) -> Receiver<A, Rc> {
         let new_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
-        self.inner.chan.lock().unwrap().broadcast_queues.push(Arc::downgrade(&new_mailbox));
+        self.inner
+            .chan
+            .lock()
+            .unwrap()
+            .broadcast_queues
+            .push(Arc::downgrade(&new_mailbox));
 
         Receiver {
             inner: self.inner.clone(),
@@ -169,12 +174,12 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                                             return self.poll_unpin(cx);
                                         }
                                     }
-                                },
+                                }
                                 WakeReason::Shutdown => ActorMessage::Shutdown,
                                 WakeReason::Cancelled => {
                                     unreachable!("Waiting receive future cannot be interrupted")
                                 }
-                            })
+                            });
                         }
                         // Message has not been delivered - continue waiting
                         None => inner.waker = Some(cx.waker().clone()),

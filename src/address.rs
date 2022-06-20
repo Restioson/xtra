@@ -1,12 +1,13 @@
 //! An address to an actor is a way to send it a message. An address allows an actor to be sent any
 //! kind of message that it can receive.
 
-use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
+use crate::envelope::{BroadcastEnvelopeConcrete, NonReturningEnvelope, ReturningEnvelope};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
 use crate::{inbox, Handler, KeepRunning, NameableSending, SendFuture};
 use event_listener::EventListener;
 use futures_core::{FusedFuture, Stream};
+use futures_sink::Sink;
 use futures_util::{future, FutureExt, StreamExt};
 use std::cmp::Ordering;
 use std::error::Error;
@@ -14,8 +15,8 @@ use std::fmt::{self, Debug, Display, Formatter};
 use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
-use futures_sink::Sink;
 
 /// The actor is no longer running and disconnected from the sending address. For why this could
 /// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and
@@ -150,6 +151,17 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         SendFuture::sending_named(tx, rx)
     }
 
+    /// Send a message to all actors on this address. The message will be received once by each
+    /// actor. Note that currently there is no message cap on the broadcast channel (it is unbounded).
+    pub fn broadcast<M>(&mut self, msg: M) -> Result<(), Disconnected>
+    where
+        M: Clone + Sync + Send + 'static,
+        A: Handler<M, Return = ()>,
+    {
+        let envelope = BroadcastEnvelopeConcrete::<A, M>::new(msg, 1);
+        self.0.broadcast(Arc::new(envelope))
+    }
+
     /// Attaches a stream to this actor such that all messages produced by it are forwarded to the
     /// actor. This could, for instance, be used to forward messages from a socket to the actor
     /// (after the messages have been appropriately `map`ped). This is a convenience method over
@@ -281,8 +293,9 @@ impl<A, Rc: RefCounter> AddressSink<A, Rc> {
 }
 
 impl<A, M, Rc: RefCounter> Sink<M> for AddressSink<A, Rc>
-    where A: Handler<M, Return = ()>,
-          M: Send + 'static,
+where
+    A: Handler<M, Return = ()>,
+    M: Send + 'static,
 {
     type Error = Disconnected;
 
