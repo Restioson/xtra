@@ -64,18 +64,14 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
     fn try_recv(&self) -> Result<ActorMessage<A>, Arc<Spinlock<WaitingReceiver<A>>>> {
         // Peek priorities in order to figure out which channel should be taken from
         let mut broadcast = self.broadcast_mailbox.lock();
-        let broadcast_priority = broadcast
-            .peek()
-            .map(|it| it.priority())
-            .unwrap_or(Priority::Min);
+        let broadcast_priority = broadcast.peek().map_or(Priority::Min, |it| it.priority());
 
         let mut inner = self.inner.chan.lock().unwrap();
 
         let shared_priority: Priority = inner
             .priority_queue
             .peek()
-            .map(|it| it.priority())
-            .unwrap_or(Priority::Min);
+            .map_or(Priority::Min, |it| it.priority());
 
         // Try take from ordered channel
         if cmp::max(shared_priority, broadcast_priority) <= Priority::default() {

@@ -127,9 +127,7 @@ struct ChanInner<A> {
 
 impl<A> ChanInner<A> {
     fn is_full(&self, capacity: Option<usize>) -> bool {
-        capacity
-            .map(|cap| self.ordered_queue.len() >= cap)
-            .unwrap_or(false)
+        capacity.map_or(false, |cap| self.ordered_queue.len() >= cap)
     }
 
     fn pop_priority(&mut self) -> Option<StolenMessage<A>> {
