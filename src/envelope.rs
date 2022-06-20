@@ -123,17 +123,6 @@ pub trait BroadcastMessageEnvelope: MessageEnvelope + Sync {
     fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>>;
 }
 
-impl<A: Handler<M>, M: Send + Sync + Clone + 'static> BroadcastMessageEnvelope
-    for NonReturningEnvelope<A, M>
-{
-    fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>> {
-        Box::new(NonReturningEnvelope {
-            message: self.message.clone(),
-            phantom: PhantomData,
-        })
-    }
-}
-
 impl<A> Clone for Box<dyn BroadcastMessageEnvelope<Actor = A>> {
     fn clone(&self) -> Self {
         BroadcastMessageEnvelope::clone(&**self)
