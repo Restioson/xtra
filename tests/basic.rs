@@ -469,3 +469,66 @@ fn test_addr_cmp_hash_eq() {
     assert!(chan1.same_actor(chan1.downgrade().upcast_ref()));
     assert!(!chan1.same_actor(chan2.upcast_ref()));
 }
+
+#[tokio::test]
+async fn stop_in_started_actor_stops_immediately() {
+    let (_address, ctx) = Context::new(None);
+    let fut = ctx.run(StopInStarted);
+
+    fut.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
+}
+
+struct StopInStarted;
+
+#[async_trait]
+impl Actor for StopInStarted {
+    type Stop = ();
+
+    async fn started(&mut self, ctx: &mut Context<Self>) {
+        ctx.stop_self();
+    }
+
+    async fn stopped(self) -> Self::Stop {}
+}
+
+#[tokio::test]
+async fn stop_all_in_stopping_actor_stops_immediately() {
+    let (_address, mut ctx) = Context::new(None);
+
+    let fut1 = ctx.attach(InstantShutdownAll {
+        stop_all: true,
+        number: 1,
+    });
+    let fut2 = ctx.attach(InstantShutdownAll {
+        stop_all: false,
+        number: 2,
+    });
+    let fut3 = ctx.attach(InstantShutdownAll {
+        stop_all: false,
+        number: 3,
+    });
+
+    fut1.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
+    fut2.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
+    fut3.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
+}
+
+struct InstantShutdownAll {
+    stop_all: bool,
+    number: u8,
+}
+
+#[async_trait]
+impl Actor for InstantShutdownAll {
+    type Stop = ();
+
+    async fn started(&mut self, ctx: &mut Context<Self>) {
+        if self.stop_all {
+            ctx.stop_all();
+        }
+    }
+
+    async fn stopped(self) {
+        println!("Actor {} stopped", self.number);
+    }
+}
