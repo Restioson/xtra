@@ -141,7 +141,7 @@ impl<A> ChanInner<A> {
     }
 
     fn pop_priority(&mut self) -> Option<StolenMessage<A>> {
-        self.priority_queue.pop().map(|msg| msg.val)
+        Some(self.priority_queue.pop()?.val)
     }
 
     fn pop_ordered(&mut self, capacity: Option<usize>) -> Option<StolenMessage<A>> {
