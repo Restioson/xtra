@@ -179,7 +179,7 @@ where
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> BoxFuture<'a, ()> {
-        Box::pin(act.handle(self.message.clone(), ctx).map(|_| ()))
+        Box::pin(act.handle(self.message.clone(), ctx))
     }
 }
 
