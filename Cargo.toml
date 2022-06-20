@@ -95,7 +95,7 @@ name = "backpressure"
 required-features = ["with-tokio-1"]
 
 [[example]]
-name = "address_is_sink"
+name = "address_sink"
 required-features = ["with-tokio-1", "tokio/full"]
 
 [[example]]

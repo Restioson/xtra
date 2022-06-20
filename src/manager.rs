@@ -2,7 +2,6 @@ use std::future::Future;
 
 use crate::address::Address;
 use crate::context::Context;
-use crate::envelope::MessageEnvelope;
 use crate::spawn::Spawner;
 use crate::Actor;
 

@@ -39,18 +39,17 @@ impl Handler<GetSum> for Accumulator {
 
 #[tokio::main]
 async fn main() {
-    todo!("Sink")
-    // let addr = Accumulator::default()
-    //     .create(None)
-    //     .spawn(&mut Tokio::Global);
-    //
-    // repeat(10)
-    //     .take(4)
-    //     .map(|number| Ok(Add(number)))
-    //     .forward(addr.clone())
-    //     .await
-    //     .unwrap();
-    //
-    // let sum = addr.send(GetSum).await.unwrap();
-    // println!("Sum is {}!", sum);
+    let addr = Accumulator::default()
+        .create(None)
+        .spawn(&mut Tokio::Global);
+
+    repeat(10)
+        .take(4)
+        .map(|number| Ok(Add(number)))
+        .forward(addr.clone().into_sink())
+        .await
+        .unwrap();
+
+    let sum = addr.send(GetSum).await.unwrap();
+    println!("Sum is {}!", sum);
 }

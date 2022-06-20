@@ -3,7 +3,6 @@ use crate::inbox::tx::private::RefCounterInner;
 use crate::Disconnected;
 use event_listener::EventListener;
 use futures_core::FusedFuture;
-use futures_sink::Sink;
 use futures_util::FutureExt;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
@@ -123,17 +122,6 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         Ok(())
     }
 
-    pub fn into_sink(self) -> SendSink<A, Rc> {
-        SendSink(SendFuture {
-            tx: self,
-            inner: SendFutureInner::Complete,
-        })
-    }
-
-    pub fn shutdown(&self) {
-        self.inner.shutdown();
-    }
-
     pub fn shutdown_and_drain(&self) {
         self.inner.shutdown_and_drain();
     }
@@ -207,7 +195,7 @@ impl<A, Rc: TxRefCounter> Debug for Sender<A, Rc> {
 
 #[must_use = "Futures do nothing unless polled"]
 pub struct SendFuture<A, Rc: TxRefCounter> {
-    tx: Sender<A, Rc>,
+    pub tx: Sender<A, Rc>,
     inner: SendFutureInner<A>,
 }
 
@@ -216,6 +204,13 @@ impl<A, Rc: TxRefCounter> SendFuture<A, Rc> {
         SendFuture {
             tx,
             inner: SendFutureInner::New(msg),
+        }
+    }
+
+    pub fn empty(tx: Sender<A, Rc>) -> Self {
+        SendFuture {
+            tx,
+            inner: SendFutureInner::Complete,
         }
     }
 }
@@ -286,35 +281,6 @@ impl<A> WaitingSender<A> {
 impl<A, Rc: TxRefCounter> FusedFuture for SendFuture<A, Rc> {
     fn is_terminated(&self) -> bool {
         matches!(self.inner, SendFutureInner::Complete)
-    }
-}
-
-pub struct SendSink<A, Rc: TxRefCounter>(SendFuture<A, Rc>);
-
-impl<A, Rc: TxRefCounter> Sink<MessageToOneActor<A>> for SendSink<A, Rc> {
-    type Error = Disconnected;
-
-    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        if let Poll::Ready(Err(Disconnected)) = self.0.poll_unpin(cx) {
-            Poll::Ready(Err(Disconnected))
-        } else if self.0.is_terminated() {
-            Poll::Ready(Ok(())) // TODO check disconnected
-        } else {
-            Poll::Pending
-        }
-    }
-
-    fn start_send(mut self: Pin<&mut Self>, msg: MessageToOneActor<A>) -> Result<(), Self::Error> {
-        self.0 = SendFuture::new(msg, self.0.tx.clone());
-        Ok(())
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.poll_ready(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.poll_flush(cx)
     }
 }
 

@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{atomic, Arc, Mutex, Weak};
 
 type Spinlock<T> = spin::Mutex<T>;
-type MessageToOneActor<A> = Box<dyn MessageEnvelope<Actor = A>>;
+pub type MessageToOneActor<A> = Box<dyn MessageEnvelope<Actor = A>>;
 type BroadcastQueue<A> = Spinlock<BinaryHeap<MessageToAllActors<A>>>;
 
 // TODO(priority)
