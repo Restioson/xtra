@@ -107,7 +107,7 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
         self.broadcast_mailbox
             .lock()
             .pop()
-            .map(|msg| ActorMessage::BroadcastMessage(msg.0))
+            .map(|msg| ActorMessage::ToAllActors(msg.0))
     }
 }
 
@@ -160,8 +160,8 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                         // Message has been delivered
                         Some(reason) => {
                             return Poll::Ready(match reason {
-                                WakeReason::StolenMessage(msg) => msg.into(),
-                                WakeReason::BroadcastMessage => rx.pop_broadcast().unwrap(),
+                                WakeReason::MessageToOneActor(msg) => msg.into(),
+                                WakeReason::MessageToAllActors => rx.pop_broadcast().unwrap(),
                                 WakeReason::Shutdown => ActorMessage::Shutdown,
                                 WakeReason::Cancelled => {
                                     unreachable!("Waiting receive future cannot be interrupted")
@@ -194,7 +194,7 @@ impl<A, Rc: RxRefCounter> ReceiveFuture<A, Rc> {
         if let ReceiveFutureInner::Waiting { waiting, .. } =
             mem::replace(&mut self.0, ReceiveFutureInner::Complete)
         {
-            if let Some(WakeReason::StolenMessage(msg)) = waiting.lock().cancel() {
+            if let Some(WakeReason::MessageToOneActor(msg)) = waiting.lock().cancel() {
                 return Some(msg.into());
             }
         }
@@ -214,10 +214,10 @@ impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
             // Ordering is compromised somewhat when concurrent receives are involved, and the cap
             // may overflow (probably not enough to cause backpressure issues), but this is better
             // than dropping a message.
-            if let Some(WakeReason::StolenMessage(msg)) = waiting.lock().cancel() {
-                match inner.try_fulfill_receiver(WakeReason::StolenMessage(msg)) {
+            if let Some(WakeReason::MessageToOneActor(msg)) = waiting.lock().cancel() {
+                match inner.try_fulfill_receiver(WakeReason::MessageToOneActor(msg)) {
                     Ok(()) => (),
-                    Err(WakeReason::StolenMessage(msg)) => {
+                    Err(WakeReason::MessageToOneActor(msg)) => {
                         if msg.priority == Priority::default() {
                             // Preserve ordering as much as possible by pushing to the front
                             inner.ordered_queue.push_front(msg.val)

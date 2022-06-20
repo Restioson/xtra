@@ -27,7 +27,7 @@ impl<A> Sender<A, TxStrong> {
 }
 
 impl<Rc: TxRefCounter, A> Sender<A, Rc> {
-    pub(crate) fn send(&self, message: StolenMessage<A>) -> SendFuture<A, Rc> {
+    pub(crate) fn send(&self, message: MessageToOneActor<A>) -> SendFuture<A, Rc> {
         SendFuture::new(message, self.clone())
     }
 
@@ -45,17 +45,17 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         }
     }
 
-    fn try_send(&self, message: StolenMessage<A>) -> Result<(), TrySendFail<A>> {
+    fn try_send(&self, message: MessageToOneActor<A>) -> Result<(), TrySendFail<A>> {
         let mut inner = self.inner.chan.lock().unwrap();
 
         if self.inner.is_shutdown() {
             return Err(TrySendFail::Disconnected);
         }
 
-        let message = StolenMessageWithPriority::new(Priority::default(), message);
-        match inner.try_fulfill_receiver(WakeReason::StolenMessage(message)) {
+        let message = PriorityMessageToOne::new(Priority::default(), message);
+        match inner.try_fulfill_receiver(WakeReason::MessageToOneActor(message)) {
             Ok(()) => Ok(()),
-            Err(WakeReason::StolenMessage(message)) => {
+            Err(WakeReason::MessageToOneActor(message)) => {
                 if !inner.is_full(self.inner.capacity) {
                     inner.ordered_queue.push_back(message.val);
                     Ok(())
@@ -72,19 +72,19 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
 
     pub(crate) fn send_priority(
         &self,
-        message: StolenMessage<A>,
+        message: MessageToOneActor<A>,
         priority: i32,
     ) -> Result<(), Disconnected> {
-        let message = StolenMessageWithPriority::new(Priority::Valued(priority), message);
+        let message = PriorityMessageToOne::new(Priority::Valued(priority), message);
         let mut inner = self.inner.chan.lock().unwrap();
 
         if self.inner.is_shutdown() {
             return Err(Disconnected);
         }
 
-        match inner.try_fulfill_receiver(WakeReason::StolenMessage(message)) {
+        match inner.try_fulfill_receiver(WakeReason::MessageToOneActor(message)) {
             Ok(()) => Ok(()),
-            Err(WakeReason::StolenMessage(message)) => {
+            Err(WakeReason::MessageToOneActor(message)) => {
                 inner.priority_queue.push(message);
                 Ok(())
             }
@@ -107,7 +107,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
                 .broadcast_queues
                 .retain(|queue| match queue.upgrade() {
                     Some(q) => {
-                        q.lock().push(BroadcastMessage(message.clone()));
+                        q.lock().push(MessageToAllActors(message.clone()));
                         true
                     }
                     None => false, // The corresponding receiver has been dropped - remove it
@@ -117,7 +117,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         };
 
         for rx in waiting_receivers.into_iter().flat_map(|w| w.upgrade()) {
-            let _ = rx.lock().fulfill(WakeReason::BroadcastMessage);
+            let _ = rx.lock().fulfill(WakeReason::MessageToAllActors);
         }
 
         Ok(())
@@ -212,7 +212,7 @@ pub(crate) struct SendFuture<A, Rc: TxRefCounter> {
 }
 
 impl<A, Rc: TxRefCounter> SendFuture<A, Rc> {
-    fn new(msg: StolenMessage<A>, tx: Sender<A, Rc>) -> Self {
+    fn new(msg: MessageToOneActor<A>, tx: Sender<A, Rc>) -> Self {
         SendFuture {
             tx,
             inner: SendFutureInner::New(msg),
@@ -221,7 +221,7 @@ impl<A, Rc: TxRefCounter> SendFuture<A, Rc> {
 }
 
 enum SendFutureInner<A> {
-    New(StolenMessage<A>),
+    New(MessageToOneActor<A>),
     WaitingToSend(Arc<Spinlock<WaitingSender<A>>>),
     Complete,
 }
@@ -262,11 +262,11 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
 
 pub(crate) struct WaitingSender<A> {
     waker: Option<Waker>,
-    message: Option<StolenMessage<A>>,
+    message: Option<MessageToOneActor<A>>,
 }
 
 impl<A> WaitingSender<A> {
-    pub(crate) fn new(message: StolenMessage<A>) -> Arc<Spinlock<Self>> {
+    pub(crate) fn new(message: MessageToOneActor<A>) -> Arc<Spinlock<Self>> {
         let sender = WaitingSender {
             waker: None,
             message: Some(message),
@@ -274,7 +274,7 @@ impl<A> WaitingSender<A> {
         Arc::new(Spinlock::new(sender))
     }
 
-    pub(crate) fn fulfill(&mut self) -> Option<StolenMessage<A>> {
+    pub(crate) fn fulfill(&mut self) -> Option<MessageToOneActor<A>> {
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }
@@ -291,7 +291,7 @@ impl<A, Rc: TxRefCounter> FusedFuture for SendFuture<A, Rc> {
 
 pub(crate) struct SendSink<A, Rc: TxRefCounter>(SendFuture<A, Rc>);
 
-impl<A, Rc: TxRefCounter> Sink<StolenMessage<A>> for SendSink<A, Rc> {
+impl<A, Rc: TxRefCounter> Sink<MessageToOneActor<A>> for SendSink<A, Rc> {
     type Error = Disconnected;
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -304,7 +304,7 @@ impl<A, Rc: TxRefCounter> Sink<StolenMessage<A>> for SendSink<A, Rc> {
         }
     }
 
-    fn start_send(mut self: Pin<&mut Self>, msg: StolenMessage<A>) -> Result<(), Self::Error> {
+    fn start_send(mut self: Pin<&mut Self>, msg: MessageToOneActor<A>) -> Result<(), Self::Error> {
         self.0 = SendFuture::new(msg, self.0.tx.clone());
         Ok(())
     }

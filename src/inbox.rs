@@ -18,8 +18,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{atomic, Arc, Mutex, Weak};
 
 type Spinlock<T> = spin::Mutex<T>;
-type StolenMessage<A> = Box<dyn MessageEnvelope<Actor = A>>;
-type BroadcastQueue<A> = Spinlock<BinaryHeap<BroadcastMessage<A>>>;
+type MessageToOneActor<A> = Box<dyn MessageEnvelope<Actor = A>>;
+type BroadcastQueue<A> = Spinlock<BinaryHeap<MessageToAllActors<A>>>;
 
 // TODO(priority)
 #[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone)]
@@ -118,10 +118,10 @@ impl<A> Chan<A> {
 // Might be able to move some stuff out to atomics, or lock it separately. This should net some
 // overall performance gains, but these likely won't in crude_bench or any throughput testing
 struct ChanInner<A> {
-    ordered_queue: VecDeque<StolenMessage<A>>,
+    ordered_queue: VecDeque<MessageToOneActor<A>>,
     waiting_senders: VecDeque<Weak<Spinlock<WaitingSender<A>>>>,
     waiting_receivers: VecDeque<Weak<Spinlock<WaitingReceiver<A>>>>,
-    priority_queue: BinaryHeap<StolenMessageWithPriority<A>>,
+    priority_queue: BinaryHeap<PriorityMessageToOne<A>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
 }
 
@@ -130,11 +130,11 @@ impl<A> ChanInner<A> {
         capacity.map_or(false, |cap| self.ordered_queue.len() >= cap)
     }
 
-    fn pop_priority(&mut self) -> Option<StolenMessage<A>> {
+    fn pop_priority(&mut self) -> Option<MessageToOneActor<A>> {
         Some(self.priority_queue.pop()?.val)
     }
 
-    fn pop_ordered(&mut self, capacity: Option<usize>) -> Option<StolenMessage<A>> {
+    fn pop_ordered(&mut self, capacity: Option<usize>) -> Option<MessageToOneActor<A>> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
         if self.is_full(capacity) {
             self.try_fulfill_sender();
@@ -172,33 +172,33 @@ enum TrySendFail<A> {
 }
 
 pub(crate) enum ActorMessage<A> {
-    StolenMessage(StolenMessage<A>),
-    BroadcastMessage(Arc<dyn BroadcastEnvelope<Actor = A>>),
+    ToOneActor(MessageToOneActor<A>),
+    ToAllActors(Arc<dyn BroadcastEnvelope<Actor = A>>),
     Shutdown,
 }
 
-impl<A> From<StolenMessage<A>> for ActorMessage<A> {
-    fn from(msg: StolenMessage<A>) -> Self {
-        ActorMessage::StolenMessage(msg)
+impl<A> From<MessageToOneActor<A>> for ActorMessage<A> {
+    fn from(msg: MessageToOneActor<A>) -> Self {
+        ActorMessage::ToOneActor(msg)
     }
 }
 
-impl<A> From<StolenMessageWithPriority<A>> for ActorMessage<A> {
-    fn from(msg: StolenMessageWithPriority<A>) -> Self {
-        ActorMessage::StolenMessage(msg.val)
+impl<A> From<PriorityMessageToOne<A>> for ActorMessage<A> {
+    fn from(msg: PriorityMessageToOne<A>) -> Self {
+        ActorMessage::ToOneActor(msg.val)
     }
 }
 
 impl<A> From<Arc<dyn BroadcastEnvelope<Actor = A>>> for ActorMessage<A> {
     fn from(msg: Arc<dyn BroadcastEnvelope<Actor = A>>) -> Self {
-        ActorMessage::BroadcastMessage(msg)
+        ActorMessage::ToAllActors(msg)
     }
 }
 
 enum WakeReason<A> {
-    StolenMessage(StolenMessageWithPriority<A>),
+    MessageToOneActor(PriorityMessageToOne<A>),
     // should be fetched from own receiver
-    BroadcastMessage,
+    MessageToAllActors,
     Shutdown,
     // ReceiveFuture::cancel was called
     Cancelled,
@@ -208,66 +208,66 @@ pub(crate) trait HasPriority {
     fn priority(&self) -> Priority;
 }
 
-impl<A> HasPriority for StolenMessageWithPriority<A> {
+impl<A> HasPriority for PriorityMessageToOne<A> {
     fn priority(&self) -> Priority {
         self.priority
     }
 }
 
-struct StolenMessageWithPriority<A> {
+struct PriorityMessageToOne<A> {
     priority: Priority,
-    val: StolenMessage<A>,
+    val: MessageToOneActor<A>,
 }
 
-impl<A> StolenMessageWithPriority<A> {
-    fn new(priority: Priority, val: StolenMessage<A>) -> Self {
-        StolenMessageWithPriority { priority, val }
+impl<A> PriorityMessageToOne<A> {
+    fn new(priority: Priority, val: MessageToOneActor<A>) -> Self {
+        PriorityMessageToOne { priority, val }
     }
 }
 
-impl<A> PartialEq for StolenMessageWithPriority<A> {
+impl<A> PartialEq for PriorityMessageToOne<A> {
     fn eq(&self, other: &Self) -> bool {
         self.priority == other.priority
     }
 }
 
-impl<A> Eq for StolenMessageWithPriority<A> {}
+impl<A> Eq for PriorityMessageToOne<A> {}
 
-impl<A> PartialOrd for StolenMessageWithPriority<A> {
+impl<A> PartialOrd for PriorityMessageToOne<A> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<A> Ord for StolenMessageWithPriority<A> {
+impl<A> Ord for PriorityMessageToOne<A> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.priority.cmp(&other.priority)
     }
 }
 
-struct BroadcastMessage<A>(Arc<dyn BroadcastEnvelope<Actor = A>>);
+struct MessageToAllActors<A>(Arc<dyn BroadcastEnvelope<Actor = A>>);
 
-impl<A> HasPriority for BroadcastMessage<A> {
+impl<A> HasPriority for MessageToAllActors<A> {
     fn priority(&self) -> Priority {
         self.0.priority()
     }
 }
 
-impl<A> Eq for BroadcastMessage<A> {}
+impl<A> Eq for MessageToAllActors<A> {}
 
-impl<A> PartialEq<Self> for BroadcastMessage<A> {
+impl<A> PartialEq<Self> for MessageToAllActors<A> {
     fn eq(&self, other: &Self) -> bool {
         self.0.priority() == other.0.priority()
     }
 }
 
-impl<A> PartialOrd<Self> for BroadcastMessage<A> {
+impl<A> PartialOrd<Self> for MessageToAllActors<A> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<A> Ord for BroadcastMessage<A> {
+impl<A> Ord for MessageToAllActors<A> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.priority().cmp(&other.priority())
     }
@@ -314,12 +314,12 @@ mod test {
         tx.broadcast(orig.clone()).unwrap();
 
         match rx.receive().await {
-            ActorMessage::BroadcastMessage(msg) => assert!(Arc::ptr_eq(&msg, &orig)),
+            ActorMessage::ToAllActors(msg) => assert!(Arc::ptr_eq(&msg, &orig)),
             _ => panic!("Expected broadcast message, got something else"),
         }
 
         match rx2.receive().await {
-            ActorMessage::BroadcastMessage(msg) => assert!(Arc::ptr_eq(&msg, &orig)),
+            ActorMessage::ToAllActors(msg) => assert!(Arc::ptr_eq(&msg, &orig)),
             _ => panic!("Expected broadcast message, got something else"),
         }
 
