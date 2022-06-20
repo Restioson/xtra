@@ -15,7 +15,7 @@ use crate::{Actor, Handler};
 /// allows us to erase the type of the message when this is in dyn Trait format, thereby being able to
 /// use only one channel to send all the kinds of messages that the actor can receives. This does,
 /// however, induce a bit of allocation (as envelopes have to be boxed).
-pub(crate) trait MessageEnvelope: Send {
+pub trait MessageEnvelope: Send {
     /// The type of actor that this envelope carries a message for
     type Actor;
 
@@ -49,14 +49,14 @@ pub(crate) trait MessageEnvelope: Send {
 }
 
 /// An envelope that returns a result from a message. Constructed by the `AddressExt::do_send` method.
-pub(crate) struct ReturningEnvelope<A, M, R> {
+pub struct ReturningEnvelope<A, M, R> {
     message: M,
     result_sender: Sender<R>,
     phantom: PhantomData<fn() -> A>,
 }
 
 impl<A: Actor, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
-    pub(crate) fn new(message: M) -> (Self, Receiver<R>) {
+    pub fn new(message: M) -> (Self, Receiver<R>) {
         let (tx, rx) = catty::oneshot();
         let envelope = ReturningEnvelope {
             message,
@@ -92,13 +92,13 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
 
 /// An envelope that does not return a result from a message. Constructed  by the `AddressExt::do_send`
 /// method.
-pub(crate) struct NonReturningEnvelope<A, M> {
+pub struct NonReturningEnvelope<A, M> {
     message: M,
     phantom: PhantomData<fn() -> A>,
 }
 
 impl<A: Actor, M> NonReturningEnvelope<A, M> {
-    pub(crate) fn new(message: M) -> Self {
+    pub fn new(message: M) -> Self {
         NonReturningEnvelope {
             message,
             phantom: PhantomData,
@@ -119,7 +119,7 @@ impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<
 }
 
 /// Like MessageEnvelope, but can be cloned.
-pub(crate) trait BroadcastMessageEnvelope: MessageEnvelope + Sync {
+pub trait BroadcastMessageEnvelope: MessageEnvelope + Sync {
     fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>>;
 }
 
@@ -141,7 +141,7 @@ impl<A> Clone for Box<dyn BroadcastMessageEnvelope<Actor = A>> {
 }
 
 /// Like MessageEnvelope, but with an Arc instead of Box
-pub(crate) trait BroadcastEnvelope: HasPriority + Send + Sync {
+pub trait BroadcastEnvelope: HasPriority + Send + Sync {
     type Actor;
 
     fn handle<'a>(
@@ -151,14 +151,14 @@ pub(crate) trait BroadcastEnvelope: HasPriority + Send + Sync {
     ) -> BoxFuture<'a, ()>;
 }
 
-pub(crate) struct BroadcastEnvelopeConcrete<A, M> {
+pub struct BroadcastEnvelopeConcrete<A, M> {
     message: M,
     priority: i32,
     phantom: PhantomData<fn() -> A>,
 }
 
 impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
-    pub(crate) fn new(message: M, priority: i32) -> Self {
+    pub fn new(message: M, priority: i32) -> Self {
         BroadcastEnvelopeConcrete {
             message,
             priority,

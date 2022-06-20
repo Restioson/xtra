@@ -1,11 +1,11 @@
 //! Latency is prioritised over most accurate prioritisation. Specifically, at most one low priority
 //! message may be handled before piled-up higher priority messages will be handled.
 
-pub(crate) mod rx;
+pub mod rx;
 pub mod tx;
 
-pub(crate) use rx::Receiver;
-pub(crate) use tx::{SendFuture, Sender};
+pub use rx::Receiver;
+pub use tx::{SendFuture, Sender};
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope};
 use crate::inbox::rx::{RxStrong, WaitingReceiver};
@@ -23,7 +23,7 @@ type BroadcastQueue<A> = Spinlock<BinaryHeap<MessageToAllActors<A>>>;
 
 // TODO(priority)
 #[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone)]
-pub(crate) enum Priority {
+pub enum Priority {
     Min,
     Valued(i32),
 }
@@ -34,7 +34,7 @@ impl Default for Priority {
     }
 }
 
-pub(crate) fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
+pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
     let broadcast_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
     let inner = Arc::new(Chan {
         chan: Mutex::new(ChanInner {
@@ -73,7 +73,7 @@ impl<A> Chan<A> {
         self.shutdown.load(atomic::Ordering::SeqCst)
     }
 
-    pub(crate) fn shutdown(&self) {
+    pub fn shutdown(&self) {
         let waiting_receivers = {
             let mut inner = self.chan.lock().unwrap();
 
@@ -89,7 +89,7 @@ impl<A> Chan<A> {
         }
     }
 
-    pub(crate) fn shutdown_and_drain(&self) {
+    pub fn shutdown_and_drain(&self) {
         let waiting_rx = {
             let mut inner = self.chan.lock().unwrap();
 
@@ -171,7 +171,7 @@ enum TrySendFail<A> {
     Disconnected,
 }
 
-pub(crate) enum ActorMessage<A> {
+pub enum ActorMessage<A> {
     ToOneActor(MessageToOneActor<A>),
     ToAllActors(Arc<dyn BroadcastEnvelope<Actor = A>>),
     Shutdown,
@@ -204,7 +204,7 @@ enum WakeReason<A> {
     Cancelled,
 }
 
-pub(crate) trait HasPriority {
+pub trait HasPriority {
     fn priority(&self) -> Priority;
 }
 

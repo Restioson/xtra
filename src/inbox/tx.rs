@@ -12,13 +12,13 @@ use std::pin::Pin;
 use std::sync::{atomic, Arc};
 use std::task::{Context, Poll, Waker};
 
-pub(crate) struct Sender<A, Rc: TxRefCounter> {
+pub struct Sender<A, Rc: TxRefCounter> {
     pub(super) inner: Arc<Chan<A>>,
     pub(super) rc: Rc,
 }
 
 impl<A> Sender<A, TxStrong> {
-    pub(crate) fn new(inner: Arc<Chan<A>>) -> Self {
+    pub fn new(inner: Arc<Chan<A>>) -> Self {
         let rc = TxStrong(());
         rc.increment(&inner);
 
@@ -27,18 +27,18 @@ impl<A> Sender<A, TxStrong> {
 }
 
 impl<Rc: TxRefCounter, A> Sender<A, Rc> {
-    pub(crate) fn send(&self, message: MessageToOneActor<A>) -> SendFuture<A, Rc> {
+    pub fn send(&self, message: MessageToOneActor<A>) -> SendFuture<A, Rc> {
         SendFuture::new(message, self.clone())
     }
 
-    pub(crate) fn downgrade(&self) -> Sender<A, TxWeak> {
+    pub fn downgrade(&self) -> Sender<A, TxWeak> {
         Sender {
             inner: self.inner.clone(),
             rc: TxWeak(()),
         }
     }
 
-    pub(crate) fn into_either_rc(self) -> Sender<A, TxEither> {
+    pub fn into_either_rc(self) -> Sender<A, TxEither> {
         Sender {
             inner: self.inner.clone(),
             rc: self.rc.increment(&self.inner).into_either(),
@@ -70,7 +70,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         }
     }
 
-    pub(crate) fn send_priority(
+    pub fn send_priority(
         &self,
         message: MessageToOneActor<A>,
         priority: i32,
@@ -92,7 +92,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         }
     }
 
-    pub(crate) fn broadcast(
+    pub fn broadcast(
         &self,
         message: Arc<dyn BroadcastEnvelope<Actor = A>>,
     ) -> Result<(), Disconnected> {
@@ -123,38 +123,38 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         Ok(())
     }
 
-    pub(crate) fn into_sink(self) -> SendSink<A, Rc> {
+    pub fn into_sink(self) -> SendSink<A, Rc> {
         SendSink(SendFuture {
             tx: self,
             inner: SendFutureInner::Complete,
         })
     }
 
-    pub(crate) fn shutdown(&self) {
+    pub fn shutdown(&self) {
         self.inner.shutdown();
     }
 
-    pub(crate) fn shutdown_and_drain(&self) {
+    pub fn shutdown_and_drain(&self) {
         self.inner.shutdown_and_drain();
     }
 
-    pub(crate) fn is_connected(&self) -> bool {
+    pub fn is_connected(&self) -> bool {
         !self.inner.is_shutdown()
     }
 
-    pub(crate) fn is_strong(&self) -> bool {
+    pub fn is_strong(&self) -> bool {
         self.rc.is_strong()
     }
 
-    pub(crate) fn capacity(&self) -> Option<usize> {
+    pub fn capacity(&self) -> Option<usize> {
         self.inner.capacity
     }
 
-    pub(crate) fn inner_ptr(&self) -> *const Chan<A> {
+    pub fn inner_ptr(&self) -> *const Chan<A> {
         (&self.inner as &Chan<A>) as *const Chan<A>
     }
 
-    pub(crate) fn disconnect_notice(&self) -> Option<EventListener> {
+    pub fn disconnect_notice(&self) -> Option<EventListener> {
         // Listener is created before checking connectivity to avoid the following race scenario:
         //
         // 1. is_connected returns true
@@ -206,7 +206,7 @@ impl<A, Rc: TxRefCounter> Debug for Sender<A, Rc> {
 }
 
 #[must_use = "Futures do nothing unless polled"]
-pub(crate) struct SendFuture<A, Rc: TxRefCounter> {
+pub struct SendFuture<A, Rc: TxRefCounter> {
     tx: Sender<A, Rc>,
     inner: SendFutureInner<A>,
 }
@@ -260,13 +260,13 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
     }
 }
 
-pub(crate) struct WaitingSender<A> {
+pub struct WaitingSender<A> {
     waker: Option<Waker>,
     message: Option<MessageToOneActor<A>>,
 }
 
 impl<A> WaitingSender<A> {
-    pub(crate) fn new(message: MessageToOneActor<A>) -> Arc<Spinlock<Self>> {
+    pub fn new(message: MessageToOneActor<A>) -> Arc<Spinlock<Self>> {
         let sender = WaitingSender {
             waker: None,
             message: Some(message),
@@ -274,7 +274,7 @@ impl<A> WaitingSender<A> {
         Arc::new(Spinlock::new(sender))
     }
 
-    pub(crate) fn fulfill(&mut self) -> Option<MessageToOneActor<A>> {
+    pub fn fulfill(&mut self) -> Option<MessageToOneActor<A>> {
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }
@@ -289,7 +289,7 @@ impl<A, Rc: TxRefCounter> FusedFuture for SendFuture<A, Rc> {
     }
 }
 
-pub(crate) struct SendSink<A, Rc: TxRefCounter>(SendFuture<A, Rc>);
+pub struct SendSink<A, Rc: TxRefCounter>(SendFuture<A, Rc>);
 
 impl<A, Rc: TxRefCounter> Sink<MessageToOneActor<A>> for SendSink<A, Rc> {
     type Error = Disconnected;
