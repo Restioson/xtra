@@ -153,7 +153,6 @@ pub trait Actor: 'static + Send + Sized {
     /// strong addresses ([`Address`](address/struct.Address.html), as opposed to
     /// [`WeakAddress`](address/type.WeakAddress.html). This should be used for any final cleanup before
     /// the actor is dropped.
-    #[allow(unused_variables)]
     async fn stopped(self) -> Self::Stop;
 
     /// Returns the actor's address and manager in a ready-to-start state, given the cap for the
