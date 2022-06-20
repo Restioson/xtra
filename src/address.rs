@@ -227,9 +227,9 @@ impl<A, Rc: RefCounter> Clone for Address<A, Rc> {
     }
 }
 
-/// Determines whether this and the other message channel address the same actor mailbox **and**
+/// Determines whether this and the other address point to the same actor mailbox **and**
 /// they have reference count type equality. This means that this will only return true if
-/// [`MessageChannel::same_actor`] returns true **and** if they both have weak or strong reference
+/// [`Address::same_actor`] returns true **and** if they both have weak or strong reference
 /// counts. [`Either`](crate::refcount::Either) will compare as whichever reference count type
 /// it wraps.
 impl<A, Rc: RefCounter, Rc2: RefCounter> PartialEq<Address<A, Rc2>> for Address<A, Rc> {
