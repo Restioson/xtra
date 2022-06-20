@@ -73,7 +73,7 @@ impl<A> Address<A, Either> {
 
 /// Functions which apply to any kind of address, be they strong or weak.
 impl<A, Rc: RefCounter> Address<A, Rc> {
-    /// Returns whether the actor referred to by this address is running and accepting messages.
+    /// Returns whether the actors referred to by this address are running and accepting messages.
     ///
     /// ```rust
     /// # use xtra::prelude::*;
@@ -87,7 +87,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///     type Return = ();
     ///
     ///     async fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
-    ///         ctx.stop();
+    ///         ctx.stop_all();
     ///     }
     /// }
     ///
@@ -183,7 +183,9 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         }
     }
 
-    /// Waits until this address becomes disconnected.
+    /// Waits until this address becomes disconnected. Note that if this is called on a strong
+    /// address, it will only ever trigger if the actor calls [`Context::stop`], as the address
+    /// would prevent the actor being dropped due to too few strong addresses.
     pub fn join(&self) -> ActorJoinHandle {
         ActorJoinHandle(self.0.disconnect_notice())
     }

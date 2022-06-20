@@ -37,7 +37,7 @@ enum Inner<R> {
 impl<R> Future for Receiver<R> {
     type Output = Result<R, Disconnected>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<R, Disconnected>> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
 
         match mem::replace(&mut this.inner, Inner::Done) {

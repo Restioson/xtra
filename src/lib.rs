@@ -114,11 +114,6 @@ pub trait Handler<M>: Actor {
 ///         println!("Started!");
 ///     }
 ///
-///     async fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
-///         println!("Decided not to keep running");
-///         KeepRunning::StopAll
-///     }
-///
 ///     async fn stopped(self) -> Self::Stop {
 ///         println!("Finally stopping.");
 ///     }
@@ -132,11 +127,11 @@ pub trait Handler<M>: Actor {
 ///
 ///     async fn handle(&mut self, _: Goodbye, ctx: &mut Context<Self>) {
 ///         println!("Goodbye!");
-///         ctx.stop();
+///         ctx.stop_all();
 ///     }
 /// }
 ///
-/// // Will print "Started!", "Goodbye!", "Decided not to keep running", and then "Finally stopping."
+/// // Will print "Started!", "Goodbye!", and then "Finally stopping."
 /// # #[cfg(feature = "with-smol-1")]
 /// smol::block_on(async {
 ///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
@@ -155,39 +150,6 @@ pub trait Actor: 'static + Send + Sized {
     /// Called as soon as the actor has been started.
     #[allow(unused_variables)]
     async fn started(&mut self, ctx: &mut Context<Self>) {}
-
-    /// Called when the actor calls the [`Context::stop`](struct.Context.html#method.stop). This method
-    /// can prevent the actor from stopping by returning [`KeepRunning::Yes`](enum.KeepRunning.html#variant.Yes).
-    /// If this method returns [`KeepRunning::StopSelf`](enum.KeepRunning.html#variant.StopSelf),
-    /// this actor will be stopped. If it returns
-    /// [`KeepRunning::StopAll`](enum.KeepRunning.html#variant.StopAll), then all actors on the same
-    /// address as this actor will be stopped. This can take a little bit of time to propagate.
-    ///
-    /// **Note:** this method will *only* be called when [`Context::stop`](struct.Context.html#method.stop)
-    /// is called from this actor. If the last strong address to the actor is dropped, or
-    /// [`Context::stop`](struct.Context.html#method.stop) is called from another actor on the same
-    /// address, this will *not* be called. Therefore, Other, general destructor behaviour should be
-    /// encapsulated in the [`Actor::stopped`](trait.Actor.html#method.stopped)
-    /// method.
-    ///
-    /// # Example
-    /// ```no_run
-    /// # use xtra::prelude::*;
-    /// # use xtra::KeepRunning;
-    /// # struct MyActor { is_running: bool };
-    /// # #[async_trait]
-    /// # impl Actor for MyActor {
-    /// #    type Stop = ();
-    /// async fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
-    ///     self.is_running.into() // bool can be converted to KeepRunning with Into
-    /// }
-    /// # async fn stopped(self) -> Self::Stop { }
-    /// # }
-    /// ```
-    #[allow(unused_variables)]
-    async fn stopping(&mut self, ctx: &mut Context<Self>) -> KeepRunning {
-        KeepRunning::StopAll
-    }
 
     /// Called when the actor is in the process of stopping. This could be because
     /// [`KeepRunning::StopAll`](enum.KeepRunning.html#variant.StopAll) or
@@ -228,24 +190,22 @@ pub trait Actor: 'static + Send + Sized {
     }
 }
 
-/// Whether to keep the actor running after it has been put into a stopping state.
+/// Whether or not to keep an attached stream forwarding.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum KeepRunning {
-    /// Keep the actor running and prevent it from being stopped
+    /// Keep forwarding
     Yes,
-    /// Stop only this actor
-    StopSelf,
-    /// Stop all actors on this address
-    StopAll,
+    /// Stop the forwarding task
+    No,
 }
 
-/// True is converted to yes, and false is converted to stop all.
+/// True is converted to yes, and false is converted to no.
 impl From<bool> for KeepRunning {
     fn from(b: bool) -> Self {
         if b {
             KeepRunning::Yes
         } else {
-            KeepRunning::StopAll
+            KeepRunning::No
         }
     }
 }

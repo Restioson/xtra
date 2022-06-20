@@ -1,29 +1,25 @@
 use crate::envelope::BroadcastEnvelopeConcrete;
 use crate::inbox::{rx::RxStrong, ActorMessage};
-use crate::manager::ContinueManageLoop;
-use crate::{inbox, Actor, Address, Handler, KeepRunning};
+use crate::{inbox, Actor, Address, Handler};
 use futures_util::future::{self, Either};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::future::Future;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
-/// of a message handler.
+/// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
+/// [`Context::run`] or [`Context::attach`]) exists, **it will prevent the actor's channel from being
+/// closed**, as more actors that could still then be added to the address, so closing early, while
+/// maybe intuitive, would be subtly wrong.
 pub struct Context<A> {
     /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
     /// for it to call the `stopping` method on the actor
-    running: RunningState,
+    running: bool,
     receiver: inbox::Receiver<A, RxStrong>,
-}
-
-#[derive(Eq, PartialEq, Copy, Clone)]
-enum RunningState {
-    Running,
-    Stopping,
-    Stopped,
 }
 
 impl<A: Actor> Context<A> {
@@ -57,7 +53,7 @@ impl<A: Actor> Context<A> {
         let (tx, rx) = inbox::new(message_cap);
 
         let context = Context {
-            running: RunningState::Running,
+            running: true,
             receiver: rx,
         };
 
@@ -68,16 +64,25 @@ impl<A: Actor> Context<A> {
     /// They will operate in a message-stealing fashion, with no message handled by two actors.
     pub fn attach(&mut self, actor: A) -> impl Future<Output = A::Stop> {
         let ctx = Context {
-            running: RunningState::Running,
+            running: true,
             receiver: self.receiver.deep_clone(),
         };
         ctx.run(actor)
     }
 
-    /// Stop the actor as soon as it has finished processing current message. This will mean that the
-    /// [`Actor::stopping`](trait.Actor.html#method.stopping) method will be called.
-    pub fn stop(&mut self) {
-        self.running = RunningState::Stopping;
+    /// Stop this actor as soon as it has finished processing current message. This means that the
+    /// [`Actor::stopped`] method will be called.
+    pub fn stop_self(&mut self) {
+        self.running = false;
+    }
+
+    /// Stop all actors on this address. This is similar to [`Context::stop_self`] but it will stop
+    /// all actors on this address.
+    pub fn stop_all(&mut self) {
+        // We only need to shut down if there are still any strong senders left
+        if let Some(sender) = self.receiver.sender() {
+            sender.shutdown_and_drain();
+        }
     }
 
     /// Get an address to the current actor if there are still external addresses to the actor.
@@ -85,58 +90,20 @@ impl<A: Actor> Context<A> {
         self.receiver.sender().ok_or(ActorShutdown).map(Address)
     }
 
-    /// Stop all actors on this address
-    fn stop_all(&mut self) {
-        // We only need to shut down if there are still any strong senders left
-        if let Some(sender) = self.receiver.sender() {
-            sender.shutdown();
-        }
-    }
-
-    /// Check if the Context is still set to running, returning whether to continue the manage loop
-    async fn check_running(&mut self, actor: &mut A) -> bool {
-        // Check if the context was stopped, and if so return, thereby dropping the
-        // manager and calling `stopped` on the actor
-        match self.running {
-            RunningState::Running => true,
-            RunningState::Stopping => {
-                let keep_running = actor.stopping(self).await;
-
-                match keep_running {
-                    KeepRunning::Yes => {
-                        self.running = RunningState::Running;
-                        true
-                    }
-                    KeepRunning::StopSelf => {
-                        self.running = RunningState::Stopped;
-                        false
-                    }
-                    KeepRunning::StopAll => {
-                        self.stop_all();
-                        self.running = RunningState::Stopped;
-                        false
-                    }
-                }
-            }
-            RunningState::Stopped => false,
-        }
-    }
-
     /// Run the given actor's main loop, handling incoming messages to its mailbox.
     pub async fn run(mut self, mut actor: A) -> A::Stop {
         actor.started(&mut self).await;
 
-        // Idk why anyone would do this, but we have to check that they didn't do ctx.stop()
+        // Idk why anyone would do this, but we have to check that they didn't already stop the actor
         // in the started method, otherwise it would kinda be a bug
-        if !self.check_running(&mut actor).await {
-            self.stop_all();
+        if !self.running {
             return actor.stopped().await;
         }
 
         loop {
             match self.tick(self.receiver.receive().await, &mut actor).await {
-                ContinueManageLoop::Yes => {}
-                ContinueManageLoop::ExitImmediately => {
+                ControlFlow::Continue(()) => {}
+                ControlFlow::Break(()) => {
                     return actor.stopped().await;
                 }
             }
@@ -145,21 +112,21 @@ impl<A: Actor> Context<A> {
 
     /// Handle a message and immediate notifications, returning whether to exit from the manage loop
     /// or not.
-    async fn tick(&mut self, msg: ActorMessage<A>, actor: &mut A) -> ContinueManageLoop {
+    async fn tick(&mut self, msg: ActorMessage<A>, actor: &mut A) -> ControlFlow<()> {
         match msg {
             ActorMessage::BroadcastMessage(msg) => msg.handle(actor, self).await,
             ActorMessage::Shutdown => {
-                self.running = RunningState::Stopped;
-                return ContinueManageLoop::ExitImmediately;
+                self.running = false;
+                return ControlFlow::Break(());
             }
             ActorMessage::StolenMessage(msg) => msg.handle(actor, self).await,
         }
 
-        if !self.check_running(actor).await {
-            return ContinueManageLoop::ExitImmediately;
+        if !self.running {
+            return ControlFlow::Break(());
         }
 
-        ContinueManageLoop::Yes
+        ControlFlow::Continue(())
     }
 
     /// Yields to the manager to handle one message.
@@ -192,7 +159,7 @@ impl<A: Actor> Context<A> {
     ///     type Return = ();
     ///
     ///     async fn handle(&mut self, _msg: Stop, ctx: &mut Context<Self>) {
-    ///         ctx.stop();
+    ///         ctx.stop_self();
     ///     }
     /// }
     ///
@@ -254,7 +221,7 @@ impl<A: Actor> Context<A> {
     ///     type Return = ();
     ///
     ///     async fn handle(&mut self, _msg: Stop, ctx: &mut Context<Self>) {
-    ///         ctx.stop();
+    ///         ctx.stop_self();
     ///     }
     /// }
     ///
@@ -291,7 +258,7 @@ impl<A: Actor> Context<A> {
     where
         F: Future<Output = R> + Unpin,
     {
-        while self.running == RunningState::Running {
+        while self.running {
             let (msg, unfinished) = {
                 let mut next_msg = self.receiver.receive();
                 match future::select(fut, &mut next_msg).await {

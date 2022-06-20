@@ -1,13 +1,11 @@
 use futures_util::task::noop_waker_ref;
 use futures_util::FutureExt;
 use smol::stream;
+use smol_timeout::TimeoutExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
-
-use smol_timeout::TimeoutExt;
-
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::KeepRunning;
@@ -17,9 +15,11 @@ struct Accumulator(usize);
 
 #[async_trait]
 impl Actor for Accumulator {
-    type Stop = ();
+    type Stop = usize;
 
-    async fn stopped(self) -> Self::Stop {}
+    async fn stopped(self) -> usize {
+        self.0
+    }
 }
 
 struct Inc;
@@ -44,9 +44,28 @@ impl Handler<Report> for Accumulator {
     }
 }
 
+#[async_trait]
+impl Handler<StopAll> for Accumulator {
+    type Return = ();
+
+    async fn handle(&mut self, _: StopAll, ctx: &mut Context<Self>) -> Self::Return {
+        ctx.stop_all();
+    }
+}
+
+#[async_trait]
+impl Handler<StopSelf> for Accumulator {
+    type Return = ();
+
+    async fn handle(&mut self, _: StopSelf, ctx: &mut Context<Self>) {
+        ctx.stop_self();
+    }
+}
+
 #[tokio::test]
 async fn accumulate_to_ten() {
-    let addr = Accumulator(0).create(None).spawn_global();
+    let (addr, fut) = Accumulator(0).create(None).run();
+    tokio::spawn(fut);
     for _ in 0..10 {
         let _ = addr.send(Inc).split_receiver().await;
     }
@@ -66,24 +85,20 @@ impl Drop for DropTester {
 impl Actor for DropTester {
     type Stop = ();
 
-    async fn stopping(&mut self, _ctx: &mut Context<Self>) -> KeepRunning {
-        self.0.fetch_add(2, Ordering::SeqCst);
-        KeepRunning::StopAll
-    }
-
     async fn stopped(self) {
         self.0.fetch_add(5, Ordering::SeqCst);
     }
 }
 
-struct Stop;
+struct StopAll;
+struct StopSelf;
 
 #[async_trait]
-impl Handler<Stop> for DropTester {
+impl Handler<StopSelf> for DropTester {
     type Return = ();
 
-    async fn handle(&mut self, _: Stop, ctx: &mut Context<Self>) {
-        ctx.stop();
+    async fn handle(&mut self, _: StopSelf, ctx: &mut Context<Self>) {
+        ctx.stop_all();
     }
 }
 
@@ -92,32 +107,98 @@ async fn test_stop_and_drop() {
     // Drop the address
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
-    let handle = smol::spawn(fut);
+    let handle = tokio::spawn(fut);
+    let weak = addr.downgrade();
+    let join = weak.join();
     drop(addr);
-    handle.await;
+    handle.await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert!(!weak.is_connected());
+    assert!(join.now_or_never().is_some());
 
     // Send a stop message
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
-    let handle = smol::spawn(fut);
-    let _ = addr.send(Stop).split_receiver().await;
-    handle.await;
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 2 + 5);
+    let handle = tokio::spawn(fut);
+    let weak = addr.downgrade();
+    let join = weak.join();
+    let _ = addr.send(StopSelf).split_receiver().await;
+    handle.await.unwrap();
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert!(!weak.is_connected());
+    assert!(join.now_or_never().is_some());
 
     // Drop address before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
+    let weak = addr.downgrade();
+    let join = weak.join();
     drop(addr);
-    smol::spawn(fut).await;
+    tokio::spawn(fut).await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert!(!weak.is_connected());
+    assert!(join.now_or_never().is_some());
 
     // Send a stop message before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
-    let _ = addr.send(Stop).split_receiver().await;
-    smol::spawn(fut).await;
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 2 + 5);
+    let weak = addr.downgrade();
+    let join = weak.join();
+    let _ = addr.send(StopSelf).split_receiver().await;
+    tokio::spawn(fut).await.unwrap();
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert!(!weak.is_connected());
+    assert!(join.now_or_never().is_some());
+}
+
+#[tokio::test]
+async fn handle_left_messages() {
+    let (addr, fut) = Accumulator(0).create(None).run();
+
+    for _ in 0..10 {
+        let _ = addr.send(Inc).split_receiver().await;
+    }
+
+    drop(addr);
+
+    assert_eq!(fut.await, 10);
+}
+
+#[tokio::test]
+async fn do_not_handle_drained_messages() {
+    let (addr, fut) = Accumulator(0).create(None).run();
+
+    for _ in 0..5 {
+        let _ = addr.send(Inc).split_receiver().await;
+    }
+
+    let _ = addr.send(StopSelf).split_receiver().await;
+
+    for _ in 0..5 {
+        let _ = addr.send(Inc).split_receiver().await;
+    }
+
+    assert_eq!(fut.await, 5);
+
+    let (addr, mut ctx) = Context::new(None);
+    let fut1 = ctx.attach(Accumulator(0));
+    let fut2 = ctx.run(Accumulator(0));
+
+    for _ in 0..5 {
+        let _ = addr.send(Inc).split_receiver().await;
+    }
+
+    let _ = addr.send(StopAll).split_receiver().await;
+
+    assert_eq!(fut1.await, 5);
+    assert!(!addr.is_connected());
+
+    for _ in 0..5 {
+        let _ = addr.send(Inc).split_receiver().await;
+    }
+
+    assert_eq!(fut2.await, 0);
+    assert!(!addr.is_connected());
 }
 
 struct StreamCancelMessage;
@@ -146,7 +227,7 @@ async fn test_stream_cancel_join() {
     let jh = addr.join();
     let addr2 = addr.clone().downgrade();
     // attach a stream that blocks forever
-    let handle = smol::spawn(async move {
+    let handle = tokio::spawn(async move {
         addr2
             .attach_stream(stream::pending::<StreamCancelMessage>())
             .await
@@ -162,31 +243,60 @@ async fn test_stream_cancel_join() {
 
 #[tokio::test]
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
-    let (address, fut) = ActorReturningStopSelf.create(None).run();
-    let _ = address.send(Stop).split_receiver().await;
+    let (address, fut) = ActorStopSelf.create(None).run();
+    let _ = address.send(StopSelf).split_receiver().await;
     assert!(fut.now_or_never().is_some());
+    assert!(address.join().now_or_never().is_some());
     assert!(!address.is_connected());
 }
 
-struct ActorReturningStopSelf;
+#[tokio::test]
+async fn two_actors_on_address_with_stop_self() {
+    let (address, mut ctx) = Context::new(None);
+    tokio::spawn(ctx.attach(ActorStopSelf));
+    tokio::spawn(ctx.run(ActorStopSelf));
+    address.send(StopSelf).await.unwrap();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    assert!(address.is_connected());
+    address.send(StopSelf).await.unwrap();
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(!address.is_connected());
+}
+
+#[tokio::test]
+async fn two_actors_on_address_with_stop_self_context_alive() {
+    let (address, mut ctx) = Context::new(None);
+    tokio::spawn(ctx.attach(ActorStopSelf));
+    tokio::spawn(ctx.attach(ActorStopSelf)); // Context not dropped here
+    address.send(StopSelf).await.unwrap();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    assert!(address.is_connected());
+    address.send(StopSelf).await.unwrap();
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(address.is_connected());
+}
+
+struct ActorStopSelf;
 
 #[async_trait]
-impl Actor for ActorReturningStopSelf {
+impl Actor for ActorStopSelf {
     type Stop = ();
 
-    async fn stopping(&mut self, _: &mut Context<Self>) -> KeepRunning {
-        KeepRunning::StopSelf
+    async fn stopped(self) -> Self::Stop {
+        println!("Stopped");
     }
-
-    async fn stopped(self) -> Self::Stop {}
 }
 
 #[async_trait]
-impl Handler<Stop> for ActorReturningStopSelf {
+impl Handler<StopSelf> for ActorStopSelf {
     type Return = ();
 
-    async fn handle(&mut self, _: Stop, ctx: &mut Context<Self>) {
-        ctx.stop();
+    async fn handle(&mut self, _: StopSelf, ctx: &mut Context<Self>) {
+        ctx.stop_self();
     }
 }
 
@@ -315,9 +425,9 @@ fn scoped_task() {
     assert_eq!(scoped.now_or_never(), Some(None));
 
     // Does not complete when address starts off from a disconnected strong
-    let (addr, ctx) = Context::<ActorReturningStopSelf>::new(None);
-    let _ = addr.send(Stop).split_receiver().now_or_never().unwrap();
-    assert!(ctx.run(ActorReturningStopSelf).now_or_never().is_some());
+    let (addr, ctx) = Context::<ActorStopSelf>::new(None);
+    let _ = addr.send(StopSelf).split_receiver().now_or_never().unwrap();
+    assert!(ctx.run(ActorStopSelf).now_or_never().is_some());
     let scoped = xtra::scoped(&addr, futures_util::future::ready(()));
     assert_eq!(scoped.now_or_never(), Some(None));
 

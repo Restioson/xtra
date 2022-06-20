@@ -121,12 +121,12 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         })
     }
 
-    // TODO(stop) should messages be handled to completion if stopped like this?
-    // Should we distinguish between a `stop` shutdown and a "natural" no-more-addresses shutdown?
-    // What should the difference in behaviour be? Needs test too.
-    // Currently, no messages will be handled _at all_ even if a natural stop occurs.
     pub(crate) fn shutdown(&self) {
         self.inner.shutdown();
+    }
+
+    pub(crate) fn shutdown_and_drain(&self) {
+        self.inner.shutdown_and_drain();
     }
 
     pub(crate) fn is_connected(&self) -> bool {

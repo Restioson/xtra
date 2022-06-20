@@ -96,6 +96,26 @@ impl<A> Chan<A> {
             let _ = rx.lock().fulfill(WakeReason::Shutdown);
         }
     }
+
+    pub(crate) fn shutdown_and_drain(&self) {
+        let waiting_rx = {
+            let mut inner = self.chan.lock().unwrap();
+
+            // TODO(atomic) what ordering to use here?
+            self.shutdown.store(true, atomic::Ordering::SeqCst);
+            self.on_shutdown.notify(usize::MAX);
+
+            for queue in inner.broadcast_queues.drain(..).flat_map(|weak| weak.upgrade()) {
+                *queue.lock() = BinaryHeap::new();
+            }
+
+            mem::take(&mut inner.waiting_receivers)
+        };
+
+        for rx in waiting_rx.into_iter().flat_map(|w| w.upgrade()) {
+            let _ = rx.lock().fulfill(WakeReason::Shutdown);
+        }
+    }
 }
 
 // TODO(perf): try and reduce contention on Inner as much as possible

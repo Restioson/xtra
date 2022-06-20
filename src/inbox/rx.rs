@@ -59,10 +59,6 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
 
         let mut inner = self.inner.chan.lock().unwrap();
 
-        if self.inner.is_shutdown() {
-            return Ok(ActorMessage::Shutdown);
-        }
-
         let shared_priority: Priority = inner
             .priority_queue
             .peek()
@@ -84,8 +80,14 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
             }
             // Shared priority is less - take from broadcast
             Ordering::Less => Ok(broadcast.pop().unwrap().0.into()),
-            // Equal, but both are empty, so wait
+            // Equal, but both are empty, so wait or exit if shutdown
             _ => {
+                // Shutdown is only edited when inner is locked, and we have it locked now, so no
+                // chance of races here
+                if self.inner.is_shutdown() {
+                    return Ok(ActorMessage::Shutdown);
+                }
+
                 let waiting = Arc::new(Spinlock::new(WaitingReceiver::default()));
                 inner.waiting_receivers.push_back(Arc::downgrade(&waiting));
                 Err(waiting)

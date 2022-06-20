@@ -4,12 +4,15 @@ use crate::address::Address;
 use crate::context::Context;
 use crate::spawn::Spawner;
 use crate::Actor;
+use crate::envelope::MessageEnvelope;
 
-/// If and how to continue the manage loop
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
-pub(crate) enum ContinueManageLoop {
-    Yes,
-    ExitImmediately,
+/// A message that can be sent by an Address to the manage loop
+pub(crate) enum AddressMessage<A> {
+    /// A message from the last address telling the actor that it should shut down
+    LastAddress,
+    /// A message being sent to the actor. To read about envelopes and why we use them, check out
+    /// `envelope.rs`
+    Message(Box<dyn MessageEnvelope<Actor = A>>),
 }
 
 /// A manager for the actor which handles incoming messages and stores the context. Its managing
