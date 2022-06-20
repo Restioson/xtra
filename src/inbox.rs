@@ -105,7 +105,11 @@ impl<A> Chan<A> {
             self.shutdown.store(true, atomic::Ordering::SeqCst);
             self.on_shutdown.notify(usize::MAX);
 
-            for queue in inner.broadcast_queues.drain(..).flat_map(|weak| weak.upgrade()) {
+            for queue in inner
+                .broadcast_queues
+                .drain(..)
+                .flat_map(|weak| weak.upgrade())
+            {
                 *queue.lock() = BinaryHeap::new();
             }
 
@@ -150,8 +154,8 @@ impl<A> ChanInner<A> {
     }
 
     fn try_fulfill_receiver(&mut self, mut reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
-        while !self.waiting_receivers.is_empty() {
-            if let Some(rx) = self.waiting_receivers.pop_front().and_then(|w| w.upgrade()) {
+        while let Some(rx) = self.waiting_receivers.pop_front() {
+            if let Some(rx) = rx.upgrade() {
                 reason = match rx.lock().fulfill(reason) {
                     Ok(()) => return Ok(()),
                     Err(reason) => reason,
@@ -163,13 +167,8 @@ impl<A> ChanInner<A> {
     }
 
     fn try_fulfill_sender(&mut self) {
-        while !self.waiting_senders.is_empty() {
-            if let Some(msg) = self
-                .waiting_senders
-                .pop_front()
-                .and_then(|w| w.upgrade())
-                .and_then(|tx| tx.lock().fulfill())
-            {
+        while let Some(tx) = self.waiting_senders.pop_front() {
+            if let Some(msg) = tx.upgrade().and_then(|tx| tx.lock().fulfill()) {
                 self.ordered_queue.push_back(msg);
                 return;
             }

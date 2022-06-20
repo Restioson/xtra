@@ -2,9 +2,9 @@ use std::future::Future;
 
 use crate::address::Address;
 use crate::context::Context;
+use crate::envelope::MessageEnvelope;
 use crate::spawn::Spawner;
 use crate::Actor;
-use crate::envelope::MessageEnvelope;
 
 /// A message that can be sent by an Address to the manage loop
 pub(crate) enum AddressMessage<A> {
