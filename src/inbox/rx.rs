@@ -32,7 +32,7 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
     pub fn sender(&self) -> Option<Sender<A, TxStrong>> {
         Some(Sender {
             inner: self.inner.clone(),
-            rc: TxStrong::new(&self.inner)?,
+            rc: TxStrong::try_new(&self.inner)?,
         })
     }
 

@@ -334,7 +334,10 @@ pub struct TxStrong(());
 pub struct TxWeak(());
 
 impl TxStrong {
-    pub(crate) fn new<A>(inner: &Chan<A>) -> Option<TxStrong> {
+    /// Attempt to construct a new `TxStrong` pointing to the given `inner` if there are existing
+    /// strong references to `inner`. This will return `None` if there were 0 strong references to
+    /// the inner.
+    pub(crate) fn try_new<A>(inner: &Chan<A>) -> Option<TxStrong> {
         // All code taken from Weak::upgrade in std
         use std::sync::atomic::Ordering::*;
 
