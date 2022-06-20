@@ -21,19 +21,7 @@ type Spinlock<T> = spin::Mutex<T>;
 pub type MessageToOneActor<A> = Box<dyn MessageEnvelope<Actor = A>>;
 type BroadcastQueue<A> = Spinlock<BinaryHeap<MessageToAllActors<A>>>;
 
-// TODO(priority)
-#[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone)]
-pub enum Priority {
-    Min,
-    Valued(i32),
-}
-
-impl Default for Priority {
-    fn default() -> Self {
-        Priority::Valued(0)
-    }
-}
-
+/// TODO(doc): also should wait till we clarify how bounding will work
 pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
     let broadcast_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
     let inner = Arc::new(Chan {
@@ -55,6 +43,19 @@ pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxSt
     let rx = Receiver::new(inner, broadcast_mailbox);
 
     (tx, rx)
+}
+
+// TODO(priority): can we let the user specify a custom type?
+#[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone)]
+pub enum Priority {
+    Min,
+    Valued(i32),
+}
+
+impl Default for Priority {
+    fn default() -> Self {
+        Priority::Valued(0)
+    }
 }
 
 // Public because of private::RefCounterInner. This should never actually be exported, though.
