@@ -36,8 +36,8 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
         })
     }
 
-    // TODO(doc)
-    pub fn deep_clone(&self) -> Receiver<A, Rc> {
+    /// Clone this receiver, keeping its broadcast mailbox.
+    pub fn cloned_same_broadcast_mailbox(&self) -> Receiver<A, Rc> {
         Receiver {
             inner: self.inner.clone(),
             broadcast_mailbox: self.broadcast_mailbox.clone(),
@@ -45,20 +45,20 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
         }
     }
 
-    pub fn shallow_weak_clone(&self) -> Receiver<A, RxWeak> {
+    /// Clone this receiver, giving the clone a new broadcast mailbox.
+    pub fn cloned_new_broadcast_mailbox(&self) -> Receiver<A, Rc> {
         let new_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
-        let weak = Arc::downgrade(&new_mailbox);
-        self.inner.chan.lock().unwrap().broadcast_queues.push(weak);
+        self.inner.chan.lock().unwrap().broadcast_queues.push(Arc::downgrade(&new_mailbox));
 
         Receiver {
             inner: self.inner.clone(),
             broadcast_mailbox: new_mailbox,
-            rc: RxWeak(()),
+            rc: self.rc.increment(&self.inner),
         }
     }
 
     pub fn receive(&self) -> ReceiveFuture<A, Rc> {
-        ReceiveFuture::new(self.deep_clone())
+        ReceiveFuture::new(self.cloned_same_broadcast_mailbox())
     }
 
     fn try_recv(&self) -> Result<ActorMessage<A>, Arc<Spinlock<WaitingReceiver<A>>>> {
@@ -101,13 +101,6 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
                 Err(waiting)
             }
         }
-    }
-
-    fn pop_broadcast(&self) -> Option<ActorMessage<A>> {
-        self.broadcast_mailbox
-            .lock()
-            .pop()
-            .map(|msg| ActorMessage::ToAllActors(msg.0))
     }
 }
 
@@ -161,7 +154,22 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                         Some(reason) => {
                             return Poll::Ready(match reason {
                                 WakeReason::MessageToOneActor(msg) => msg.into(),
-                                WakeReason::MessageToAllActors => rx.pop_broadcast().unwrap(),
+                                WakeReason::MessageToAllActors => {
+                                    // TODO update diagram
+                                    // The broadcast message could have been taken by another
+                                    // receive future from the same receiver (or from another
+                                    // receiver sharing the same broadcast mailbox)
+                                    let pop = rx.broadcast_mailbox.lock().pop();
+                                    match pop {
+                                        Some(msg) => ActorMessage::ToAllActors(msg.0),
+                                        None => {
+                                            // If it was taken, try receive again
+                                            self.0 = ReceiveFutureInner::New(rx);
+                                            drop(inner);
+                                            return self.poll_unpin(cx);
+                                        }
+                                    }
+                                },
                                 WakeReason::Shutdown => ActorMessage::Shutdown,
                                 WakeReason::Cancelled => {
                                     unreachable!("Waiting receive future cannot be interrupted")

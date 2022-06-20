@@ -65,7 +65,7 @@ impl<A: Actor> Context<A> {
     pub fn attach(&mut self, actor: A) -> impl Future<Output = A::Stop> {
         let ctx = Context {
             running: true,
-            receiver: self.receiver.deep_clone(),
+            receiver: self.receiver.cloned_new_broadcast_mailbox(),
         };
         ctx.run(actor)
     }

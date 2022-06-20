@@ -273,6 +273,7 @@ impl<A> Ord for MessageToAllActors<A> {
     }
 }
 
+// TODO(test) migrate to basic.rs
 #[cfg(test)]
 mod test {
     use super::*;
@@ -307,7 +308,8 @@ mod test {
     #[tokio::test]
     async fn test_broadcast() {
         let (tx, rx) = new(None);
-        let rx2 = rx.shallow_weak_clone();
+        let rx2 = rx.cloned_new_broadcast_mailbox();
+        let rx2_shallow = rx2.cloned_same_broadcast_mailbox();
 
         let orig = Arc::new(BroadcastEnvelopeConcrete::new("Hi", 1));
         let orig = orig as Arc<dyn BroadcastEnvelope<Actor = MyActor>>;
@@ -318,6 +320,8 @@ mod test {
             _ => panic!("Expected broadcast message, got something else"),
         }
 
+        let rx2_shallow_recv = rx2_shallow.receive();
+
         match rx2.receive().await {
             ActorMessage::ToAllActors(msg) => assert!(Arc::ptr_eq(&msg, &orig)),
             _ => panic!("Expected broadcast message, got something else"),
@@ -325,5 +329,6 @@ mod test {
 
         assert!(rx.receive().now_or_never().is_none());
         assert!(rx2.receive().now_or_never().is_none());
+        assert!(rx2_shallow_recv.now_or_never().is_none());
     }
 }
