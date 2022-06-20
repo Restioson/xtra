@@ -290,11 +290,11 @@ impl<A: Actor> Context<A> {
         M: Clone + Sync + Send + 'static,
         A: Handler<M, Return = ()>,
     {
-        let envelope = BroadcastEnvelopeConcrete::<A, M>::new(msg, 1);
+        let envelope = BroadcastEnvelopeConcrete::<A, M>::new(msg);
         self.receiver
             .sender()
             .ok_or(ActorShutdown)?
-            .broadcast(Arc::new(envelope))
+            .broadcast(Arc::new(envelope), 1)
             .map_err(|_| ActorShutdown)
     }
 

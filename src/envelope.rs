@@ -6,7 +6,6 @@ use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 
 use crate::context::Context;
-use crate::inbox::{HasPriority, Priority};
 use crate::{Actor, Handler};
 
 /// A message envelope is a struct that encapsulates a message and its return channel sender (if applicable).
@@ -124,7 +123,7 @@ pub trait BroadcastMessageEnvelope: MessageEnvelope + Sync {
 }
 
 /// Like MessageEnvelope, but with an Arc instead of Box
-pub trait BroadcastEnvelope: HasPriority + Send + Sync {
+pub trait BroadcastEnvelope: Send + Sync {
     type Actor;
 
     fn handle<'a>(
@@ -136,15 +135,13 @@ pub trait BroadcastEnvelope: HasPriority + Send + Sync {
 
 pub struct BroadcastEnvelopeConcrete<A, M> {
     message: M,
-    priority: i32,
     phantom: PhantomData<fn() -> A>,
 }
 
 impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
-    pub fn new(message: M, priority: i32) -> Self {
+    pub fn new(message: M) -> Self {
         BroadcastEnvelopeConcrete {
             message,
-            priority,
             phantom: PhantomData,
         }
     }
@@ -163,11 +160,5 @@ where
         ctx: &'a mut Context<Self::Actor>,
     ) -> BoxFuture<'a, ()> {
         Box::pin(act.handle(self.message.clone(), ctx))
-    }
-}
-
-impl<A, M> HasPriority for BroadcastEnvelopeConcrete<A, M> {
-    fn priority(&self) -> Priority {
-        Priority::Valued(self.priority)
     }
 }

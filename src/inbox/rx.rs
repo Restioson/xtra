@@ -87,7 +87,7 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
                 Ok(inner.pop_priority().unwrap().into())
             }
             // Shared priority is less - take from broadcast
-            Ordering::Less => Ok(broadcast.pop().unwrap().0.into()),
+            Ordering::Less => Ok(broadcast.pop().unwrap().into()),
             // Equal, but both are empty, so wait or exit if shutdown
             _ => {
                 // Shutdown is only edited when inner is locked, and we have it locked now, so no
@@ -107,7 +107,7 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
         self.broadcast_mailbox
             .lock()
             .pop()
-            .map(|msg| ActorMessage::ToAllActors(msg.0))
+            .map(|msg| ActorMessage::ToAllActors(msg.message))
     }
 }
 

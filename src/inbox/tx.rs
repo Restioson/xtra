@@ -95,7 +95,10 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     pub fn broadcast(
         &self,
         message: Arc<dyn BroadcastEnvelope<Actor = A>>,
+        priority: i32,
     ) -> Result<(), Disconnected> {
+        let message = Prioritized::new(Priority::Valued(priority), message);
+
         let waiting_receivers = {
             let mut inner = self.inner.chan.lock().unwrap();
 
@@ -107,7 +110,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
                 .broadcast_queues
                 .retain(|queue| match queue.upgrade() {
                     Some(q) => {
-                        q.lock().push(MessageToAllActors(message.clone()));
+                        q.lock().push(message.clone());
                         true
                     }
                     None => false, // The corresponding receiver has been dropped - remove it
