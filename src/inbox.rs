@@ -21,7 +21,8 @@ type Spinlock<T> = spin::Mutex<T>;
 pub type MessageToOneActor<A> = Box<dyn MessageEnvelope<Actor = A>>;
 type BroadcastQueue<A> = Spinlock<BinaryHeap<MessageToAllActors<A>>>;
 
-/// TODO(doc): also should wait till we clarify how bounding will work
+/// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
+/// severally to each send type - priority, ordered, and broadcast.
 pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
     let broadcast_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
     let inner = Arc::new(Chan {
@@ -50,7 +51,7 @@ pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxSt
 #[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone)]
 pub enum Priority {
     Min,
-    Valued(i32),
+    Valued(u32),
 }
 
 impl Default for Priority {

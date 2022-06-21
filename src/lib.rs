@@ -42,7 +42,8 @@ pub mod prelude {
     pub use async_trait::async_trait;
 }
 
-/// TODO(doc)
+/// This module contains types representing the strength of an address's reference counting, which
+/// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount {
     pub use crate::inbox::tx::TxEither as Either;
     pub use crate::inbox::tx::TxRefCounter as RefCounter;

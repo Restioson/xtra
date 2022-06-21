@@ -41,6 +41,42 @@ impl Error for Disconnected {}
 /// should be used instead. An address is created by calling the
 /// [`Actor::create`](../trait.Actor.html#method.create) or
 /// [`Context::run`](../struct.Context.html#method.run) methods, or by cloning another `Address`.
+///
+/// ## Mailboxes
+///
+/// An actor has three mailboxes, each for a specific kind of message:
+/// 1. The default priority, or ordered mailbox.
+/// 2. The priority mailbox.
+/// 3. The broadcast mailbox.
+///
+/// The first two mailboxes are shared between all actors on the same address, whilst each actor
+/// has its own broadcast mailbox.
+///
+/// The actor's mailbox capacity applies severally to each mailbox. This means that an actor can
+/// have a total of `cap` messages in every mailbox before it is totally full. However, it must only
+/// have `cap` in a given mailbox for any sends to that mailbox to be caused to wait for free space.
+///
+/// ### Default priority
+///
+/// The default priority mailbox contains messages which will be handled in order of sending. This is
+/// a special property, as the other two mailboxes do not preserve send order!
+/// The vast majority of actor messages will probably be sent to this mailbox. They have default
+/// priority - a message will be taken from this mailbox next only if the other two mailboxes are empty.
+///
+/// ### Priority
+///
+/// The priority mailbox contains messages which will be handled in order of their priority.This
+/// can be used to make sure that critical maintenance tasks such as pings are handled as soon as
+/// possible. Keep in mind that if this becomes full, attempting to send in a higher priority message
+/// than the current highest will still result in waiting for at least one priority message
+/// to be handled.
+///
+/// ### Broadcast
+///
+/// The broadcast mailbox contains messages which will be handled by every single actor, in order
+/// of their priority. All actors must handle a message for it to be removed from the mailbox and
+/// the length to decrease. This means that the backpressure provided by [`Address::broadcast`] will
+/// wait for the slowest actor.
 pub struct Address<A: 'static, Rc: RefCounter = Strong>(pub(crate) inbox::Sender<A, Rc>);
 
 impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
@@ -152,7 +188,6 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         SendFuture::sending_named(tx, rx)
     }
 
-    // TODO(doc)
     /// Send a message to the actor with a given priority.
     ///
     /// The actor must implement [`Handler<Message>`] for this to work.
@@ -163,7 +198,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     pub fn send_priority<M>(
         &self,
         message: M,
-        priority: i32,
+        priority: u32,
     ) -> SendFuture<
         <A as Handler<M>>::Return,
         NameableSending<A, <A as Handler<M>>::Return, Rc>,
@@ -241,7 +276,8 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         self.0.inner_ptr() == other.0.inner_ptr()
     }
 
-    /// TODO(doc)
+    /// Converts this address into a sink that can be used to send messages to the actor. These
+    /// messages will have default priority and be handled in send order.
     pub fn into_sink(self) -> AddressSink<A, Rc> {
         AddressSink(inbox::SendFuture::empty(self.0))
     }
@@ -289,7 +325,10 @@ impl<A, Rc: RefCounter, Rc2: RefCounter> PartialEq<Address<A, Rc2>> for Address<
 
 impl<A, Rc: RefCounter> Eq for Address<A, Rc> {}
 
-/// TODO(doc)
+/// Compare this address to another. This comparison has little semantic meaning, and is intended
+/// to be used for comparison-based indexing only (e.g to allow addresses to be keys in binary search
+/// trees). The pointer of the actors' mailboxes will be compared, and if they are equal, a strong
+/// address will compare as greater than a weak one.
 impl<A, Rc: RefCounter, Rc2: RefCounter> PartialOrd<Address<A, Rc2>> for Address<A, Rc> {
     fn partial_cmp(&self, other: &Address<A, Rc2>) -> Option<Ordering> {
         Some(match self.0.inner_ptr().cmp(&other.0.inner_ptr()) {
@@ -313,7 +352,8 @@ impl<A, Rc: RefCounter> Hash for Address<A, Rc> {
     }
 }
 
-/// TODO(doc)
+/// A sink which can be used to send messages to an actor. These messages will have default priority
+/// and be handled in send order.
 pub struct AddressSink<A, Rc: RefCounter>(inbox::SendFuture<A, Rc>);
 
 impl<A, Rc: RefCounter> AddressSink<A, Rc> {

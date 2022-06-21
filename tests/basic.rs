@@ -346,8 +346,8 @@ async fn receiving_async_on_message_channel_returns_immediately_after_dispatch()
 
 #[derive(Eq, PartialEq, Clone, Debug)]
 enum Message {
-    Broadcast { priority: i32 },
-    Priority { priority: i32 },
+    Broadcast { priority: u32 },
+    Priority { priority: u32 },
     Ordered { ord: u32 },
 }
 
@@ -440,7 +440,6 @@ async fn handle_order() {
 
         send(Message::Ordered { ord: 0 }).await;
         send(Message::Ordered { ord: 1 }).await;
-        send(Message::Priority { priority: -1 }).await;
         send(Message::Ordered { ord: 2 }).await;
         send(Message::Broadcast { priority: 2 }).await;
         send(Message::Broadcast { priority: 3 }).await;
@@ -537,8 +536,8 @@ async fn broadcast_tail_advances_bound_1() {
     tokio::spawn(ctx.attach(Elephant::default()));
 
     let _ = addr
-        .broadcast(Message::Broadcast { priority: -1 })
-        .priority(-1)
+        .broadcast(Message::Broadcast { priority: 0 })
+        .priority(0)
         .await;
 
     ctx.yield_once(&mut ngwevu).await;

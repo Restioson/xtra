@@ -42,7 +42,7 @@ where
     /// Set the priority of this broadcast.
     ///
     /// By default, broadcasts are sent with a priority of 0.
-    pub fn priority(self, priority: i32) -> Self {
+    pub fn priority(self, priority: u32) -> Self {
         match self.inner {
             Inner::Initial {
                 message, sender, ..
