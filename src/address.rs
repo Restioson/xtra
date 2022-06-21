@@ -17,6 +17,7 @@ use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use crate::inbox::SentMessage;
 
 /// The actor is no longer running and disconnected from the sending address. For why this could
 /// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and
@@ -147,19 +148,21 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         A: Handler<M>,
     {
         let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-        let tx = self.0.send(Box::new(envelope));
+        let tx = self.0.send(SentMessage::Ordered(Box::new(envelope)));
         SendFuture::sending_named(tx, rx)
     }
 
     /// Send a message to all actors on this address. The message will be received once by each
     /// actor. Note that currently there is no message cap on the broadcast channel (it is unbounded).
-    pub fn broadcast<M>(&mut self, msg: M) -> Result<(), Disconnected>
+    // TODO broadcast type
+    pub async fn broadcast<M>(&mut self, msg: M) -> Result<(), Disconnected>
     where
         M: Clone + Sync + Send + 'static,
         A: Handler<M, Return = ()>,
     {
+        // TODO priority
         let envelope = BroadcastEnvelopeConcrete::<A, M>::new(msg, 1);
-        self.0.broadcast(Arc::new(envelope))
+        self.0.send(SentMessage::ToAllActors(Arc::new(envelope))).await
     }
 
     /// Attaches a stream to this actor such that all messages produced by it are forwarded to the
@@ -310,7 +313,7 @@ where
     }
 
     fn start_send(mut self: Pin<&mut Self>, msg: M) -> Result<(), Self::Error> {
-        self.0 = self.0.tx.send(Box::new(NonReturningEnvelope::new(msg)));
+        self.0 = self.0.tx.send(SentMessage::Ordered(Box::new(NonReturningEnvelope::new(msg))));
         Ok(())
     }
 

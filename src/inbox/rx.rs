@@ -92,7 +92,13 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
                 Ok(inner.pop_priority().unwrap().into())
             }
             // Shared priority is less - take from broadcast
-            Ordering::Less => Ok(broadcast.pop().unwrap().0.into()),
+            Ordering::Less => {
+                let msg = broadcast.pop().unwrap().0;
+                drop(broadcast);
+                inner.try_advance_broadcast_tail();
+
+                Ok(msg.into())
+            },
             // Equal, but both are empty, so wait or exit if shutdown
             _ => {
                 // Shutdown is only edited when inner is locked, and we have it locked now, so no
@@ -166,7 +172,10 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                                     // receiver sharing the same broadcast mailbox)
                                     let pop = rx.broadcast_mailbox.lock().pop();
                                     match pop {
-                                        Some(msg) => ActorMessage::ToAllActors(msg.0),
+                                        Some(msg) => {
+                                            rx.inner.chan.lock().unwrap().try_advance_broadcast_tail();
+                                            ActorMessage::ToAllActors(msg.0)
+                                        },
                                         None => {
                                             // If it was taken, try receive again
                                             self.0 = ReceiveFutureInner::New(rx);

@@ -13,7 +13,7 @@ use crate::inbox::tx::{TxStrong, WaitingSender};
 use event_listener::Event;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
-use std::mem;
+use std::{cmp, mem};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{atomic, Arc, Mutex, Weak};
 
@@ -31,6 +31,7 @@ pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxSt
             waiting_receivers: VecDeque::new(),
             priority_queue: BinaryHeap::new(),
             broadcast_queues: vec![Arc::downgrade(&broadcast_mailbox)],
+            broadcast_tail: 0,
         }),
         capacity,
         on_shutdown: Event::new(),
@@ -69,6 +70,10 @@ pub struct Chan<A> {
 }
 
 impl<A> Chan<A> {
+    fn is_full(&self, len: usize) -> bool {
+        self.capacity.map_or(false, |cap| len >= cap)
+    }
+
     fn is_shutdown(&self) -> bool {
         // TODO(atomic) what ordering to use here
         self.shutdown.load(atomic::Ordering::SeqCst)
@@ -124,6 +129,7 @@ struct ChanInner<A> {
     waiting_receivers: VecDeque<Weak<Spinlock<WaitingReceiver<A>>>>,
     priority_queue: BinaryHeap<PriorityMessageToOne<A>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
+    broadcast_tail: usize,
 }
 
 impl<A> ChanInner<A> {
@@ -138,10 +144,25 @@ impl<A> ChanInner<A> {
     fn pop_ordered(&mut self, capacity: Option<usize>) -> Option<MessageToOneActor<A>> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
         if self.is_full(capacity) {
-            self.try_fulfill_sender();
+            match self.try_fulfill_sender(MessageType::Ordered) {
+                Some(SentMessage::Ordered(msg)) => self.ordered_queue.push_back(msg),
+                Some(_) => unreachable!(),
+                None => {},
+            }
         }
 
         self.ordered_queue.pop_front()
+    }
+
+    fn try_advance_broadcast_tail(&mut self) {
+        let mut longest = 0;
+        for queue in &self.broadcast_queues {
+            if let Some(queue) = queue.upgrade() {
+                longest = cmp::max(longest, queue.lock().len());
+            }
+        }
+
+        self.broadcast_tail = longest;
     }
 
     fn try_fulfill_receiver(&mut self, mut reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
@@ -157,12 +178,68 @@ impl<A> ChanInner<A> {
         Err(reason)
     }
 
-    fn try_fulfill_sender(&mut self) {
-        while let Some(tx) = self.waiting_senders.pop_front() {
-            if let Some(msg) = tx.upgrade().and_then(|tx| tx.lock().fulfill()) {
-                self.ordered_queue.push_back(msg);
-                return;
+    // TODO get actor message type enum
+    fn try_fulfill_sender(&mut self, for_type: MessageType) -> Option<SentMessage<A>> {
+        let mut i = 0;
+        while i < self.waiting_senders.len() {
+            let should_pop = match self.waiting_senders.get(i).unwrap().upgrade() {
+                Some(tx) => {
+                    let tx = tx.lock();
+                    match tx.peek() {
+                        SentMessage::Ordered(_) if for_type == MessageType::Ordered => true,
+                        SentMessage::Prioritized(_) if for_type == MessageType::Priority => true,
+                        SentMessage::ToAllActors(_) if for_type == MessageType::Broadcast => true,
+                        _ => {
+                            i += 1;
+                            false
+                        }
+                    }
+                }
+                None => {
+                    self.waiting_senders.remove(i);
+                    false
+                }
+            };
+
+            if should_pop {
+                // TODO could unwrap here
+                return Some(self.waiting_senders.remove(i)?.upgrade()?.lock().fulfill());
             }
+        }
+
+        None
+    }
+}
+
+#[derive(Eq, PartialEq)]
+enum MessageType {
+    Broadcast,
+    Ordered,
+    Priority
+}
+
+pub enum SentMessage<A> {
+    Ordered(MessageToOneActor<A>),
+    Prioritized(PriorityMessageToOne<A>),
+    ToAllActors(Arc<dyn BroadcastEnvelope<Actor = A>>),
+}
+
+impl<A> From<SentMessage<A>> for WakeReason<A> {
+    fn from(msg: SentMessage<A>) -> Self {
+        match msg {
+            SentMessage::Ordered(m) => WakeReason::MessageToOneActor(PriorityMessageToOne::new(Priority::default(), m)),
+            SentMessage::Prioritized(m) => WakeReason::MessageToOneActor(m),
+            SentMessage::ToAllActors(_) => WakeReason::MessageToAllActors,
+        }
+    }
+}
+
+impl<A> From<PriorityMessageToOne<A>> for SentMessage<A> {
+    fn from(msg: PriorityMessageToOne<A>) -> Self {
+        if msg.priority == Priority::default() {
+            SentMessage::Ordered(msg.val)
+        } else {
+            SentMessage::Prioritized(msg)
         }
     }
 }
@@ -215,7 +292,7 @@ impl<A> HasPriority for PriorityMessageToOne<A> {
     }
 }
 
-struct PriorityMessageToOne<A> {
+pub struct PriorityMessageToOne<A> {
     priority: Priority,
     val: MessageToOneActor<A>,
 }
@@ -314,7 +391,7 @@ mod test {
 
         let orig = Arc::new(BroadcastEnvelopeConcrete::new("Hi", 1));
         let orig = orig as Arc<dyn BroadcastEnvelope<Actor = MyActor>>;
-        tx.broadcast(orig.clone()).unwrap();
+        tx.send(SentMessage::ToAllActors(orig.clone())).await.unwrap();
 
         match rx.receive().await {
             ActorMessage::ToAllActors(msg) => assert!(Arc::ptr_eq(&msg, &orig)),

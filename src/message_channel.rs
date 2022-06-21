@@ -12,6 +12,7 @@ use crate::send_future::{ResolveToHandlerReturn, SendFuture};
 use crate::{Handler, KeepRunning};
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
+use crate::inbox::SentMessage;
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
@@ -209,7 +210,7 @@ where
         message: M,
     ) -> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
         let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
-        let sending = self.0.send(Box::new(envelope));
+        let sending = self.0.send(SentMessage::Ordered(Box::new(envelope)));
 
         #[allow(clippy::async_yields_async)] // We only want to await the sending.
         SendFuture::sending_boxed(async move {
