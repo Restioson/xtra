@@ -145,7 +145,7 @@ impl<A> ChanInner<A> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
         if self.is_full(capacity) {
             match self.try_fulfill_sender(MessageType::Ordered) {
-                Some(SentMessage::Ordered(msg)) => self.ordered_queue.push_back(msg),
+                Some(SentMessage::ToOneActor(msg)) => self.ordered_queue.push_back(msg.val),
                 Some(_) => unreachable!(),
                 None => {}
             }
@@ -186,8 +186,8 @@ impl<A> ChanInner<A> {
                 Some(tx) => {
                     let tx = tx.lock();
                     match tx.peek() {
-                        SentMessage::Ordered(_) if for_type == MessageType::Ordered => true,
-                        SentMessage::Prioritized(_) if for_type == MessageType::Priority => true,
+                        SentMessage::ToOneActor(msg) if msg.priority == Priority::default() && for_type == MessageType::Ordered => true,
+                        SentMessage::ToOneActor(_) if for_type == MessageType::Priority => true,
                         SentMessage::ToAllActors(_) if for_type == MessageType::Broadcast => true,
                         _ => {
                             i += 1;
@@ -219,18 +219,14 @@ enum MessageType {
 }
 
 pub enum SentMessage<A> {
-    Ordered(MessageToOneActor<A>),
-    Prioritized(PriorityMessageToOne<A>),
+    ToOneActor(PriorityMessageToOne<A>),
     ToAllActors(Arc<dyn BroadcastEnvelope<Actor = A>>),
 }
 
 impl<A> From<SentMessage<A>> for WakeReason<A> {
     fn from(msg: SentMessage<A>) -> Self {
         match msg {
-            SentMessage::Ordered(m) => {
-                WakeReason::MessageToOneActor(PriorityMessageToOne::new(Priority::default(), m))
-            }
-            SentMessage::Prioritized(m) => WakeReason::MessageToOneActor(m),
+            SentMessage::ToOneActor(m) => WakeReason::MessageToOneActor(m),
             SentMessage::ToAllActors(_) => WakeReason::MessageToAllActors,
         }
     }
@@ -238,11 +234,7 @@ impl<A> From<SentMessage<A>> for WakeReason<A> {
 
 impl<A> From<PriorityMessageToOne<A>> for SentMessage<A> {
     fn from(msg: PriorityMessageToOne<A>) -> Self {
-        if msg.priority == Priority::default() {
-            SentMessage::Ordered(msg.val)
-        } else {
-            SentMessage::Prioritized(msg)
-        }
+        SentMessage::ToOneActor(msg)
     }
 }
 
@@ -286,11 +278,16 @@ enum WakeReason<A> {
 
 pub trait HasPriority {
     fn priority(&self) -> Priority;
+    fn set_priority(&mut self, priority: i32);
 }
 
 impl<A> HasPriority for PriorityMessageToOne<A> {
     fn priority(&self) -> Priority {
         self.priority
+    }
+
+    fn set_priority(&mut self, priority: i32) {
+        self.priority = Priority::Valued(priority);
     }
 }
 
@@ -330,6 +327,10 @@ struct MessageToAllActors<A>(Arc<dyn BroadcastEnvelope<Actor = A>>);
 impl<A> HasPriority for MessageToAllActors<A> {
     fn priority(&self) -> Priority {
         self.0.priority()
+    }
+
+    fn set_priority(&mut self, priority: i32) {
+        Arc::get_mut(&mut self.0).expect("Too late to change priority!").set_priority(priority);
     }
 }
 

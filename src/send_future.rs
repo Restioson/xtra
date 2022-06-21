@@ -54,6 +54,29 @@ impl<R, F> SendFuture<R, F, ResolveToHandlerReturn> {
     }
 }
 
+impl<A, R, Rc, TResolveMarker> SendFuture<R, NameableSending<A, R, Rc>, TResolveMarker>
+    where Rc: RefCounter
+{
+    /// TODO(doc)
+    ///
+    /// Panics if this future has already been polled
+    pub fn priority(mut self, new_priority: i32) -> Self {
+        match &mut self.inner {
+            SendFutureInner::Sending(inner) => {
+                inner.inner.set_priority(new_priority)
+            }
+            SendFutureInner::Receiving(_) => panic!("Too late to change priority!"),
+            SendFutureInner::Done => panic!("Too late to change priority!"),
+        }
+
+        SendFuture {
+            inner: self.inner,
+            phantom: PhantomData,
+        }
+    }
+}
+
+
 impl<R> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
     pub(crate) fn sending_boxed<F>(send_fut: F) -> Self
     where

@@ -165,4 +165,8 @@ impl<A, M> HasPriority for BroadcastEnvelopeConcrete<A, M> {
     fn priority(&self) -> Priority {
         Priority::Valued(self.priority)
     }
+
+    fn set_priority(&mut self, priority: i32) {
+        self.priority = priority;
+    }
 }

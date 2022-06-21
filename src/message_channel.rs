@@ -6,7 +6,7 @@ use std::fmt::Debug;
 
 use crate::address::{ActorJoinHandle, Address, WeakAddress};
 use crate::envelope::ReturningEnvelope;
-use crate::inbox::SentMessage;
+use crate::inbox::{Priority, PriorityMessageToOne, SentMessage};
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Strong};
 use crate::send_future::{ResolveToHandlerReturn, SendFuture};
@@ -210,7 +210,8 @@ where
         message: M,
     ) -> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
         let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
-        let sending = self.0.send(SentMessage::Ordered(Box::new(envelope)));
+        let msg = PriorityMessageToOne::new(Priority::default(), Box::new(envelope));
+        let sending = self.0.send(SentMessage::ToOneActor(msg));
 
         #[allow(clippy::async_yields_async)] // We only want to await the sending.
         SendFuture::sending_boxed(async move {

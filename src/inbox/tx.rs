@@ -200,6 +200,19 @@ impl<A, Rc: TxRefCounter> SendFuture<A, Rc> {
             inner: SendFutureInner::Complete,
         }
     }
+
+    /// Sets the priority of this message, panicking if too late.
+    pub fn set_priority(&mut self, priority: i32) {
+        match &mut self.inner {
+            SendFutureInner::New(msg) => match msg {
+                SentMessage::ToOneActor(msg) => msg.set_priority(priority),
+                SentMessage::ToAllActors(msg) => {
+                    Arc::get_mut(msg).expect("Too late to change priority!").set_priority(priority);
+                }
+            }
+            _ => panic!("Too late to change priority!"),
+        }
+    }
 }
 
 enum SendFutureInner<A> {
