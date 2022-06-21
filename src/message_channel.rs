@@ -125,7 +125,7 @@ pub trait MessageChannel<M>:
     /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn MessageChannel<M, Return = Self::Return>>;
 
-    /// Waits until this address becomes disconnected.
+    /// Waits until this [`MessageChannel`] becomes disconnected.
     fn join(&self) -> ActorJoinHandle;
 
     /// Determines whether this and the other message channel address the same actor mailbox.
