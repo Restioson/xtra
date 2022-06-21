@@ -182,9 +182,11 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         SendFuture::sending_named(tx, rx)
     }
 
-    /// Send a message to all actors on this address. The message will be received once by each
-    /// actor. Note that currently there is no message cap on the broadcast channel (it is unbounded).
-    // TODO broadcast future type & doc
+    /// Send a message to all actors on this address.
+    ///
+    /// TODO: When does this future resolve
+    /// TODO: Talk about priority
+    /// TODO: Talk about bounds
     pub fn broadcast<M>(&self, msg: M) -> BroadcastFuture<A, M, Rc>
     where
         M: Clone + Sync + Send + 'static,
