@@ -54,7 +54,8 @@ impl Error for Disconnected {}
 ///
 /// The actor's mailbox capacity applies severally to each mailbox. This means that an actor can
 /// have a total of `cap` messages in every mailbox before it is totally full. However, it must only
-/// have `cap` in a given mailbox for any sends to that mailbox to be caused to wait for free space.
+/// have `cap` in a given mailbox for any sends to that mailbox to be caused to wait for free space
+/// and thus exercise backpressure on senders.
 ///
 /// ### Default priority
 ///
