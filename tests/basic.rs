@@ -1,5 +1,5 @@
 use futures_util::task::noop_waker_ref;
-use futures_util::FutureExt;
+use futures_util::{FutureExt, SinkExt};
 use smol::stream;
 use smol_timeout::TimeoutExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -403,6 +403,20 @@ async fn address_send_exercises_backpressure() {
         .split_receiver()
         .now_or_never()
         .expect("be able to queue another message because the mailbox is empty again");
+
+    context.yield_once(&mut Greeter).await; // process one message
+
+    // Sink
+    let mut sink = address.into_sink();
+    let _ = sink
+        .send(BroadcastHello("world"))
+        .now_or_never()
+        .expect("be able to queue another message because the mailbox is empty again");
+
+    assert!(
+        sink.send(BroadcastHello("world")).now_or_never().is_none(),
+        "Fail to queue 2nd message because mailbox is full"
+    );
 
     // Priority send
 
