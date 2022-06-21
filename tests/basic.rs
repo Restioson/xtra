@@ -363,9 +363,24 @@ impl Handler<Hello> for Greeter {
     }
 }
 
+#[derive(Clone)]
+struct BroadcastHello(&'static str);
+
+#[async_trait]
+impl Handler<BroadcastHello> for Greeter {
+    type Return = ();
+
+    async fn handle(&mut self, BroadcastHello(name): BroadcastHello, _: &mut Context<Self>) -> Self::Return {
+        println!("Hello {}", name)
+    }
+}
+
+
 #[tokio::test]
 async fn address_send_exercises_backpressure() {
     let (address, mut context) = Context::new(Some(1));
+
+    // Regular send
 
     let _ = address
         .send(Hello("world"))
@@ -385,6 +400,49 @@ async fn address_send_exercises_backpressure() {
         .split_receiver()
         .now_or_never()
         .expect("be able to queue another message because the mailbox is empty again");
+
+    // Priority send
+
+    let (address, mut context) = Context::new(Some(1));
+
+    let _ = address
+        .send_priority(Hello("world"), 1)
+        .split_receiver()
+        .now_or_never()
+        .expect("be able to queue 1 priority message because the mailbox is empty");
+    let handler2 = address.send_priority(Hello("world"), 1).split_receiver().now_or_never();
+    assert!(
+        handler2.is_none(),
+        "Fail to queue 2nd priority message because mailbox is full"
+    );
+
+    context.yield_once(&mut Greeter).await; // process one message
+
+    let _ = address
+        .send_priority(BroadcastHello("world"), 1)
+        .split_receiver()
+        .now_or_never()
+        .expect("be able to queue another priority message because the mailbox is empty again");
+
+
+    // Broadcast
+
+    let _ = address
+        .broadcast(BroadcastHello("world"), 2)
+        .now_or_never()
+        .expect("be able to queue 1 broadcast because the mailbox is empty");
+    let handler2 = address.broadcast(BroadcastHello("world"), 1).now_or_never();
+    assert!(
+        handler2.is_none(),
+        "Fail to queue 2nd broadcast because mailbox is full"
+    );
+
+    context.yield_once(&mut Greeter).await; // process one message
+
+    let _ = address
+        .broadcast(BroadcastHello("world"), 2)
+        .now_or_never()
+        .expect("be able to queue another broadcast because the mailbox is empty again");
 }
 
 #[test]

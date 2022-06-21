@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use crate::inbox::SentMessage;
+use crate::inbox::{Priority, PriorityMessageToOne, SentMessage};
 
 /// The actor is no longer running and disconnected from the sending address. For why this could
 /// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and
@@ -152,16 +152,43 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         SendFuture::sending_named(tx, rx)
     }
 
+    // TODO(doc)
+    /// Send a message to the actor with a given priority.
+    ///
+    /// The actor must implement [`Handler<Message>`] for this to work.
+    ///
+    /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
+    /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
+    #[allow(clippy::type_complexity)]
+    pub fn send_priority<M>(
+        &self,
+        message: M,
+        priority: i32,
+    ) -> SendFuture<
+        <A as Handler<M>>::Return,
+        NameableSending<A, <A as Handler<M>>::Return, Rc>,
+        ResolveToHandlerReturn,
+    >
+        where
+            M: Send + 'static,
+            A: Handler<M>,
+    {
+        let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
+        let msg = SentMessage::Prioritized(PriorityMessageToOne::new(Priority::Valued(priority), Box::new(envelope)));
+        let tx = self.0.send(msg);
+        SendFuture::sending_named(tx, rx)
+    }
+
     /// Send a message to all actors on this address. The message will be received once by each
     /// actor. Note that currently there is no message cap on the broadcast channel (it is unbounded).
-    // TODO broadcast type
-    pub async fn broadcast<M>(&mut self, msg: M) -> Result<(), Disconnected>
+    // TODO broadcast future type & doc
+    pub async fn broadcast<M>(&self, msg: M, priority: i32) -> Result<(), Disconnected>
     where
         M: Clone + Sync + Send + 'static,
         A: Handler<M, Return = ()>,
     {
         // TODO priority
-        let envelope = BroadcastEnvelopeConcrete::<A, M>::new(msg, 1);
+        let envelope = BroadcastEnvelopeConcrete::<A, M>::new(msg, priority);
         self.0.send(SentMessage::ToAllActors(Arc::new(envelope))).await
     }
 

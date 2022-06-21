@@ -298,7 +298,7 @@ pub struct PriorityMessageToOne<A> {
 }
 
 impl<A> PriorityMessageToOne<A> {
-    fn new(priority: Priority, val: MessageToOneActor<A>) -> Self {
+    pub fn new(priority: Priority, val: MessageToOneActor<A>) -> Self {
         PriorityMessageToOne { priority, val }
     }
 }
