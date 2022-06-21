@@ -521,7 +521,7 @@ async fn waiting_sender_order() {
 }
 
 #[tokio::test]
-async fn broadcast_tail_advances() {
+async fn broadcast_tail_advances_bound_1() {
     let (addr, mut ctx) = Context::new(Some(1));
     let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
     let mut ngwevu = Elephant {
@@ -559,6 +559,50 @@ async fn broadcast_tail_advances() {
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     assert!(lesser.poll_unpin(&mut fut_ctx).is_ready(), "Low prio should be sent in now");
+}
+
+#[tokio::test]
+async fn broadcast_tail_advances_bound_2() {
+    let (addr, mut ctx) = Context::new(Some(2));
+    let mut ngwevu = Elephant {
+        name: "Ngwevu",
+        msgs: vec![],
+    };
+
+    tokio::spawn(ctx.attach(Elephant::default()));
+
+    let _ = addr.broadcast(Message::Broadcast { priority: 0 }, 0).await;
+    let _ = addr.broadcast(Message::Broadcast { priority: 0 }, 0).await;
+
+    ctx.yield_once(&mut ngwevu).await;
+
+    assert_eq!(
+        addr.broadcast(Message::Broadcast { priority: 0 }, 0).timeout(Duration::from_secs(2)).await,
+        Some(Ok(())),
+        "New broadcast message should be accepted when queue has space",
+    );
+}
+
+#[tokio::test]
+async fn broadcast_tail_does_not_advance_unless_both_handle() {
+    let (addr, mut ctx) = Context::new(Some(2));
+    let mut ngwevu = Elephant {
+        name: "Ngwevu",
+        msgs: vec![],
+    };
+
+    let _fut = ctx.attach(Elephant::default());
+
+    let _ = addr.broadcast(Message::Broadcast { priority: 0 }, 0).await;
+    let _ = addr.broadcast(Message::Broadcast { priority: 0 }, 0).await;
+
+    ctx.yield_once(&mut ngwevu).await;
+
+    assert_eq!(
+        addr.broadcast(Message::Broadcast { priority: 0 }, 0).timeout(Duration::from_secs(2)).await,
+        None,
+        "New broadcast message should NOT be accepted since the other actor has not yet handled the message",
+    );
 }
 
 struct Greeter;
