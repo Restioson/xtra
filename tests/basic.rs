@@ -433,10 +433,14 @@ async fn address_send_exercises_backpressure() {
     // Broadcast
 
     let _ = address
-        .broadcast(BroadcastHello("world"), 2)
+        .broadcast(BroadcastHello("world"))
+        .priority(2)
         .now_or_never()
         .expect("be able to queue 1 broadcast because the mailbox is empty");
-    let handler2 = address.broadcast(BroadcastHello("world"), 1).now_or_never();
+    let handler2 = address
+        .broadcast(BroadcastHello("world"))
+        .priority(1)
+        .now_or_never();
     assert!(
         handler2.is_none(),
         "Fail to queue 2nd broadcast because mailbox is full"
@@ -445,7 +449,8 @@ async fn address_send_exercises_backpressure() {
     context.yield_once(&mut Greeter).await; // process one message
 
     let _ = address
-        .broadcast(BroadcastHello("world"), 2)
+        .broadcast(BroadcastHello("world"))
+        .priority(2)
         .now_or_never()
         .expect("be able to queue another broadcast because the mailbox is empty again");
 }

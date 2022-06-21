@@ -135,7 +135,7 @@ pub struct BroadcastEnvelopeConcrete<A, M> {
     phantom: PhantomData<fn() -> A>,
 }
 
-impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
+impl<A, M> BroadcastEnvelopeConcrete<A, M> {
     pub fn new(message: M, priority: i32) -> Self {
         BroadcastEnvelopeConcrete {
             message,
