@@ -47,19 +47,6 @@ pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxSt
     (tx, rx)
 }
 
-// TODO(priority): can we let the user specify a custom type?
-#[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone)]
-pub enum Priority {
-    Min,
-    Valued(u32),
-}
-
-impl Default for Priority {
-    fn default() -> Self {
-        Priority::Valued(0)
-    }
-}
-
 // Public because of private::RefCounterInner. This should never actually be exported, though.
 pub struct Chan<A> {
     chan: Mutex<ChanInner<A>>,
@@ -226,14 +213,14 @@ impl<A> ChanInner<A> {
                     .max_by_key(|(_idx, tx)| match tx.upgrade() {
                         Some(tx) => match tx.lock().peek() {
                             SentMessage::Prioritized(m) if for_type == MessageType::Priority => {
-                                m.priority
+                                Some(m.priority)
                             }
                             SentMessage::ToAllActors(m) if for_type == MessageType::Broadcast => {
-                                m.priority()
+                                Some(m.priority())
                             }
-                            _ => Priority::Min,
+                            _ => None,
                         },
-                        None => Priority::Min,
+                        None => None,
                     })?
                     .0
             };
@@ -262,7 +249,7 @@ impl<A> From<SentMessage<A>> for WakeReason<A> {
     fn from(msg: SentMessage<A>) -> Self {
         match msg {
             SentMessage::Ordered(m) => {
-                WakeReason::MessageToOneActor(PriorityMessageToOne::new(Priority::default(), m))
+                WakeReason::MessageToOneActor(PriorityMessageToOne::new(0, m))
             }
             SentMessage::Prioritized(m) => WakeReason::MessageToOneActor(m),
             SentMessage::ToAllActors(_) => WakeReason::MessageToAllActors,
@@ -272,7 +259,7 @@ impl<A> From<SentMessage<A>> for WakeReason<A> {
 
 impl<A> From<PriorityMessageToOne<A>> for SentMessage<A> {
     fn from(msg: PriorityMessageToOne<A>) -> Self {
-        if msg.priority == Priority::default() {
+        if msg.priority == 0 {
             SentMessage::Ordered(msg.val)
         } else {
             SentMessage::Prioritized(msg)
@@ -319,22 +306,22 @@ enum WakeReason<A> {
 }
 
 pub trait HasPriority {
-    fn priority(&self) -> Priority;
+    fn priority(&self) -> u32;
 }
 
 impl<A> HasPriority for PriorityMessageToOne<A> {
-    fn priority(&self) -> Priority {
+    fn priority(&self) -> u32 {
         self.priority
     }
 }
 
 pub struct PriorityMessageToOne<A> {
-    priority: Priority,
+    priority: u32,
     val: MessageToOneActor<A>,
 }
 
 impl<A> PriorityMessageToOne<A> {
-    pub fn new(priority: Priority, val: MessageToOneActor<A>) -> Self {
+    pub fn new(priority: u32, val: MessageToOneActor<A>) -> Self {
         PriorityMessageToOne { priority, val }
     }
 }
@@ -368,7 +355,7 @@ impl<A> Clone for MessageToAllActors<A> {
 }
 
 impl<A> HasPriority for MessageToAllActors<A> {
-    fn priority(&self) -> Priority {
+    fn priority(&self) -> u32 {
         self.0.priority()
     }
 }

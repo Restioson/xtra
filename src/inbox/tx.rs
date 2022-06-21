@@ -47,14 +47,14 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
             msg => match inner.try_fulfill_receiver(msg.into()) {
                 Ok(()) => Ok(()),
                 Err(WakeReason::MessageToOneActor(m))
-                    if m.priority == Priority::default()
+                    if m.priority == 0
                         && !self.inner.is_full(inner.ordered_queue.len()) =>
                 {
                     inner.ordered_queue.push_back(m.val);
                     Ok(())
                 }
                 Err(WakeReason::MessageToOneActor(m))
-                    if m.priority != Priority::default()
+                    if m.priority != 0
                         && !self.inner.is_full(inner.priority_queue.len()) =>
                 {
                     inner.priority_queue.push(m);

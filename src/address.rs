@@ -2,7 +2,7 @@
 //! kind of message that it can receive.
 
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
-use crate::inbox::{Priority, PriorityMessageToOne, SentMessage};
+use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
 use crate::{inbox, BroadcastFuture, Handler, KeepRunning, NameableSending, SendFuture};
@@ -209,10 +209,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         A: Handler<M>,
     {
         let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-        let msg = SentMessage::Prioritized(PriorityMessageToOne::new(
-            Priority::Valued(priority),
-            Box::new(envelope),
-        ));
+        let msg = SentMessage::Prioritized(PriorityMessageToOne::new(priority, Box::new(envelope)));
         let tx = self.0.send(msg);
         SendFuture::sending_named(tx, rx)
     }

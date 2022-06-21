@@ -69,17 +69,17 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
     fn try_recv(&self) -> Result<ActorMessage<A>, Arc<Spinlock<WaitingReceiver<A>>>> {
         // Peek priorities in order to figure out which channel should be taken from
         let mut broadcast = self.broadcast_mailbox.lock();
-        let broadcast_priority = broadcast.peek().map_or(Priority::Min, |it| it.priority());
+        let broadcast_priority = broadcast.peek().map(|it| it.priority());
 
         let mut inner = self.inner.chan.lock().unwrap();
 
-        let shared_priority: Priority = inner
+        let shared_priority: Option<u32> = inner
             .priority_queue
             .peek()
-            .map_or(Priority::Min, |it| it.priority());
+            .map(|it| it.priority());
 
         // Try take from ordered channel
-        if cmp::max(shared_priority, broadcast_priority) <= Priority::default() {
+        if cmp::max(shared_priority, broadcast_priority) <= Some(0) {
             if let Some(msg) = inner.pop_ordered(self.inner.capacity) {
                 return Ok(msg.into());
             }
@@ -88,7 +88,7 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
         // Choose which priority channel to take from
         match shared_priority.cmp(&broadcast_priority) {
             // Shared priority is greater or equal (and it is not empty)
-            Ordering::Greater | Ordering::Equal if shared_priority != Priority::Min => {
+            Ordering::Greater | Ordering::Equal if shared_priority.is_some() => {
                 Ok(inner.pop_priority(self.inner.capacity).unwrap().into())
             }
             // Shared priority is less - take from broadcast
@@ -246,7 +246,7 @@ impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
                 match inner.try_fulfill_receiver(WakeReason::MessageToOneActor(msg)) {
                     Ok(()) => (),
                     Err(WakeReason::MessageToOneActor(msg)) => {
-                        if msg.priority == Priority::default() {
+                        if msg.priority == 0 {
                             // Preserve ordering as much as possible by pushing to the front
                             inner.ordered_queue.push_front(msg.val)
                         } else {
