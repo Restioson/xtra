@@ -73,10 +73,7 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
 
         let mut inner = self.inner.chan.lock().unwrap();
 
-        let shared_priority: Option<u32> = inner
-            .priority_queue
-            .peek()
-            .map(|it| it.priority());
+        let shared_priority: Option<u32> = inner.priority_queue.peek().map(|it| it.priority());
 
         // Try take from ordered channel
         if cmp::max(shared_priority, broadcast_priority) <= Some(0) {
