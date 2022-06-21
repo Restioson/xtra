@@ -75,7 +75,6 @@ impl<A> Chan<A> {
     }
 
     fn is_shutdown(&self) -> bool {
-        // TODO(atomic) what ordering to use here
         self.shutdown.load(atomic::Ordering::SeqCst)
     }
 
@@ -86,7 +85,6 @@ impl<A> Chan<A> {
                 Err(_) => return, // Poisoned, ignore
             };
 
-            // TODO(atomic) what ordering to use here?
             self.shutdown.store(true, atomic::Ordering::SeqCst);
             self.on_shutdown.notify(usize::MAX);
 
@@ -102,7 +100,6 @@ impl<A> Chan<A> {
         let waiting_rx = {
             let mut inner = self.chan.lock().unwrap();
 
-            // TODO(atomic) what ordering to use here?
             self.shutdown.store(true, atomic::Ordering::SeqCst);
             self.on_shutdown.notify(usize::MAX);
 

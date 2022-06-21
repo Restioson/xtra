@@ -785,7 +785,6 @@ fn address_debug() {
     let addr2 = addr1.clone();
     let weak_addr = addr2.downgrade();
 
-    // TODO(debug) this could maybe be prettier
     assert_eq!(
         format!("{:?}", addr1),
         "Address(Sender<basic::Greeter> { \

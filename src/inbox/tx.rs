@@ -151,14 +151,13 @@ impl<A, Rc: TxRefCounter> Drop for Sender<A, Rc> {
 
 impl<A, Rc: TxRefCounter> Debug for Sender<A, Rc> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        // TODO(atomic) what ordering to use here
-        use atomic::Ordering::Relaxed;
+        use atomic::Ordering::SeqCst;
 
         let act = std::any::type_name::<A>();
         f.debug_struct(&format!("Sender<{}>", act))
-            .field("shutdown", &self.inner.shutdown.load(Relaxed))
-            .field("rx_count", &self.inner.receiver_count.load(Relaxed))
-            .field("tx_count", &self.inner.sender_count.load(Relaxed))
+            .field("shutdown", &self.inner.shutdown.load(SeqCst))
+            .field("rx_count", &self.inner.receiver_count.load(SeqCst))
+            .field("tx_count", &self.inner.sender_count.load(SeqCst))
             .field("rc", &self.rc)
             .finish()
     }
@@ -310,8 +309,6 @@ impl TxStrong {
         }
     }
 }
-
-// TODO sender drop
 
 /// TODO(doc)
 #[derive(Debug)]
