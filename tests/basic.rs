@@ -438,15 +438,15 @@ async fn handle_order() {
             }
         };
 
-        let _ = send(Message::Ordered { ord: 0 }).await;
-        let _ = send(Message::Ordered { ord: 1 }).await;
-        let _ = send(Message::Priority { priority: -1 }).await;
-        let _ = send(Message::Ordered { ord: 2 }).await;
-        let _ = send(Message::Broadcast { priority: 2 }).await;
-        let _ = send(Message::Broadcast { priority: 3 }).await;
-        let _ = send(Message::Broadcast { priority: 1 }).await;
-        let _ = send(Message::Priority { priority: 4 }).await;
-        let _ = send(Message::Broadcast { priority: 5 }).await;
+        send(Message::Ordered { ord: 0 }).await;
+        send(Message::Ordered { ord: 1 }).await;
+        send(Message::Priority { priority: -1 }).await;
+        send(Message::Ordered { ord: 2 }).await;
+        send(Message::Broadcast { priority: 2 }).await;
+        send(Message::Broadcast { priority: 3 }).await;
+        send(Message::Broadcast { priority: 1 }).await;
+        send(Message::Priority { priority: 4 }).await;
+        send(Message::Broadcast { priority: 5 }).await;
 
         fut
     };
