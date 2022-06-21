@@ -8,6 +8,7 @@ use std::task::Poll;
 use std::time::Duration;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
+use std::cmp::Ordering as CmpOrdering;
 use xtra::KeepRunning;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -342,6 +343,114 @@ async fn receiving_async_on_message_channel_returns_immediately_after_dispatch()
 
     handler_future.await.unwrap();
 }
+
+#[derive(Eq, PartialEq, Clone, Debug)]
+enum Message {
+    Broadcast {
+        priority: i32
+    },
+    Priority {
+        priority: i32,
+    },
+    Ordered {
+        ord: u32,
+    }
+}
+
+impl PartialOrd<Self> for Message {
+    fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Message {
+    fn cmp(&self, other: &Self) -> CmpOrdering {
+        match self {
+            Message::Broadcast { priority } => match other {
+                Message::Broadcast { priority: other } => priority.cmp(other),
+                Message::Priority { priority: other } => priority.cmp(other),
+                Message::Ordered { .. } => priority.cmp(&0),
+            }
+            Message::Priority { priority } => match other {
+                Message::Broadcast { priority: other } => priority.cmp(other),
+                Message::Priority { priority: other } => priority.cmp(other),
+                Message::Ordered { .. } => priority.cmp(&0),
+            }
+            Message::Ordered { ord } => match other {
+                Message::Broadcast { priority: other } => 0.cmp(other),
+                Message::Priority { priority: other } => 0.cmp(other),
+                Message::Ordered { ord: other } => other.cmp(ord),
+            }
+        }
+    }
+}
+
+// An elephant never forgets :)
+#[derive(Default)]
+struct Elephant(Vec<Message>);
+
+#[async_trait]
+impl Actor for Elephant {
+    type Stop = Vec<Message>;
+
+    async fn stopped(self) -> Self::Stop {
+        self.0
+    }
+}
+
+#[async_trait]
+impl Handler<Message> for Elephant {
+    type Return = ();
+
+    async fn handle(&mut self, message: Message, _ctx: &mut Context<Self>) {
+        self.0.push(message);
+    }
+}
+
+#[tokio::test]
+async fn handle_order() {
+    let mut expected = vec![];
+
+    let fut = {
+        let (ele, fut) = Elephant::default().create(None).run();
+
+        let mut send = |msg: Message| {
+            expected.push(msg.clone());
+
+            async {
+                match msg {
+                    Message::Broadcast { priority } => {
+                        let _ = ele.broadcast(msg, priority).await;
+                    }
+                    Message::Priority { priority } => {
+                        let _ = ele.send_priority(msg, priority).split_receiver().await;
+                    }
+                    Message::Ordered { .. } => {
+                        let _ = ele.send(msg).split_receiver().await;
+                    }
+                }
+            }
+        };
+
+        let _ = send(Message::Ordered { ord: 0 }).await;
+        let _ = send(Message::Ordered { ord: 1 }).await;
+        let _ = send(Message::Priority { priority: -1 }).await;
+        let _ = send(Message::Ordered { ord: 2 }).await;
+        let _ = send(Message::Broadcast { priority: 2 }).await;
+        let _ = send(Message::Broadcast { priority: 3 }).await;
+        let _ = send(Message::Broadcast { priority: 1 }).await;
+        let _ = send(Message::Priority { priority: 4 }).await;
+        let _ = send(Message::Broadcast { priority: 5 }).await;
+
+        fut
+    };
+
+    expected.sort();
+    expected.reverse();
+
+    assert_eq!(fut.await, expected);
+}
+
 
 struct Greeter;
 
