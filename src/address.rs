@@ -2,6 +2,7 @@
 //! kind of message that it can receive.
 
 use crate::envelope::{BroadcastEnvelopeConcrete, NonReturningEnvelope, ReturningEnvelope};
+use crate::inbox::{Priority, PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
 use crate::{inbox, Handler, KeepRunning, NameableSending, SendFuture};
@@ -17,7 +18,6 @@ use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use crate::inbox::{Priority, PriorityMessageToOne, SentMessage};
 
 /// The actor is no longer running and disconnected from the sending address. For why this could
 /// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and
@@ -169,12 +169,15 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         NameableSending<A, <A as Handler<M>>::Return, Rc>,
         ResolveToHandlerReturn,
     >
-        where
-            M: Send + 'static,
-            A: Handler<M>,
+    where
+        M: Send + 'static,
+        A: Handler<M>,
     {
         let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-        let msg = SentMessage::Prioritized(PriorityMessageToOne::new(Priority::Valued(priority), Box::new(envelope)));
+        let msg = SentMessage::Prioritized(PriorityMessageToOne::new(
+            Priority::Valued(priority),
+            Box::new(envelope),
+        ));
         let tx = self.0.send(msg);
         SendFuture::sending_named(tx, rx)
     }
@@ -189,7 +192,9 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     {
         // TODO priority
         let envelope = BroadcastEnvelopeConcrete::<A, M>::new(msg, priority);
-        self.0.send(SentMessage::ToAllActors(Arc::new(envelope))).await
+        self.0
+            .send(SentMessage::ToAllActors(Arc::new(envelope)))
+            .await
     }
 
     /// Attaches a stream to this actor such that all messages produced by it are forwarded to the
@@ -340,7 +345,12 @@ where
     }
 
     fn start_send(mut self: Pin<&mut Self>, msg: M) -> Result<(), Self::Error> {
-        self.0 = self.0.tx.send(SentMessage::Ordered(Box::new(NonReturningEnvelope::new(msg))));
+        self.0 = self
+            .0
+            .tx
+            .send(SentMessage::Ordered(Box::new(NonReturningEnvelope::new(
+                msg,
+            ))));
         Ok(())
     }
 

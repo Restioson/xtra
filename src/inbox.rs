@@ -13,9 +13,9 @@ use crate::inbox::tx::{TxStrong, WaitingSender};
 use event_listener::Event;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
-use std::{cmp, mem};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{atomic, Arc, Mutex, Weak};
+use std::{cmp, mem};
 
 type Spinlock<T> = spin::Mutex<T>;
 pub type MessageToOneActor<A> = Box<dyn MessageEnvelope<Actor = A>>;
@@ -147,7 +147,7 @@ impl<A> ChanInner<A> {
             match self.try_fulfill_sender(MessageType::Ordered) {
                 Some(SentMessage::Ordered(msg)) => self.ordered_queue.push_back(msg),
                 Some(_) => unreachable!(),
-                None => {},
+                None => {}
             }
         }
 
@@ -215,7 +215,7 @@ impl<A> ChanInner<A> {
 enum MessageType {
     Broadcast,
     Ordered,
-    Priority
+    Priority,
 }
 
 pub enum SentMessage<A> {
@@ -227,7 +227,9 @@ pub enum SentMessage<A> {
 impl<A> From<SentMessage<A>> for WakeReason<A> {
     fn from(msg: SentMessage<A>) -> Self {
         match msg {
-            SentMessage::Ordered(m) => WakeReason::MessageToOneActor(PriorityMessageToOne::new(Priority::default(), m)),
+            SentMessage::Ordered(m) => {
+                WakeReason::MessageToOneActor(PriorityMessageToOne::new(Priority::default(), m))
+            }
             SentMessage::Prioritized(m) => WakeReason::MessageToOneActor(m),
             SentMessage::ToAllActors(_) => WakeReason::MessageToAllActors,
         }
@@ -391,7 +393,9 @@ mod test {
 
         let orig = Arc::new(BroadcastEnvelopeConcrete::new("Hi", 1));
         let orig = orig as Arc<dyn BroadcastEnvelope<Actor = MyActor>>;
-        tx.send(SentMessage::ToAllActors(orig.clone())).await.unwrap();
+        tx.send(SentMessage::ToAllActors(orig.clone()))
+            .await
+            .unwrap();
 
         match rx.receive().await {
             ActorMessage::ToAllActors(msg) => assert!(Arc::ptr_eq(&msg, &orig)),

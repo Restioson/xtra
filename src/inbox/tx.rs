@@ -53,19 +53,26 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
                 inner.broadcast_tail += 1;
 
                 Ok(())
-            },
-            SentMessage::ToAllActors(m) => { // Is full
+            }
+            SentMessage::ToAllActors(m) => {
+                // Is full
                 let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
                 inner.waiting_senders.push_back(Arc::downgrade(&waiting));
                 Err(TrySendFail::Full(waiting))
             }
             msg => match inner.try_fulfill_receiver(msg.into()) {
                 Ok(()) => Ok(()),
-                Err(WakeReason::MessageToOneActor(m)) if m.priority == Priority::default() && !self.inner.is_full(inner.ordered_queue.len()) => {
+                Err(WakeReason::MessageToOneActor(m))
+                    if m.priority == Priority::default()
+                        && !self.inner.is_full(inner.ordered_queue.len()) =>
+                {
                     inner.ordered_queue.push_back(m.val);
                     Ok(())
-                },
-                Err(WakeReason::MessageToOneActor(m)) if m.priority != Priority::default() && !self.inner.is_full(inner.priority_queue.len()) => {
+                }
+                Err(WakeReason::MessageToOneActor(m))
+                    if m.priority != Priority::default()
+                        && !self.inner.is_full(inner.priority_queue.len()) =>
+                {
                     inner.priority_queue.push(m);
                     Ok(())
                 }
@@ -73,9 +80,9 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
                     let waiting = WaitingSender::new(m.into());
                     inner.waiting_senders.push_back(Arc::downgrade(&waiting));
                     Err(TrySendFail::Full(waiting))
-                },
+                }
                 _ => unreachable!(),
-            }
+            },
         }
     }
 
@@ -245,7 +252,9 @@ impl<A> WaitingSender<A> {
     }
 
     pub fn peek(&self) -> &SentMessage<A> {
-        &self.message.as_ref().expect("WaitingSender should have message")
+        self.message
+            .as_ref()
+            .expect("WaitingSender should have message")
     }
 
     pub fn fulfill(&mut self) -> SentMessage<A> {
@@ -253,7 +262,9 @@ impl<A> WaitingSender<A> {
             waker.wake();
         }
 
-        self.message.take().expect("WaitingSender should have message")
+        self.message
+            .take()
+            .expect("WaitingSender should have message")
     }
 }
 

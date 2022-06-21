@@ -98,7 +98,7 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
                 inner.try_advance_broadcast_tail();
 
                 Ok(msg.into())
-            },
+            }
             // Equal, but both are empty, so wait or exit if shutdown
             _ => {
                 // Shutdown is only edited when inner is locked, and we have it locked now, so no
@@ -173,9 +173,13 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                                     let pop = rx.broadcast_mailbox.lock().pop();
                                     match pop {
                                         Some(msg) => {
-                                            rx.inner.chan.lock().unwrap().try_advance_broadcast_tail();
+                                            rx.inner
+                                                .chan
+                                                .lock()
+                                                .unwrap()
+                                                .try_advance_broadcast_tail();
                                             ActorMessage::ToAllActors(msg.0)
-                                        },
+                                        }
                                         None => {
                                             // If it was taken, try receive again
                                             self.0 = ReceiveFutureInner::New(rx);

@@ -370,11 +370,14 @@ struct BroadcastHello(&'static str);
 impl Handler<BroadcastHello> for Greeter {
     type Return = ();
 
-    async fn handle(&mut self, BroadcastHello(name): BroadcastHello, _: &mut Context<Self>) -> Self::Return {
+    async fn handle(
+        &mut self,
+        BroadcastHello(name): BroadcastHello,
+        _: &mut Context<Self>,
+    ) -> Self::Return {
         println!("Hello {}", name)
     }
 }
-
 
 #[tokio::test]
 async fn address_send_exercises_backpressure() {
@@ -410,7 +413,10 @@ async fn address_send_exercises_backpressure() {
         .split_receiver()
         .now_or_never()
         .expect("be able to queue 1 priority message because the mailbox is empty");
-    let handler2 = address.send_priority(Hello("world"), 1).split_receiver().now_or_never();
+    let handler2 = address
+        .send_priority(Hello("world"), 1)
+        .split_receiver()
+        .now_or_never();
     assert!(
         handler2.is_none(),
         "Fail to queue 2nd priority message because mailbox is full"
@@ -423,7 +429,6 @@ async fn address_send_exercises_backpressure() {
         .split_receiver()
         .now_or_never()
         .expect("be able to queue another priority message because the mailbox is empty again");
-
 
     // Broadcast
 
