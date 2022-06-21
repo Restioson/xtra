@@ -107,13 +107,14 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         self.0.is_connected()
     }
 
-    /// Returns the number of messages in the actor's mailbox.
+    /// Returns the number of messages in the actor's mailbox. This will be the sum of broadcast
+    /// messages, priority messages, and ordered messages. It can be up to three times the capacity,
+    /// as the capacity is for each send type (broadcast, priority, and ordered).
     pub fn len(&self) -> usize {
-        todo!("Len")
-        //self.sink.len()
+        self.0.len()
     }
 
-    /// The total capacity of the actor's mailbox.
+    /// The capacity of the actor's mailbox per send type (broadcast, priority, and ordered).
     pub fn capacity(&self) -> Option<usize> {
         self.0.capacity()
     }

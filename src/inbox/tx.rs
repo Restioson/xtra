@@ -124,6 +124,11 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         self.inner.capacity
     }
 
+    pub fn len(&self) -> usize {
+        let inner = self.inner.chan.lock().unwrap();
+        inner.broadcast_tail + inner.ordered_queue.len() + inner.priority_queue.len()
+    }
+
     pub fn disconnect_notice(&self) -> Option<EventListener> {
         // Listener is created before checking connectivity to avoid the following race scenario:
         //
