@@ -1,6 +1,6 @@
 use crate::envelope::BroadcastEnvelopeConcrete;
 use crate::inbox::tx::TxRefCounter;
-use crate::inbox::{SendFuture, SentMessage};
+use crate::inbox::{Priority, SendFuture, SentMessage};
 use crate::{inbox, Disconnected, Handler};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
@@ -50,7 +50,7 @@ where
                 inner: Inner::Initial {
                     message,
                     sender,
-                    priority: Some(priority),
+                    priority: Some(Priority::Valued(priority)),
                 },
             },
             _ => panic!("setting priority after polling is unsupported"),
@@ -62,7 +62,7 @@ enum Inner<A, M, Rc: TxRefCounter> {
     Initial {
         message: M,
         sender: inbox::Sender<A, Rc>,
-        priority: Option<i32>,
+        priority: Option<Priority>,
     },
     Sending(SendFuture<A, Rc>),
     Done,
@@ -86,7 +86,7 @@ where
                 priority,
             } => {
                 let envelope =
-                    BroadcastEnvelopeConcrete::<A, M>::new(message, priority.unwrap_or(0));
+                    BroadcastEnvelopeConcrete::<A, M>::new(message, priority.unwrap_or_default());
                 this.inner =
                     Inner::Sending(sender.send(SentMessage::ToAllActors(Arc::new(envelope))));
                 this.poll_unpin(cx)

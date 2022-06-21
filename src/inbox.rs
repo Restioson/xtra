@@ -391,7 +391,7 @@ mod test {
         let rx2 = rx.cloned_new_broadcast_mailbox();
         let rx2_shallow = rx2.cloned_same_broadcast_mailbox();
 
-        let orig = Arc::new(BroadcastEnvelopeConcrete::new("Hi", 1));
+        let orig = Arc::new(BroadcastEnvelopeConcrete::new("Hi", Priority::Valued(1)));
         let orig = orig as Arc<dyn BroadcastEnvelope<Actor = MyActor>>;
         tx.send(SentMessage::ToAllActors(orig.clone()))
             .await
