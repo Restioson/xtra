@@ -1,11 +1,11 @@
 //! An address to an actor is a way to send it a message. An address allows an actor to be sent any
 //! kind of message that it can receive.
 
-use crate::envelope::{BroadcastEnvelopeConcrete, NonReturningEnvelope, ReturningEnvelope};
+use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::inbox::{Priority, PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
-use crate::{inbox, Handler, KeepRunning, NameableSending, SendFuture};
+use crate::{inbox, BroadcastFuture, Handler, KeepRunning, NameableSending, SendFuture};
 use event_listener::EventListener;
 use futures_core::{FusedFuture, Stream};
 use futures_sink::Sink;
@@ -16,7 +16,6 @@ use std::fmt::{self, Debug, Display, Formatter};
 use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
 /// The actor is no longer running and disconnected from the sending address. For why this could
@@ -183,19 +182,15 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         SendFuture::sending_named(tx, rx)
     }
 
-    /// Send a message to all actors on this address. The message will be received once by each
-    /// actor. Note that currently there is no message cap on the broadcast channel (it is unbounded).
-    // TODO broadcast future type & doc
-    pub async fn broadcast<M>(&self, msg: M, priority: i32) -> Result<(), Disconnected>
+    /// Send a message to all actors on this address.
+    ///
+    /// For details, please see the documentation on [`BroadcastFuture`].
+    pub fn broadcast<M>(&self, msg: M) -> BroadcastFuture<A, M, Rc>
     where
         M: Clone + Sync + Send + 'static,
         A: Handler<M, Return = ()>,
     {
-        // TODO priority
-        let envelope = BroadcastEnvelopeConcrete::<A, M>::new(msg, priority);
-        self.0
-            .send(SentMessage::ToAllActors(Arc::new(envelope)))
-            .await
+        BroadcastFuture::new(msg, self.0.clone())
     }
 
     /// Attaches a stream to this actor such that all messages produced by it are forwarded to the

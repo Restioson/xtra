@@ -426,7 +426,7 @@ async fn handle_order() {
             async {
                 match msg {
                     Message::Broadcast { priority } => {
-                        let _ = ele.broadcast(msg, priority).await;
+                        let _ = ele.broadcast(msg).priority(priority).await;
                     }
                     Message::Priority { priority } => {
                         let _ = ele.send_priority(msg, priority).split_receiver().await;
@@ -503,12 +503,17 @@ async fn waiting_sender_order() {
 
     // With broadcast
 
-    let _ = addr.broadcast(Message::Broadcast { priority: 3 }, 3).await;
+    let _ = addr
+        .broadcast(Message::Broadcast { priority: 3 })
+        .priority(3)
+        .await;
     let mut lesser = addr
-        .broadcast(Message::Broadcast { priority: 4 }, 4)
+        .broadcast(Message::Broadcast { priority: 4 })
+        .priority(4)
         .boxed();
     let mut greater = addr
-        .broadcast(Message::Broadcast { priority: 5 }, 5)
+        .broadcast(Message::Broadcast { priority: 5 })
+        .priority(5)
         .boxed();
 
     assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
@@ -532,13 +537,15 @@ async fn broadcast_tail_advances_bound_1() {
     tokio::spawn(ctx.attach(Elephant::default()));
 
     let _ = addr
-        .broadcast(Message::Broadcast { priority: -1 }, -1)
+        .broadcast(Message::Broadcast { priority: -1 })
+        .priority(-1)
         .await;
 
     ctx.yield_once(&mut ngwevu).await;
 
     assert_eq!(
-        addr.broadcast(Message::Broadcast { priority: 0 }, 0)
+        addr.broadcast(Message::Broadcast { priority: 0 })
+            .priority(0)
             .timeout(Duration::from_secs(2))
             .await,
         Some(Ok(())),
@@ -546,10 +553,12 @@ async fn broadcast_tail_advances_bound_1() {
     );
 
     let mut lesser = addr
-        .broadcast(Message::Broadcast { priority: 1 }, 1)
+        .broadcast(Message::Broadcast { priority: 1 })
+        .priority(1)
         .boxed();
     let mut greater = addr
-        .broadcast(Message::Broadcast { priority: 2 }, 2)
+        .broadcast(Message::Broadcast { priority: 2 })
+        .priority(2)
         .boxed();
 
     assert!(
@@ -594,13 +603,20 @@ async fn broadcast_tail_advances_bound_2() {
 
     tokio::spawn(ctx.attach(Elephant::default()));
 
-    let _ = addr.broadcast(Message::Broadcast { priority: 0 }, 0).await;
-    let _ = addr.broadcast(Message::Broadcast { priority: 0 }, 0).await;
+    let _ = addr
+        .broadcast(Message::Broadcast { priority: 0 })
+        .priority(0)
+        .await;
+    let _ = addr
+        .broadcast(Message::Broadcast { priority: 0 })
+        .priority(0)
+        .await;
 
     ctx.yield_once(&mut ngwevu).await;
 
     assert_eq!(
-        addr.broadcast(Message::Broadcast { priority: 0 }, 0)
+        addr.broadcast(Message::Broadcast { priority: 0 })
+            .priority(0)
             .timeout(Duration::from_secs(2))
             .await,
         Some(Ok(())),
@@ -618,13 +634,19 @@ async fn broadcast_tail_does_not_advance_unless_both_handle() {
 
     let _fut = ctx.attach(Elephant::default());
 
-    let _ = addr.broadcast(Message::Broadcast { priority: 0 }, 0).await;
-    let _ = addr.broadcast(Message::Broadcast { priority: 0 }, 0).await;
+    let _ = addr
+        .broadcast(Message::Broadcast { priority: 0 })
+        .priority(0)
+        .await;
+    let _ = addr
+        .broadcast(Message::Broadcast { priority: 0 })
+        .priority(0)
+        .await;
 
     ctx.yield_once(&mut ngwevu).await;
 
     assert_eq!(
-        addr.broadcast(Message::Broadcast { priority: 0 }, 0).timeout(Duration::from_secs(2)).await,
+        addr.broadcast(Message::Broadcast { priority: 0 }).priority(0).timeout(Duration::from_secs(2)).await,
         None,
         "New broadcast message should NOT be accepted since the other actor has not yet handled the message",
     );
@@ -734,10 +756,14 @@ async fn address_send_exercises_backpressure() {
     // Broadcast
 
     let _ = address
-        .broadcast(BroadcastHello("world"), 2)
+        .broadcast(BroadcastHello("world"))
+        .priority(2)
         .now_or_never()
         .expect("be able to queue 1 broadcast because the mailbox is empty");
-    let handler2 = address.broadcast(BroadcastHello("world"), 1).now_or_never();
+    let handler2 = address
+        .broadcast(BroadcastHello("world"))
+        .priority(1)
+        .now_or_never();
     assert!(
         handler2.is_none(),
         "Fail to queue 2nd broadcast because mailbox is full"
@@ -746,7 +772,8 @@ async fn address_send_exercises_backpressure() {
     context.yield_once(&mut Greeter).await; // process one message
 
     let _ = address
-        .broadcast(BroadcastHello("world"), 2)
+        .broadcast(BroadcastHello("world"))
+        .priority(2)
         .now_or_never()
         .expect("be able to queue another broadcast because the mailbox is empty again");
 }

@@ -4,6 +4,7 @@
 #![deny(unsafe_code, missing_docs)]
 
 pub use self::address::{Address, Disconnected, WeakAddress};
+pub use self::broadcast_future::BroadcastFuture;
 pub use self::context::{ActorShutdown, Context};
 pub use self::manager::ActorManager;
 pub use self::receiver::Receiver;
@@ -11,6 +12,7 @@ pub use self::scoped_task::scoped;
 pub use self::send_future::{NameableSending, SendFuture};
 
 pub mod address;
+mod broadcast_future;
 mod context;
 mod envelope;
 mod inbox;

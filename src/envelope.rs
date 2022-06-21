@@ -131,12 +131,12 @@ pub trait BroadcastEnvelope: HasPriority + Send + Sync {
 
 pub struct BroadcastEnvelopeConcrete<A, M> {
     message: M,
-    priority: i32,
+    priority: Priority,
     phantom: PhantomData<fn() -> A>,
 }
 
-impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
-    pub fn new(message: M, priority: i32) -> Self {
+impl<A, M> BroadcastEnvelopeConcrete<A, M> {
+    pub fn new(message: M, priority: Priority) -> Self {
         BroadcastEnvelopeConcrete {
             message,
             priority,
@@ -163,6 +163,6 @@ where
 
 impl<A, M> HasPriority for BroadcastEnvelopeConcrete<A, M> {
     fn priority(&self) -> Priority {
-        Priority::Valued(self.priority)
+        self.priority
     }
 }
