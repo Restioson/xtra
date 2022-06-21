@@ -1,5 +1,6 @@
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Strong};
+use crate::send_future::private::SetPriority;
 use crate::{inbox, Disconnected};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
@@ -8,7 +9,6 @@ use std::marker::PhantomData;
 use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use crate::send_future::private::SetPriority;
 
 /// A [`Future`] that represents the state of sending a message to an actor.
 ///
@@ -70,7 +70,9 @@ where
     pub fn priority(mut self, new_priority: u32) -> Self {
         match &mut self.inner {
             SendFutureInner::Sending(inner) => inner.set_priority(new_priority),
-            SendFutureInner::Receiving(_) => panic!("setting priority after polling is unsupported"),
+            SendFutureInner::Receiving(_) => {
+                panic!("setting priority after polling is unsupported")
+            }
             SendFutureInner::Done => panic!("setting priority after polling is unsupported"),
         }
 
@@ -138,11 +140,15 @@ impl<A, R, Rc: RefCounter> Future for NameableSending<A, R, Rc> {
     }
 }
 
-pub(crate) trait SendingWithSetPriority<T>: Send + 'static + Unpin + Future<Output = T> + SetPriority {}
+pub(crate) trait SendingWithSetPriority<T>:
+    Send + 'static + Unpin + Future<Output = T> + SetPriority
+{
+}
 
-impl<T, F> SendingWithSetPriority<T> for F
-    where F: Send + 'static + Unpin + Future<Output = T> + SetPriority
-{}
+impl<T, F> SendingWithSetPriority<T> for F where
+    F: Send + 'static + Unpin + Future<Output = T> + SetPriority
+{
+}
 
 type BoxedSending<T> = Box<dyn SendingWithSetPriority<T>>;
 
@@ -157,11 +163,14 @@ impl<R> Future for ActorErasedSending<R> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.future.poll_unpin(cx) {
-            Poll::Ready(Ok(())) => Poll::Ready(Receiver::new(self.rx.take().expect("polling after completion not supported"))),
+            Poll::Ready(Ok(())) => Poll::Ready(Receiver::new(
+                self.rx
+                    .take()
+                    .expect("polling after completion not supported"),
+            )),
             Poll::Ready(Err(_)) => Poll::Ready(Receiver::disconnected()),
             Poll::Pending => Poll::Pending,
         }
-
     }
 }
 
@@ -170,7 +179,6 @@ impl<R> SetPriority for ActorErasedSending<R> {
         self.future.set_priority(priority)
     }
 }
-
 
 impl<R, F> Future for SendFuture<R, F, ResolveToHandlerReturn>
 where

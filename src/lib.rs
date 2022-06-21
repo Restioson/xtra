@@ -9,7 +9,7 @@ pub use self::context::{ActorShutdown, Context};
 pub use self::manager::ActorManager;
 pub use self::receiver::Receiver;
 pub use self::scoped_task::scoped;
-pub use self::send_future::{NameableSending, ActorErasedSending, SendFuture};
+pub use self::send_future::{ActorErasedSending, NameableSending, SendFuture};
 
 pub mod address;
 mod broadcast_future;

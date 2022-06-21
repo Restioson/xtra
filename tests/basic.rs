@@ -534,15 +534,32 @@ async fn set_priority_msg_channel() {
 
         let channel = &addr as &dyn MessageChannel<Message, Return = ()>;
 
-        let _ = channel.send(Message::Ordered { ord: 0 }).split_receiver().await;
-        let _ = channel.send(Message::Priority { priority: 1 }).priority(1).split_receiver().await;
-        let _ = channel.send(Message::Priority { priority: 2 }).split_receiver().priority(2).await;
+        let _ = channel
+            .send(Message::Ordered { ord: 0 })
+            .split_receiver()
+            .await;
+        let _ = channel
+            .send(Message::Priority { priority: 1 })
+            .priority(1)
+            .split_receiver()
+            .await;
+        let _ = channel
+            .send(Message::Priority { priority: 2 })
+            .split_receiver()
+            .priority(2)
+            .await;
 
         fut
     };
 
-
-    assert_eq!(fut.await, vec![Message::Priority { priority: 2 }, Message::Priority { priority: 1 }, Message::Ordered { ord: 0 }]);
+    assert_eq!(
+        fut.await,
+        vec![
+            Message::Priority { priority: 2 },
+            Message::Priority { priority: 1 },
+            Message::Ordered { ord: 0 }
+        ]
+    );
 }
 
 #[tokio::test]

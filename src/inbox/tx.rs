@@ -1,5 +1,6 @@
 use super::*;
 use crate::inbox::tx::private::RefCounterInner;
+use crate::send_future::private::SetPriority;
 use crate::Disconnected;
 use event_listener::EventListener;
 use futures_core::FusedFuture;
@@ -10,7 +11,6 @@ use std::mem;
 use std::pin::Pin;
 use std::sync::{atomic, Arc};
 use std::task::{Context, Poll, Waker};
-use crate::send_future::private::SetPriority;
 
 pub struct Sender<A, Rc: TxRefCounter> {
     pub(super) inner: Arc<Chan<A>>,
@@ -192,7 +192,6 @@ impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
         }
     }
 }
-
 
 pub enum SendFutureInner<A> {
     New(SentMessage<A>),

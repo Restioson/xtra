@@ -1,12 +1,10 @@
-use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 use std::future::Future;
 use std::time::{Duration, Instant};
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
-use xtra::{ActorErasedSending, NameableSending};
-use xtra::Receiver;
 use xtra::SendFuture;
+use xtra::{ActorErasedSending, NameableSending};
 
 struct Counter {
     count: usize,
@@ -149,9 +147,7 @@ async fn do_parallel_address_benchmark<R>(
 
 async fn do_channel_benchmark<M, RM>(
     name: &str,
-    f: impl Fn(
-        &dyn MessageChannel<M, Return = ()>,
-    ) -> SendFuture<(), ActorErasedSending<()>, RM>,
+    f: impl Fn(&dyn MessageChannel<M, Return = ()>) -> SendFuture<(), ActorErasedSending<()>, RM>,
 ) where
     Counter: Handler<M, Return = ()> + Send,
     M: Send + 'static,
