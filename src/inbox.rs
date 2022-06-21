@@ -397,15 +397,17 @@ mod test {
             .await
             .unwrap();
 
+        let eq = |msg| assert_eq!(&msg as *const _ as *const (), &msg as *const _ as *const ());
+
         match rx.receive().await {
-            ActorMessage::ToAllActors(msg) => assert!(Arc::ptr_eq(&msg, &orig)),
+            ActorMessage::ToAllActors(msg) => eq(msg),
             _ => panic!("Expected broadcast message, got something else"),
         }
 
         let rx2_shallow_recv = rx2_shallow.receive();
 
         match rx2.receive().await {
-            ActorMessage::ToAllActors(msg) => assert!(Arc::ptr_eq(&msg, &orig)),
+            ActorMessage::ToAllActors(msg) => eq(msg),
             _ => panic!("Expected broadcast message, got something else"),
         }
 

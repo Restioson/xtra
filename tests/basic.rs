@@ -517,7 +517,7 @@ fn test_addr_cmp_hash_eq() {
     assert_ne!(addr1, addr2);
     assert_ne!(addr1, addr1.downgrade());
     assert_eq!(addr1, addr1.clone());
-    assert_ne!(addr1, addr2.clone());
+    assert_ne!(addr1, addr2);
     assert!(addr1.same_actor(&addr1));
     assert!(addr1.same_actor(&addr1.downgrade()));
     assert!(!addr1.same_actor(&addr2));
