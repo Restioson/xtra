@@ -3,13 +3,11 @@
 //! the message type rather than the actor type.
 
 use std::fmt::Debug;
-
 use crate::address::{ActorJoinHandle, Address, WeakAddress};
 use crate::envelope::ReturningEnvelope;
-use crate::inbox::SentMessage;
-use crate::receiver::Receiver;
+use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{RefCounter, Strong};
-use crate::send_future::{ResolveToHandlerReturn, SendFuture};
+use crate::send_future::{ResolveToHandlerReturn, SendFuture, ActorErasedSending};
 use crate::{Handler, KeepRunning};
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
@@ -108,7 +106,7 @@ pub trait MessageChannel<M>:
     fn send(
         &self,
         message: M,
-    ) -> SendFuture<Self::Return, BoxFuture<'static, Receiver<Self::Return>>, ResolveToHandlerReturn>;
+    ) -> SendFuture<Self::Return, ActorErasedSending<Self::Return>, ResolveToHandlerReturn>;
 
     /// Attaches a stream to this channel such that all messages produced by it are forwarded to the
     /// actor. This could, for instance, be used to forward messages from a socket to the actor
@@ -208,17 +206,13 @@ where
     fn send(
         &self,
         message: M,
-    ) -> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
+    ) -> SendFuture<R, ActorErasedSending<Self::Return>, ResolveToHandlerReturn> {
         let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
-        let sending = self.0.send(SentMessage::Ordered(Box::new(envelope)));
+        let msg = PriorityMessageToOne::new(0, Box::new(envelope));
+        let sending = self.0.send(SentMessage::ToOneActor(msg));
 
         #[allow(clippy::async_yields_async)] // We only want to await the sending.
-        SendFuture::sending_boxed(async move {
-            match sending.await {
-                Ok(()) => Receiver::new(rx),
-                Err(_) => Receiver::disconnected(),
-            }
-        })
+        SendFuture::sending_boxed(sending, rx)
     }
 
     fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>

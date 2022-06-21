@@ -164,7 +164,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         Address(self.0.clone().into_either_rc())
     }
 
-    /// Send a message to the actor.
+    /// Send a message to the actor with a given priority.
     ///
     /// The actor must implement [`Handler<Message>`] for this to work.
     ///
@@ -184,32 +184,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         A: Handler<M>,
     {
         let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-        let tx = self.0.send(SentMessage::Ordered(Box::new(envelope)));
-        SendFuture::sending_named(tx, rx)
-    }
-
-    /// Send a message to the actor with a given priority.
-    ///
-    /// The actor must implement [`Handler<Message>`] for this to work.
-    ///
-    /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
-    /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
-    #[allow(clippy::type_complexity)]
-    pub fn send_priority<M>(
-        &self,
-        message: M,
-        priority: u32,
-    ) -> SendFuture<
-        <A as Handler<M>>::Return,
-        NameableSending<A, <A as Handler<M>>::Return, Rc>,
-        ResolveToHandlerReturn,
-    >
-    where
-        M: Send + 'static,
-        A: Handler<M>,
-    {
-        let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-        let msg = SentMessage::Prioritized(PriorityMessageToOne::new(priority, Box::new(envelope)));
+        let msg = SentMessage::ToOneActor(PriorityMessageToOne::new(0, Box::new(envelope)));
         let tx = self.0.send(msg);
         SendFuture::sending_named(tx, rx)
     }
@@ -378,12 +353,9 @@ where
     }
 
     fn start_send(mut self: Pin<&mut Self>, msg: M) -> Result<(), Self::Error> {
-        self.0 = self
-            .0
-            .tx
-            .send(SentMessage::Ordered(Box::new(NonReturningEnvelope::new(
-                msg,
-            ))));
+        let msg = Box::new(NonReturningEnvelope::new(msg));
+        let msg = SentMessage::ToOneActor(PriorityMessageToOne::new(0, msg));
+        self.0 = self.0.tx.send(msg);
         Ok(())
     }
 

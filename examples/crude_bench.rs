@@ -4,7 +4,7 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
-use xtra::NameableSending;
+use xtra::{ActorErasedSending, NameableSending};
 use xtra::Receiver;
 use xtra::SendFuture;
 
@@ -151,11 +151,11 @@ async fn do_channel_benchmark<M, RM>(
     name: &str,
     f: impl Fn(
         &dyn MessageChannel<M, Return = ()>,
-    ) -> SendFuture<(), BoxFuture<'static, Receiver<()>>, RM>,
+    ) -> SendFuture<(), ActorErasedSending<()>, RM>,
 ) where
     Counter: Handler<M, Return = ()> + Send,
     M: Send + 'static,
-    SendFuture<(), BoxFuture<'static, Receiver<()>>, RM>: Future,
+    SendFuture<(), ActorErasedSending<()>, RM>: Future,
 {
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
     let chan = &addr as &dyn MessageChannel<M, Return = ()>;

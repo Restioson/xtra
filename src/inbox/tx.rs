@@ -10,6 +10,7 @@ use std::mem;
 use std::pin::Pin;
 use std::sync::{atomic, Arc};
 use std::task::{Context, Poll, Waker};
+use crate::send_future::private::SetPriority;
 
 pub struct Sender<A, Rc: TxRefCounter> {
     pub(super) inner: Arc<Chan<A>>,
@@ -183,7 +184,17 @@ impl<A, Rc: TxRefCounter> SendFuture<A, Rc> {
     }
 }
 
-enum SendFutureInner<A> {
+impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
+    fn set_priority(&mut self, priority: u32) {
+        match &mut self.inner {
+            SendFutureInner::New(SentMessage::ToOneActor(ref mut m)) => m.priority = priority,
+            _ => panic!("setting priority after polling is unsupported"),
+        }
+    }
+}
+
+
+pub enum SendFutureInner<A> {
     New(SentMessage<A>),
     WaitingToSend(Arc<Spinlock<WaitingSender<A>>>),
     Complete,

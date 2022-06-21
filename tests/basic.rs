@@ -429,7 +429,7 @@ async fn handle_order() {
                         let _ = ele.broadcast(msg).priority(priority).await;
                     }
                     Message::Priority { priority } => {
-                        let _ = ele.send_priority(msg, priority).split_receiver().await;
+                        let _ = ele.send(msg).priority(priority).split_receiver().await;
                     }
                     Message::Ordered { .. } => {
                         let _ = ele.send(msg).split_receiver().await;
@@ -482,14 +482,17 @@ async fn waiting_sender_order() {
     // With priority
 
     let _ = addr
-        .send_priority(Message::Priority { priority: 1 }, 1)
+        .send(Message::Priority { priority: 1 })
+        .priority(1)
         .split_receiver()
         .await;
     let mut lesser = addr
-        .send_priority(Message::Priority { priority: 1 }, 1)
+        .send(Message::Priority { priority: 1 })
+        .priority(1)
         .split_receiver();
     let mut greater = addr
-        .send_priority(Message::Priority { priority: 2 }, 2)
+        .send(Message::Priority { priority: 2 })
+        .priority(2)
         .split_receiver();
 
     assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
@@ -522,6 +525,24 @@ async fn waiting_sender_order() {
 
     assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
     assert!(greater.poll_unpin(&mut fut_ctx).is_ready());
+}
+
+#[tokio::test]
+async fn set_priority_msg_channel() {
+    let fut = {
+        let (addr, fut) = Elephant::default().create(None).run();
+
+        let channel = &addr as &dyn MessageChannel<Message, Return = ()>;
+
+        let _ = channel.send(Message::Ordered { ord: 0 }).split_receiver().await;
+        let _ = channel.send(Message::Priority { priority: 1 }).priority(1).split_receiver().await;
+        let _ = channel.send(Message::Priority { priority: 2 }).split_receiver().priority(2).await;
+
+        fut
+    };
+
+
+    assert_eq!(fut.await, vec![Message::Priority { priority: 2 }, Message::Priority { priority: 1 }, Message::Ordered { ord: 0 }]);
 }
 
 #[tokio::test]
@@ -731,12 +752,14 @@ async fn address_send_exercises_backpressure() {
     let (address, mut context) = Context::new(Some(1));
 
     let _ = address
-        .send_priority(Hello("world"), 1)
+        .send(Hello("world"))
+        .priority(1)
         .split_receiver()
         .now_or_never()
         .expect("be able to queue 1 priority message because the mailbox is empty");
     let handler2 = address
-        .send_priority(Hello("world"), 1)
+        .send(Hello("world"))
+        .priority(1)
         .split_receiver()
         .now_or_never();
     assert!(
@@ -747,7 +770,8 @@ async fn address_send_exercises_backpressure() {
     context.yield_once(&mut Greeter).await; // process one message
 
     let _ = address
-        .send_priority(BroadcastHello("world"), 1)
+        .send(BroadcastHello("world"))
+        .priority(1)
         .split_receiver()
         .now_or_never()
         .expect("be able to queue another priority message because the mailbox is empty again");

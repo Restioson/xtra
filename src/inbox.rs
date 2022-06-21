@@ -122,7 +122,7 @@ impl<A> ChanInner<A> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
         if capacity.map_or(false, |cap| cap == self.priority_queue.len()) {
             match self.try_fulfill_sender(MessageType::Priority) {
-                Some(SentMessage::Prioritized(msg)) => self.priority_queue.push(msg),
+                Some(SentMessage::ToOneActor(msg)) => self.priority_queue.push(msg),
                 Some(_) => unreachable!(),
                 None => {}
             }
@@ -135,7 +135,7 @@ impl<A> ChanInner<A> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
         if capacity.map_or(false, |cap| cap == self.ordered_queue.len()) {
             match self.try_fulfill_sender(MessageType::Ordered) {
-                Some(SentMessage::Ordered(msg)) => self.ordered_queue.push_back(msg),
+                Some(SentMessage::ToOneActor(msg)) => self.ordered_queue.push_back(msg.val),
                 Some(_) => unreachable!(),
                 None => {}
             }
@@ -203,7 +203,7 @@ impl<A> ChanInner<A> {
                 self.waiting_senders
                     .iter()
                     .position(|tx| match tx.upgrade() {
-                        Some(tx) => matches!(tx.lock().peek(), SentMessage::Ordered(_)),
+                        Some(tx) => matches!(tx.lock().peek(), SentMessage::ToOneActor(m) if m.priority == 0),
                         None => false,
                     })?
             } else {
@@ -212,7 +212,9 @@ impl<A> ChanInner<A> {
                     .enumerate()
                     .max_by_key(|(_idx, tx)| match tx.upgrade() {
                         Some(tx) => match tx.lock().peek() {
-                            SentMessage::Prioritized(m) if for_type == MessageType::Priority => {
+                            SentMessage::ToOneActor(m)
+                                if for_type == MessageType::Priority && m.priority > 0 =>
+                            {
                                 Some(m.priority)
                             }
                             SentMessage::ToAllActors(m) if for_type == MessageType::Broadcast => {
@@ -240,18 +242,14 @@ enum MessageType {
 }
 
 pub enum SentMessage<A> {
-    Ordered(MessageToOneActor<A>),
-    Prioritized(PriorityMessageToOne<A>),
+    ToOneActor(PriorityMessageToOne<A>),
     ToAllActors(Arc<dyn BroadcastEnvelope<Actor = A>>),
 }
 
 impl<A> From<SentMessage<A>> for WakeReason<A> {
     fn from(msg: SentMessage<A>) -> Self {
         match msg {
-            SentMessage::Ordered(m) => {
-                WakeReason::MessageToOneActor(PriorityMessageToOne::new(0, m))
-            }
-            SentMessage::Prioritized(m) => WakeReason::MessageToOneActor(m),
+            SentMessage::ToOneActor(m) => WakeReason::MessageToOneActor(m),
             SentMessage::ToAllActors(_) => WakeReason::MessageToAllActors,
         }
     }
@@ -259,11 +257,7 @@ impl<A> From<SentMessage<A>> for WakeReason<A> {
 
 impl<A> From<PriorityMessageToOne<A>> for SentMessage<A> {
     fn from(msg: PriorityMessageToOne<A>) -> Self {
-        if msg.priority == 0 {
-            SentMessage::Ordered(msg.val)
-        } else {
-            SentMessage::Prioritized(msg)
-        }
+        SentMessage::ToOneActor(msg)
     }
 }
 
@@ -316,7 +310,7 @@ impl<A> HasPriority for PriorityMessageToOne<A> {
 }
 
 pub struct PriorityMessageToOne<A> {
-    priority: u32,
+    pub priority: u32,
     val: MessageToOneActor<A>,
 }
 
