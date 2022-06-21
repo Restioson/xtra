@@ -2,13 +2,13 @@ use futures_util::task::noop_waker_ref;
 use futures_util::{FutureExt, SinkExt};
 use smol::stream;
 use smol_timeout::TimeoutExt;
+use std::cmp::Ordering as CmpOrdering;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
-use std::cmp::Ordering as CmpOrdering;
 use xtra::KeepRunning;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -346,15 +346,9 @@ async fn receiving_async_on_message_channel_returns_immediately_after_dispatch()
 
 #[derive(Eq, PartialEq, Clone, Debug)]
 enum Message {
-    Broadcast {
-        priority: i32
-    },
-    Priority {
-        priority: i32,
-    },
-    Ordered {
-        ord: u32,
-    }
+    Broadcast { priority: i32 },
+    Priority { priority: i32 },
+    Ordered { ord: u32 },
 }
 
 impl PartialOrd<Self> for Message {
@@ -370,17 +364,17 @@ impl Ord for Message {
                 Message::Broadcast { priority: other } => priority.cmp(other),
                 Message::Priority { priority: other } => priority.cmp(other),
                 Message::Ordered { .. } => priority.cmp(&0),
-            }
+            },
             Message::Priority { priority } => match other {
                 Message::Broadcast { priority: other } => priority.cmp(other),
                 Message::Priority { priority: other } => priority.cmp(other),
                 Message::Ordered { .. } => priority.cmp(&0),
-            }
+            },
             Message::Ordered { ord } => match other {
                 Message::Broadcast { priority: other } => 0.cmp(other),
                 Message::Priority { priority: other } => 0.cmp(other),
                 Message::Ordered { ord: other } => other.cmp(ord),
-            }
+            },
         }
     }
 }
@@ -460,7 +454,10 @@ async fn waiting_sender_order() {
 
     // With ordered messages
 
-    let _ = addr.send(Message::Ordered { ord: 0 }).split_receiver().await;
+    let _ = addr
+        .send(Message::Ordered { ord: 0 })
+        .split_receiver()
+        .await;
     let mut first = addr.send(Message::Ordered { ord: 1 }).split_receiver();
     let mut second = addr.send(Message::Ordered { ord: 2 }).split_receiver();
 
@@ -474,9 +471,16 @@ async fn waiting_sender_order() {
 
     // With priority
 
-    let _ = addr.send_priority(Message::Priority { priority: 1 }, 1).split_receiver().await;
-    let mut lesser = addr.send_priority(Message::Priority { priority: 1 }, 1).split_receiver();
-    let mut greater = addr.send_priority(Message::Priority { priority: 2 }, 2).split_receiver();
+    let _ = addr
+        .send_priority(Message::Priority { priority: 1 }, 1)
+        .split_receiver()
+        .await;
+    let mut lesser = addr
+        .send_priority(Message::Priority { priority: 1 }, 1)
+        .split_receiver();
+    let mut greater = addr
+        .send_priority(Message::Priority { priority: 2 }, 2)
+        .split_receiver();
 
     assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
     assert!(greater.poll_unpin(&mut fut_ctx).is_pending());
@@ -489,8 +493,12 @@ async fn waiting_sender_order() {
     // With broadcast
 
     let _ = addr.broadcast(Message::Broadcast { priority: 3 }, 3).await;
-    let mut lesser = addr.broadcast(Message::Broadcast { priority: 4 }, 4).boxed();
-    let mut greater = addr.broadcast(Message::Broadcast { priority: 5 }, 5).boxed();
+    let mut lesser = addr
+        .broadcast(Message::Broadcast { priority: 4 }, 4)
+        .boxed();
+    let mut greater = addr
+        .broadcast(Message::Broadcast { priority: 5 }, 5)
+        .boxed();
 
     assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
     assert!(greater.poll_unpin(&mut fut_ctx).is_pending());
