@@ -13,7 +13,7 @@ categories = ["asynchronous", "concurrency"]
 rust-version = "1.56.0"
 
 [dependencies]
-async-trait = "0.1.36"
+async-trait = "0.1.56"
 catty = "0.1.5"
 futures-core = { version = "0.3.21", default-features = false, features = ["alloc"] }
 futures-sink = { version = "0.3.21", default-features = false }
