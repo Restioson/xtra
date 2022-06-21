@@ -173,22 +173,31 @@ impl<A> ChanInner<A> {
         // If len < cap, try fulfill a waiting sender
         if capacity.map_or(false, |cap| longest < cap) {
             match self.try_fulfill_sender(MessageType::Broadcast) {
-                Some(SentMessage::ToAllActors(m)) => {
-                    // TODO test there should not be waiting receivers here?
-                    self.broadcast_queues.retain(|queue| match queue.upgrade() {
-                        Some(q) => {
-                            q.lock().push(MessageToAllActors(m.clone()));
-                            true
-                        }
-                        None => false, // The corresponding receiver has been dropped - remove it
-                    });
-                }
+                Some(SentMessage::ToAllActors(m)) => self.send_broadcast(MessageToAllActors(m)),
                 Some(_) => unreachable!(),
                 None => {}
             }
         }
 
         self.broadcast_tail = longest;
+    }
+
+    fn send_broadcast(&mut self, m: MessageToAllActors<A>) {
+        self.broadcast_queues
+            .retain(|queue| match queue.upgrade() {
+                Some(q) => {
+                    q.lock().push(m.clone());
+                    true
+                }
+                None => false, // The corresponding receiver has been dropped - remove it
+            });
+
+        let waiting = mem::take(&mut self.waiting_receivers);
+        for rx in waiting.into_iter().flat_map(|w| w.upgrade()) {
+            let _ = rx.lock().fulfill(WakeReason::MessageToAllActors);
+        }
+
+        self.broadcast_tail += 1;
     }
 
     fn try_fulfill_receiver(&mut self, mut reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
@@ -358,6 +367,12 @@ impl<A> Ord for PriorityMessageToOne<A> {
 }
 
 struct MessageToAllActors<A>(Arc<dyn BroadcastEnvelope<Actor = A>>);
+
+impl<A> Clone for MessageToAllActors<A> {
+    fn clone(&self) -> Self {
+        MessageToAllActors(self.0.clone())
+    }
+}
 
 impl<A> HasPriority for MessageToAllActors<A> {
     fn priority(&self) -> Priority {

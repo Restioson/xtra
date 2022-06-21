@@ -380,15 +380,26 @@ impl Ord for Message {
 }
 
 // An elephant never forgets :)
-#[derive(Default)]
-struct Elephant(Vec<Message>);
+struct Elephant {
+    name: &'static str,
+    msgs: Vec<Message>,
+}
+
+impl Default for Elephant {
+    fn default() -> Self {
+        Elephant {
+            name: "Indlovu",
+            msgs: vec![],
+        }
+    }
+}
 
 #[async_trait]
 impl Actor for Elephant {
     type Stop = Vec<Message>;
 
     async fn stopped(self) -> Self::Stop {
-        self.0
+        self.msgs
     }
 }
 
@@ -397,8 +408,8 @@ impl Handler<Message> for Elephant {
     type Return = ();
 
     async fn handle(&mut self, message: Message, _ctx: &mut Context<Self>) {
-        eprintln!("Handling {:?}", message);
-        self.0.push(message);
+        eprintln!("{} is handling {:?}", self.name, message);
+        self.msgs.push(message);
     }
 }
 
@@ -507,6 +518,47 @@ async fn waiting_sender_order() {
 
     assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
     assert!(greater.poll_unpin(&mut fut_ctx).is_ready());
+}
+
+#[tokio::test]
+async fn broadcast_tail_advances() {
+    let (addr, mut ctx) = Context::new(Some(1));
+    let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
+    let mut ngwevu = Elephant {
+        name: "Ngwevu",
+        msgs: vec![],
+    };
+
+    tokio::spawn(ctx.attach(Elephant::default()));
+
+    let _ = addr.broadcast(Message::Broadcast { priority: -1 }, -1).await;
+
+    ctx.yield_once(&mut ngwevu).await;
+
+    assert_eq!(
+        addr.broadcast(Message::Broadcast { priority: 0 }, 0).timeout(Duration::from_secs(2)).await,
+        Some(Ok(())),
+        "New broadcast message should be accepted when queue is empty",
+    );
+
+    let mut lesser = addr.broadcast(Message::Broadcast { priority: 1 }, 1).boxed();
+    let mut greater = addr.broadcast(Message::Broadcast { priority: 2 }, 2).boxed();
+
+    assert!(lesser.poll_unpin(&mut fut_ctx).is_pending(), "Queue is full - should wait");
+    assert!(greater.poll_unpin(&mut fut_ctx).is_pending(), "Queue is full - should wait");
+
+    // Will handle the broadcast of priority 0 from earlier
+    ctx.yield_once(&mut ngwevu).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    assert!(lesser.poll_unpin(&mut fut_ctx).is_pending(), "Low prio - should wait");
+    assert!(greater.poll_unpin(&mut fut_ctx).is_ready(), "High prio - shouldn't wait");
+
+    // Should handle greater
+    ctx.yield_once(&mut ngwevu).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    assert!(lesser.poll_unpin(&mut fut_ctx).is_ready(), "Low prio should be sent in now");
 }
 
 struct Greeter;
