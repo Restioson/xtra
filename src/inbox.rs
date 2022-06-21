@@ -81,7 +81,10 @@ impl<A> Chan<A> {
 
     pub fn shutdown(&self) {
         let waiting_receivers = {
-            let mut inner = self.chan.lock().unwrap();
+            let mut inner = match self.chan.lock() {
+                Ok(lock) => lock,
+                Err(_) => return, // Poisoned, ignore
+            };
 
             // TODO(atomic) what ordering to use here?
             self.shutdown.store(true, atomic::Ordering::SeqCst);
@@ -133,17 +136,22 @@ struct ChanInner<A> {
 }
 
 impl<A> ChanInner<A> {
-    fn is_full(&self, capacity: Option<usize>) -> bool {
-        capacity.map_or(false, |cap| self.ordered_queue.len() >= cap)
-    }
+    fn pop_priority(&mut self, capacity: Option<usize>) -> Option<MessageToOneActor<A>> {
+        // If len < cap after popping this message, try fulfill at most one waiting sender
+        if capacity.map_or(false, |cap| cap == self.priority_queue.len()) {
+            match self.try_fulfill_sender(MessageType::Priority) {
+                Some(SentMessage::Prioritized(msg)) => self.priority_queue.push(msg),
+                Some(_) => unreachable!(),
+                None => {}
+            }
+        }
 
-    fn pop_priority(&mut self) -> Option<MessageToOneActor<A>> {
         Some(self.priority_queue.pop()?.val)
     }
 
     fn pop_ordered(&mut self, capacity: Option<usize>) -> Option<MessageToOneActor<A>> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
-        if self.is_full(capacity) {
+        if capacity.map_or(false, |cap| cap == self.ordered_queue.len()) {
             match self.try_fulfill_sender(MessageType::Ordered) {
                 Some(SentMessage::Ordered(msg)) => self.ordered_queue.push_back(msg),
                 Some(_) => unreachable!(),
@@ -154,7 +162,7 @@ impl<A> ChanInner<A> {
         self.ordered_queue.pop_front()
     }
 
-    fn try_advance_broadcast_tail(&mut self) {
+    fn try_advance_broadcast_tail(&mut self, capacity: Option<usize>) {
         let mut longest = 0;
         for queue in &self.broadcast_queues {
             if let Some(queue) = queue.upgrade() {
@@ -162,7 +170,33 @@ impl<A> ChanInner<A> {
             }
         }
 
+        // If len < cap, try fulfill a waiting sender
+        if capacity.map_or(false, |cap| longest < cap) {
+            match self.try_fulfill_sender(MessageType::Broadcast) {
+                Some(SentMessage::ToAllActors(m)) => self.send_broadcast(MessageToAllActors(m)),
+                Some(_) => unreachable!(),
+                None => {}
+            }
+        }
+
         self.broadcast_tail = longest;
+    }
+
+    fn send_broadcast(&mut self, m: MessageToAllActors<A>) {
+        self.broadcast_queues.retain(|queue| match queue.upgrade() {
+            Some(q) => {
+                q.lock().push(m.clone());
+                true
+            }
+            None => false, // The corresponding receiver has been dropped - remove it
+        });
+
+        let waiting = mem::take(&mut self.waiting_receivers);
+        for rx in waiting.into_iter().flat_map(|w| w.upgrade()) {
+            let _ = rx.lock().fulfill(WakeReason::MessageToAllActors);
+        }
+
+        self.broadcast_tail += 1;
     }
 
     fn try_fulfill_receiver(&mut self, mut reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
@@ -180,34 +214,40 @@ impl<A> ChanInner<A> {
 
     // TODO get actor message type enum
     fn try_fulfill_sender(&mut self, for_type: MessageType) -> Option<SentMessage<A>> {
-        let mut i = 0;
-        while i < self.waiting_senders.len() {
-            let should_pop = match self.waiting_senders.get(i).unwrap().upgrade() {
-                Some(tx) => {
-                    let tx = tx.lock();
-                    match tx.peek() {
-                        SentMessage::Ordered(_) if for_type == MessageType::Ordered => true,
-                        SentMessage::Prioritized(_) if for_type == MessageType::Priority => true,
-                        SentMessage::ToAllActors(_) if for_type == MessageType::Broadcast => true,
-                        _ => {
-                            i += 1;
-                            false
-                        }
-                    }
-                }
-                None => {
-                    self.waiting_senders.remove(i);
-                    false
-                }
+        self.waiting_senders
+            .retain(|tx| Weak::strong_count(tx) != 0);
+
+        loop {
+            let pos = if for_type == MessageType::Ordered {
+                self.waiting_senders
+                    .iter()
+                    .position(|tx| match tx.upgrade() {
+                        Some(tx) => matches!(tx.lock().peek(), SentMessage::Ordered(_)),
+                        None => false,
+                    })?
+            } else {
+                self.waiting_senders
+                    .iter()
+                    .enumerate()
+                    .max_by_key(|(_idx, tx)| match tx.upgrade() {
+                        Some(tx) => match tx.lock().peek() {
+                            SentMessage::Prioritized(m) if for_type == MessageType::Priority => {
+                                m.priority
+                            }
+                            SentMessage::ToAllActors(m) if for_type == MessageType::Broadcast => {
+                                m.priority()
+                            }
+                            _ => Priority::Min,
+                        },
+                        None => Priority::Min,
+                    })?
+                    .0
             };
 
-            if should_pop {
-                // TODO could unwrap here
-                return Some(self.waiting_senders.remove(i)?.upgrade()?.lock().fulfill());
+            if let Some(tx) = self.waiting_senders.remove(pos).unwrap().upgrade() {
+                return Some(tx.lock().fulfill());
             }
         }
-
-        None
     }
 }
 
@@ -327,6 +367,12 @@ impl<A> Ord for PriorityMessageToOne<A> {
 
 struct MessageToAllActors<A>(Arc<dyn BroadcastEnvelope<Actor = A>>);
 
+impl<A> Clone for MessageToAllActors<A> {
+    fn clone(&self) -> Self {
+        MessageToAllActors(self.0.clone())
+    }
+}
+
 impl<A> HasPriority for MessageToAllActors<A> {
     fn priority(&self) -> Priority {
         self.0.priority()
@@ -350,69 +396,5 @@ impl<A> PartialOrd<Self> for MessageToAllActors<A> {
 impl<A> Ord for MessageToAllActors<A> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.priority().cmp(&other.priority())
-    }
-}
-
-// TODO(test) migrate to basic.rs
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::envelope::BroadcastEnvelopeConcrete;
-    use crate::prelude::{Context, *};
-    use futures_util::FutureExt;
-
-    struct MyActor;
-
-    #[async_trait]
-    impl Actor for MyActor {
-        type Stop = ();
-
-        async fn stopped(self) {}
-    }
-
-    #[async_trait]
-    impl Handler<&'static str> for MyActor {
-        type Return = ();
-
-        async fn handle(&mut self, message: &'static str, _ctx: &mut Context<Self>) {
-            println!("{}", message);
-        }
-    }
-
-    #[test]
-    fn test_priority() {
-        assert!(Priority::Min < Priority::Valued(0));
-        assert!(Priority::Valued(1) > Priority::Valued(0));
-    }
-
-    #[tokio::test]
-    async fn test_broadcast() {
-        let (tx, rx) = new(None);
-        let rx2 = rx.cloned_new_broadcast_mailbox();
-        let rx2_shallow = rx2.cloned_same_broadcast_mailbox();
-
-        let orig = Arc::new(BroadcastEnvelopeConcrete::new("Hi", Priority::Valued(1)));
-        let orig = orig as Arc<dyn BroadcastEnvelope<Actor = MyActor>>;
-        tx.send(SentMessage::ToAllActors(orig.clone()))
-            .await
-            .unwrap();
-
-        let eq = |msg| assert_eq!(&msg as *const _ as *const (), &msg as *const _ as *const ());
-
-        match rx.receive().await {
-            ActorMessage::ToAllActors(msg) => eq(msg),
-            _ => panic!("Expected broadcast message, got something else"),
-        }
-
-        let rx2_shallow_recv = rx2_shallow.receive();
-
-        match rx2.receive().await {
-            ActorMessage::ToAllActors(msg) => eq(msg),
-            _ => panic!("Expected broadcast message, got something else"),
-        }
-
-        assert!(rx.receive().now_or_never().is_none());
-        assert!(rx2.receive().now_or_never().is_none());
-        assert!(rx2_shallow_recv.now_or_never().is_none());
     }
 }

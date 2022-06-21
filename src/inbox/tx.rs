@@ -35,23 +35,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
 
         match message {
             SentMessage::ToAllActors(m) if !self.inner.is_full(inner.broadcast_tail) => {
-                inner
-                    .broadcast_queues
-                    .retain(|queue| match queue.upgrade() {
-                        Some(q) => {
-                            q.lock().push(MessageToAllActors(m.clone()));
-                            true
-                        }
-                        None => false, // The corresponding receiver has been dropped - remove it
-                    });
-
-                let waiting = mem::take(&mut inner.waiting_receivers);
-                for rx in waiting.into_iter().flat_map(|w| w.upgrade()) {
-                    let _ = rx.lock().fulfill(WakeReason::MessageToAllActors);
-                }
-
-                inner.broadcast_tail += 1;
-
+                inner.send_broadcast(MessageToAllActors(m));
                 Ok(())
             }
             SentMessage::ToAllActors(m) => {

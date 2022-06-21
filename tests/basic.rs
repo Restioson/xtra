@@ -1,7 +1,8 @@
 use futures_util::task::noop_waker_ref;
-use futures_util::FutureExt;
+use futures_util::{FutureExt, SinkExt};
 use smol::stream;
 use smol_timeout::TimeoutExt;
+use std::cmp::Ordering as CmpOrdering;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
@@ -343,6 +344,314 @@ async fn receiving_async_on_message_channel_returns_immediately_after_dispatch()
     handler_future.await.unwrap();
 }
 
+#[derive(Eq, PartialEq, Clone, Debug)]
+enum Message {
+    Broadcast { priority: i32 },
+    Priority { priority: i32 },
+    Ordered { ord: u32 },
+}
+
+impl PartialOrd<Self> for Message {
+    fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Message {
+    fn cmp(&self, other: &Self) -> CmpOrdering {
+        match self {
+            Message::Broadcast { priority } => match other {
+                Message::Broadcast { priority: other } => priority.cmp(other),
+                Message::Priority { priority: other } => priority.cmp(other),
+                Message::Ordered { .. } => priority.cmp(&0),
+            },
+            Message::Priority { priority } => match other {
+                Message::Broadcast { priority: other } => priority.cmp(other),
+                Message::Priority { priority: other } => priority.cmp(other),
+                Message::Ordered { .. } => priority.cmp(&0),
+            },
+            Message::Ordered { ord } => match other {
+                Message::Broadcast { priority: other } => 0.cmp(other),
+                Message::Priority { priority: other } => 0.cmp(other),
+                Message::Ordered { ord: other } => other.cmp(ord),
+            },
+        }
+    }
+}
+
+// An elephant never forgets :)
+struct Elephant {
+    name: &'static str,
+    msgs: Vec<Message>,
+}
+
+impl Default for Elephant {
+    fn default() -> Self {
+        Elephant {
+            name: "Indlovu",
+            msgs: vec![],
+        }
+    }
+}
+
+#[async_trait]
+impl Actor for Elephant {
+    type Stop = Vec<Message>;
+
+    async fn stopped(self) -> Self::Stop {
+        self.msgs
+    }
+}
+
+#[async_trait]
+impl Handler<Message> for Elephant {
+    type Return = ();
+
+    async fn handle(&mut self, message: Message, _ctx: &mut Context<Self>) {
+        eprintln!("{} is handling {:?}", self.name, message);
+        self.msgs.push(message);
+    }
+}
+
+#[tokio::test]
+async fn handle_order() {
+    let mut expected = vec![];
+
+    let fut = {
+        let (ele, fut) = Elephant::default().create(None).run();
+
+        let mut send = |msg: Message| {
+            expected.push(msg.clone());
+
+            async {
+                match msg {
+                    Message::Broadcast { priority } => {
+                        let _ = ele.broadcast(msg).priority(priority).await;
+                    }
+                    Message::Priority { priority } => {
+                        let _ = ele.send_priority(msg, priority).split_receiver().await;
+                    }
+                    Message::Ordered { .. } => {
+                        let _ = ele.send(msg).split_receiver().await;
+                    }
+                }
+            }
+        };
+
+        send(Message::Ordered { ord: 0 }).await;
+        send(Message::Ordered { ord: 1 }).await;
+        send(Message::Priority { priority: -1 }).await;
+        send(Message::Ordered { ord: 2 }).await;
+        send(Message::Broadcast { priority: 2 }).await;
+        send(Message::Broadcast { priority: 3 }).await;
+        send(Message::Broadcast { priority: 1 }).await;
+        send(Message::Priority { priority: 4 }).await;
+        send(Message::Broadcast { priority: 5 }).await;
+
+        fut
+    };
+
+    expected.sort();
+    expected.reverse();
+
+    assert_eq!(fut.await, expected);
+}
+
+#[tokio::test]
+async fn waiting_sender_order() {
+    let (addr, mut ctx) = Context::new(Some(1));
+    let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
+    let mut ele = Elephant::default();
+
+    // With ordered messages
+
+    let _ = addr
+        .send(Message::Ordered { ord: 0 })
+        .split_receiver()
+        .await;
+    let mut first = addr.send(Message::Ordered { ord: 1 }).split_receiver();
+    let mut second = addr.send(Message::Ordered { ord: 2 }).split_receiver();
+
+    assert!(first.poll_unpin(&mut fut_ctx).is_pending());
+    assert!(second.poll_unpin(&mut fut_ctx).is_pending());
+
+    ctx.yield_once(&mut ele).await;
+
+    assert!(second.poll_unpin(&mut fut_ctx).is_pending());
+    assert!(first.poll_unpin(&mut fut_ctx).is_ready());
+
+    // With priority
+
+    let _ = addr
+        .send_priority(Message::Priority { priority: 1 }, 1)
+        .split_receiver()
+        .await;
+    let mut lesser = addr
+        .send_priority(Message::Priority { priority: 1 }, 1)
+        .split_receiver();
+    let mut greater = addr
+        .send_priority(Message::Priority { priority: 2 }, 2)
+        .split_receiver();
+
+    assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
+    assert!(greater.poll_unpin(&mut fut_ctx).is_pending());
+
+    ctx.yield_once(&mut ele).await;
+
+    assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
+    assert!(greater.poll_unpin(&mut fut_ctx).is_ready());
+
+    // With broadcast
+
+    let _ = addr
+        .broadcast(Message::Broadcast { priority: 3 })
+        .priority(3)
+        .await;
+    let mut lesser = addr
+        .broadcast(Message::Broadcast { priority: 4 })
+        .priority(4)
+        .boxed();
+    let mut greater = addr
+        .broadcast(Message::Broadcast { priority: 5 })
+        .priority(5)
+        .boxed();
+
+    assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
+    assert!(greater.poll_unpin(&mut fut_ctx).is_pending());
+
+    ctx.yield_once(&mut ele).await;
+
+    assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
+    assert!(greater.poll_unpin(&mut fut_ctx).is_ready());
+}
+
+#[tokio::test]
+async fn broadcast_tail_advances_bound_1() {
+    let (addr, mut ctx) = Context::new(Some(1));
+    let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
+    let mut ngwevu = Elephant {
+        name: "Ngwevu",
+        msgs: vec![],
+    };
+
+    tokio::spawn(ctx.attach(Elephant::default()));
+
+    let _ = addr
+        .broadcast(Message::Broadcast { priority: -1 })
+        .priority(-1)
+        .await;
+
+    ctx.yield_once(&mut ngwevu).await;
+
+    assert_eq!(
+        addr.broadcast(Message::Broadcast { priority: 0 })
+            .priority(0)
+            .timeout(Duration::from_secs(2))
+            .await,
+        Some(Ok(())),
+        "New broadcast message should be accepted when queue is empty",
+    );
+
+    let mut lesser = addr
+        .broadcast(Message::Broadcast { priority: 1 })
+        .priority(1)
+        .boxed();
+    let mut greater = addr
+        .broadcast(Message::Broadcast { priority: 2 })
+        .priority(2)
+        .boxed();
+
+    assert!(
+        lesser.poll_unpin(&mut fut_ctx).is_pending(),
+        "Queue is full - should wait"
+    );
+    assert!(
+        greater.poll_unpin(&mut fut_ctx).is_pending(),
+        "Queue is full - should wait"
+    );
+
+    // Will handle the broadcast of priority 0 from earlier
+    ctx.yield_once(&mut ngwevu).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    assert!(
+        lesser.poll_unpin(&mut fut_ctx).is_pending(),
+        "Low prio - should wait"
+    );
+    assert!(
+        greater.poll_unpin(&mut fut_ctx).is_ready(),
+        "High prio - shouldn't wait"
+    );
+
+    // Should handle greater
+    ctx.yield_once(&mut ngwevu).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    assert!(
+        lesser.poll_unpin(&mut fut_ctx).is_ready(),
+        "Low prio should be sent in now"
+    );
+}
+
+#[tokio::test]
+async fn broadcast_tail_advances_bound_2() {
+    let (addr, mut ctx) = Context::new(Some(2));
+    let mut ngwevu = Elephant {
+        name: "Ngwevu",
+        msgs: vec![],
+    };
+
+    tokio::spawn(ctx.attach(Elephant::default()));
+
+    let _ = addr
+        .broadcast(Message::Broadcast { priority: 0 })
+        .priority(0)
+        .await;
+    let _ = addr
+        .broadcast(Message::Broadcast { priority: 0 })
+        .priority(0)
+        .await;
+
+    ctx.yield_once(&mut ngwevu).await;
+
+    assert_eq!(
+        addr.broadcast(Message::Broadcast { priority: 0 })
+            .priority(0)
+            .timeout(Duration::from_secs(2))
+            .await,
+        Some(Ok(())),
+        "New broadcast message should be accepted when queue has space",
+    );
+}
+
+#[tokio::test]
+async fn broadcast_tail_does_not_advance_unless_both_handle() {
+    let (addr, mut ctx) = Context::new(Some(2));
+    let mut ngwevu = Elephant {
+        name: "Ngwevu",
+        msgs: vec![],
+    };
+
+    let _fut = ctx.attach(Elephant::default());
+
+    let _ = addr
+        .broadcast(Message::Broadcast { priority: 0 })
+        .priority(0)
+        .await;
+    let _ = addr
+        .broadcast(Message::Broadcast { priority: 0 })
+        .priority(0)
+        .await;
+
+    ctx.yield_once(&mut ngwevu).await;
+
+    assert_eq!(
+        addr.broadcast(Message::Broadcast { priority: 0 }).priority(0).timeout(Duration::from_secs(2)).await,
+        None,
+        "New broadcast message should NOT be accepted since the other actor has not yet handled the message",
+    );
+}
+
 struct Greeter;
 
 #[async_trait]
@@ -403,6 +712,20 @@ async fn address_send_exercises_backpressure() {
         .split_receiver()
         .now_or_never()
         .expect("be able to queue another message because the mailbox is empty again");
+
+    context.yield_once(&mut Greeter).await; // process one message
+
+    // Sink
+    let mut sink = address.into_sink();
+    let _ = sink
+        .send(BroadcastHello("world"))
+        .now_or_never()
+        .expect("be able to queue another message because the mailbox is empty again");
+
+    assert!(
+        sink.send(BroadcastHello("world")).now_or_never().is_none(),
+        "Fail to queue 2nd message because mailbox is full"
+    );
 
     // Priority send
 
