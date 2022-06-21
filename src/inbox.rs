@@ -120,9 +120,6 @@ impl<A> Chan<A> {
     }
 }
 
-// TODO(perf): try and reduce contention on Inner as much as possible
-// Might be able to move some stuff out to atomics, or lock it separately. This should net some
-// overall performance gains, but these likely won't in crude_bench or any throughput testing
 struct ChanInner<A> {
     ordered_queue: VecDeque<MessageToOneActor<A>>,
     waiting_senders: VecDeque<Weak<Spinlock<WaitingSender<A>>>>,
@@ -209,7 +206,6 @@ impl<A> ChanInner<A> {
         Err(reason)
     }
 
-    // TODO get actor message type enum
     fn try_fulfill_sender(&mut self, for_type: MessageType) -> Option<SentMessage<A>> {
         self.waiting_senders
             .retain(|tx| Weak::strong_count(tx) != 0);

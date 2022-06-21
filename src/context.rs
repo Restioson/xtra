@@ -257,8 +257,6 @@ impl<A: Actor> Context<A> {
                 let mut next_msg = self.receiver.receive();
                 match future::select(fut, &mut next_msg).await {
                     Either::Left((future_res, _)) => {
-                        // TODO(?) should this be here? Preserves ordering but may increase time for
-                        // this future to return
                         if let Some(msg) = next_msg.cancel() {
                             self.tick(msg, actor).await;
                         }

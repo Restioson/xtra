@@ -334,7 +334,7 @@ where
         if let Poll::Ready(Err(Disconnected)) = self.0.poll_unpin(cx) {
             Poll::Ready(Err(Disconnected))
         } else if self.0.is_terminated() {
-            Poll::Ready(Ok(())) // TODO check disconnected
+            Poll::Ready(Ok(()))
         } else {
             Poll::Pending
         }

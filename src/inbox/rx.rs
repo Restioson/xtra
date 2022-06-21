@@ -166,7 +166,6 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                             return Poll::Ready(match reason {
                                 WakeReason::MessageToOneActor(msg) => msg.into(),
                                 WakeReason::MessageToAllActors => {
-                                    // TODO update diagram
                                     // The broadcast message could have been taken by another
                                     // receive future from the same receiver (or from another
                                     // receiver sharing the same broadcast mailbox)
@@ -335,7 +334,6 @@ impl RxRefCounter for RxWeak {
         RxWeak(())
     }
 
-    // TODO(doc)
     fn decrement<A>(&self, _inner: &Chan<A>) -> bool {
         false
     }

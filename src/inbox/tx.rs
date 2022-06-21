@@ -262,18 +262,24 @@ impl<A, Rc: TxRefCounter> FusedFuture for SendFuture<A, Rc> {
     }
 }
 
-/// TODO(doc)
+/// This trait represents the strength of an address's reference counting. It is an internal trait.
+/// There are two implementations of this trait: [`Weak`](TxWeak) and [`Strong`](TxStrong). These
+/// can be provided as the second type argument to [`Address`] in order to change how the address
+/// affects the actor's dropping. Read the docs of [`Address`] to find out more.
 pub trait TxRefCounter: RefCounterInner + Unpin + Debug + Send + Sync + 'static {}
 
 impl TxRefCounter for TxStrong {}
 impl TxRefCounter for TxWeak {}
 impl TxRefCounter for TxEither {}
 
-/// TODO(doc)
+/// The reference count of a strong address. Strong addresses will prevent the actor from being
+/// dropped as long as they live. Read the docs of [`Address`] to find
+/// out more.
 #[derive(Debug)]
 pub struct TxStrong(());
 
-/// TODO(doc)
+/// The reference count of a weak address. Weak addresses will bit prevent the actor from being
+/// dropped. Read the docs of [`Address`] to find out more.
 #[derive(Debug)]
 pub struct TxWeak(());
 
@@ -310,12 +316,12 @@ impl TxStrong {
     }
 }
 
-/// TODO(doc)
+/// A reference counter that can be dynamically either strong or weak.
 #[derive(Debug)]
 pub enum TxEither {
-    /// TODO(doc)
+    /// A strong reference counter.
     Strong(TxStrong),
-    /// TODO(doc)
+    /// A weak reference counter.
     Weak(TxWeak),
 }
 
@@ -332,9 +338,9 @@ mod private {
         /// Decrements the reference counter, returning whether the inner data should be dropped
         #[must_use = "If decrement returns false, the address must be disconnected"]
         fn decrement<A>(&self, inner: &Chan<A>) -> bool;
-        /// TODO(doc)
+        /// Converts this reference counter into a dynamic reference counter.
         fn into_either(self) -> TxEither;
-        /// TODO(doc)
+        /// Returns if this reference counter is a strong reference counter
         fn is_strong(&self) -> bool;
     }
 
