@@ -20,8 +20,7 @@ impl<A, M, Rc> BroadcastFuture<A, M, Rc>
 where
     Rc: TxRefCounter,
 {
-    /// TODO
-    pub fn new(message: M, sender: inbox::Sender<A, Rc>) -> Self {
+    pub(crate) fn new(message: M, sender: inbox::Sender<A, Rc>) -> Self {
         Self {
             inner: Inner::Initial {
                 message,
@@ -31,7 +30,9 @@ where
         }
     }
 
-    /// TODO
+    /// Set the priority of this broadcast.
+    ///
+    /// By default, broadcasts are sent with a priority of 0.
     pub fn priority(self, priority: i32) -> Self {
         match self.inner {
             Inner::Initial {
