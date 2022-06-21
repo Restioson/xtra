@@ -89,13 +89,13 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
         match shared_priority.cmp(&broadcast_priority) {
             // Shared priority is greater or equal (and it is not empty)
             Ordering::Greater | Ordering::Equal if shared_priority != Priority::Min => {
-                Ok(inner.pop_priority().unwrap().into())
+                Ok(inner.pop_priority(self.inner.capacity).unwrap().into())
             }
             // Shared priority is less - take from broadcast
             Ordering::Less => {
                 let msg = broadcast.pop().unwrap().0;
                 drop(broadcast);
-                inner.try_advance_broadcast_tail();
+                inner.try_advance_broadcast_tail(self.inner.capacity);
 
                 Ok(msg.into())
             }
@@ -177,7 +177,7 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                                                 .chan
                                                 .lock()
                                                 .unwrap()
-                                                .try_advance_broadcast_tail();
+                                                .try_advance_broadcast_tail(rx.inner.capacity);
                                             ActorMessage::ToAllActors(msg.0)
                                         }
                                         None => {
@@ -234,7 +234,10 @@ impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
         if let ReceiveFutureInner::Waiting { waiting, rx } =
             mem::replace(&mut self.0, ReceiveFutureInner::Complete)
         {
-            let mut inner = rx.inner.chan.lock().unwrap();
+            let mut inner = match rx.inner.chan.lock() {
+                Ok(lock) => lock,
+                Err(_) => return, // Poisoned - ignore
+            };
 
             // This receive future was woken with a message - send in back into the channel.
             // Ordering is compromised somewhat when concurrent receives are involved, and the cap

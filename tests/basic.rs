@@ -403,6 +403,7 @@ impl Handler<Message> for Elephant {
     type Return = ();
 
     async fn handle(&mut self, message: Message, _ctx: &mut Context<Self>) {
+        eprintln!("Handling {:?}", message);
         self.0.push(message);
     }
 }
@@ -451,6 +452,54 @@ async fn handle_order() {
     assert_eq!(fut.await, expected);
 }
 
+#[tokio::test]
+async fn waiting_sender_order() {
+    let (addr, mut ctx) = Context::new(Some(1));
+    let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
+    let mut ele = Elephant::default();
+
+    // With ordered messages
+
+    let _ = addr.send(Message::Ordered { ord: 0 }).split_receiver().await;
+    let mut first = addr.send(Message::Ordered { ord: 1 }).split_receiver();
+    let mut second = addr.send(Message::Ordered { ord: 2 }).split_receiver();
+
+    assert!(first.poll_unpin(&mut fut_ctx).is_pending());
+    assert!(second.poll_unpin(&mut fut_ctx).is_pending());
+
+    ctx.yield_once(&mut ele).await;
+
+    assert!(second.poll_unpin(&mut fut_ctx).is_pending());
+    assert!(first.poll_unpin(&mut fut_ctx).is_ready());
+
+    // With priority
+
+    let _ = addr.send_priority(Message::Priority { priority: 1 }, 1).split_receiver().await;
+    let mut lesser = addr.send_priority(Message::Priority { priority: 1 }, 1).split_receiver();
+    let mut greater = addr.send_priority(Message::Priority { priority: 2 }, 2).split_receiver();
+
+    assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
+    assert!(greater.poll_unpin(&mut fut_ctx).is_pending());
+
+    ctx.yield_once(&mut ele).await;
+
+    assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
+    assert!(greater.poll_unpin(&mut fut_ctx).is_ready());
+
+    // With broadcast
+
+    let _ = addr.broadcast(Message::Broadcast { priority: 3 }, 3).await;
+    let mut lesser = addr.broadcast(Message::Broadcast { priority: 4 }, 4).boxed();
+    let mut greater = addr.broadcast(Message::Broadcast { priority: 5 }, 5).boxed();
+
+    assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
+    assert!(greater.poll_unpin(&mut fut_ctx).is_pending());
+
+    ctx.yield_once(&mut ele).await;
+
+    assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
+    assert!(greater.poll_unpin(&mut fut_ctx).is_ready());
+}
 
 struct Greeter;
 
