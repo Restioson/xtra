@@ -183,14 +183,13 @@ impl<A> ChanInner<A> {
     }
 
     fn send_broadcast(&mut self, m: MessageToAllActors<A>) {
-        self.broadcast_queues
-            .retain(|queue| match queue.upgrade() {
-                Some(q) => {
-                    q.lock().push(m.clone());
-                    true
-                }
-                None => false, // The corresponding receiver has been dropped - remove it
-            });
+        self.broadcast_queues.retain(|queue| match queue.upgrade() {
+            Some(q) => {
+                q.lock().push(m.clone());
+                true
+            }
+            None => false, // The corresponding receiver has been dropped - remove it
+        });
 
         let waiting = mem::take(&mut self.waiting_receivers);
         for rx in waiting.into_iter().flat_map(|w| w.upgrade()) {
