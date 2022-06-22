@@ -1,4 +1,5 @@
-use crate::inbox::{rx::RxStrong, ActorMessage};
+use crate::inbox::ActorMessage;
+use crate::mailbox::{Mailbox, Message};
 use crate::{inbox, Actor, Address, Handler};
 use futures_util::future::{self, Either};
 use std::fmt;
@@ -14,10 +15,13 @@ use {futures_timer::Delay, std::time::Duration};
 /// closed**, as more actors that could still then be added to the address, so closing early, while
 /// maybe intuitive, would be subtly wrong.
 pub struct Context<A> {
-    /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
-    /// for it to call the `stopping` method on the actor
-    running: bool,
-    receiver: inbox::Receiver<A, RxStrong>,
+    /// Whether this actor is running. If set to `false`, [`Context::tick`] will return
+    /// `ControlFlow::Break` and [`Context::run`] will shut down the actor. This will not result
+    /// in other actors on the same address stopping, though - [`Context::stop_all`] must be used
+    /// to achieve this.
+    pub running: bool,
+    /// The actor's mailbox.
+    pub mailbox: Mailbox<A>,
 }
 
 impl<A: Actor> Context<A> {
@@ -41,7 +45,7 @@ impl<A: Actor> Context<A> {
     /// # async { // This does not actually run because there is nothing to assert
     /// let (addr, mut ctx) = Context::new(Some(32));
     /// for n in 0..3 {
-    ///     smol::spawn(ctx.attach(MyActor::new(n))).detach();
+    ///     smol::spawn(ctx.clone().run(MyActor::new(n))).detach();
     /// }
     /// ctx.run(MyActor::new(4)).await;
     /// # };
@@ -52,24 +56,14 @@ impl<A: Actor> Context<A> {
 
         let context = Context {
             running: true,
-            receiver: rx,
+            mailbox: Mailbox(rx),
         };
 
         (Address(tx), context)
     }
 
-    /// Attaches an actor of the same type listening to the same address as this actor is.
-    /// They will operate in a message-stealing fashion, with no message handled by two actors.
-    pub fn attach(&mut self, actor: A) -> impl Future<Output = A::Stop> {
-        let ctx = Context {
-            running: true,
-            receiver: self.receiver.cloned_new_broadcast_mailbox(),
-        };
-        ctx.run(actor)
-    }
-
     /// Stop this actor as soon as it has finished processing current message. This means that the
-    /// [`Actor::stopped`] method will be called.
+    /// [`Actor::stopped`] method will be called. This will not stop all actors on the address.
     pub fn stop_self(&mut self) {
         self.running = false;
     }
@@ -78,14 +72,14 @@ impl<A: Actor> Context<A> {
     /// all actors on this address.
     pub fn stop_all(&mut self) {
         // We only need to shut down if there are still any strong senders left
-        if let Some(sender) = self.receiver.sender() {
-            sender.shutdown_and_drain();
+        if let Ok(sender) = self.mailbox.address() {
+            sender.0.shutdown_and_drain();
         }
     }
 
     /// Get an address to the current actor if there are still external addresses to the actor.
     pub fn address(&self) -> Result<Address<A>, ActorShutdown> {
-        self.receiver.sender().ok_or(ActorShutdown).map(Address)
+        self.mailbox.address()
     }
 
     /// Run the given actor's main loop, handling incoming messages to its mailbox.
@@ -99,7 +93,7 @@ impl<A: Actor> Context<A> {
         }
 
         loop {
-            match self.tick(self.receiver.receive().await, &mut actor).await {
+            match self.tick(self.mailbox.next().await, &mut actor).await {
                 ControlFlow::Continue(()) => {}
                 ControlFlow::Break(()) => {
                     return actor.stopped().await;
@@ -109,8 +103,8 @@ impl<A: Actor> Context<A> {
     }
 
     /// Handle one message and return whether to exit from the manage loop or not.
-    async fn tick(&mut self, msg: ActorMessage<A>, actor: &mut A) -> ControlFlow<()> {
-        match msg {
+    pub async fn tick(&mut self, msg: Message<A>, actor: &mut A) -> ControlFlow<()> {
+        match msg.0 {
             ActorMessage::ToOneActor(msg) => msg.handle(actor, self).await,
             ActorMessage::ToAllActors(msg) => msg.handle(actor, self).await,
             ActorMessage::Shutdown => self.running = false,
@@ -125,7 +119,7 @@ impl<A: Actor> Context<A> {
 
     /// Yields to the manager to handle one message.
     pub async fn yield_once(&mut self, act: &mut A) {
-        self.tick(self.receiver.receive().await, act).await;
+        self.tick(self.mailbox.next().await, act).await;
     }
 
     /// Joins on a future by handling all incoming messages whilst polling it. The future will
@@ -254,7 +248,7 @@ impl<A: Actor> Context<A> {
     {
         while self.running {
             let (msg, unfinished) = {
-                let mut next_msg = self.receiver.receive();
+                let mut next_msg = self.mailbox.next();
                 match future::select(fut, &mut next_msg).await {
                     Either::Left((future_res, _)) => {
                         if let Some(msg) = next_msg.cancel() {
@@ -346,6 +340,15 @@ impl<A: Actor> Context<A> {
         };
 
         Ok(fut)
+    }
+}
+
+impl<A> Clone for Context<A> {
+    fn clone(&self) -> Self {
+        Context {
+            running: self.running,
+            mailbox: self.mailbox.cloned_new_broadcast_mailbox(),
+        }
     }
 }
 

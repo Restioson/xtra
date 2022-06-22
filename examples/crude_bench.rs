@@ -126,10 +126,10 @@ async fn do_parallel_address_benchmark<R>(
 ) where
     SendFuture<(), NameableSending<Counter, ()>, R>: Future,
 {
-    let (addr, mut ctx) = Context::new(None);
+    let (addr, ctx) = Context::new(None);
     let start = Instant::now();
     for _ in 0..workers {
-        tokio::spawn(ctx.attach(Counter { count: 0 }));
+        tokio::spawn(ctx.clone().run(Counter { count: 0 }));
     }
 
     for _ in 0..COUNT {

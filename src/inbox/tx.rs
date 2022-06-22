@@ -324,6 +324,12 @@ impl TxStrong {
     }
 }
 
+impl TxWeak {
+    pub(crate) fn new<A>(_inner: &Chan<A>) -> TxWeak {
+        TxWeak(())
+    }
+}
+
 /// A reference counter that can be dynamically either strong or weak.
 #[derive(Debug)]
 pub enum TxEither {

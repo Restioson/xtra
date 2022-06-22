@@ -181,8 +181,8 @@ async fn do_not_handle_drained_messages() {
 
     assert_eq!(fut.await, 5);
 
-    let (addr, mut ctx) = Context::new(None);
-    let fut1 = ctx.attach(Accumulator(0));
+    let (addr, ctx) = Context::new(None);
+    let fut1 = ctx.clone().run(Accumulator(0));
     let fut2 = ctx.run(Accumulator(0));
 
     for _ in 0..5 {
@@ -253,8 +253,8 @@ async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
 
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self() {
-    let (address, mut ctx) = Context::new(None);
-    tokio::spawn(ctx.attach(ActorStopSelf));
+    let (address, ctx) = Context::new(None);
+    tokio::spawn(ctx.clone().run(ActorStopSelf));
     tokio::spawn(ctx.run(ActorStopSelf));
     address.send(StopSelf).await.unwrap();
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -268,9 +268,9 @@ async fn two_actors_on_address_with_stop_self() {
 
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self_context_alive() {
-    let (address, mut ctx) = Context::new(None);
-    tokio::spawn(ctx.attach(ActorStopSelf));
-    tokio::spawn(ctx.attach(ActorStopSelf)); // Context not dropped here
+    let (address, ctx) = Context::new(None);
+    tokio::spawn(ctx.clone().run(ActorStopSelf));
+    tokio::spawn(ctx.clone().run(ActorStopSelf)); // Context not dropped here
     address.send(StopSelf).await.unwrap();
     tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -571,7 +571,7 @@ async fn broadcast_tail_advances_bound_1() {
         msgs: vec![],
     };
 
-    tokio::spawn(ctx.attach(Elephant::default()));
+    tokio::spawn(ctx.clone().run(Elephant::default()));
 
     let _ = addr
         .broadcast(Message::Broadcast { priority: 0 })
@@ -638,7 +638,7 @@ async fn broadcast_tail_advances_bound_2() {
         msgs: vec![],
     };
 
-    tokio::spawn(ctx.attach(Elephant::default()));
+    tokio::spawn(ctx.clone().run(Elephant::default()));
 
     let _ = addr
         .broadcast(Message::Broadcast { priority: 0 })
@@ -669,7 +669,7 @@ async fn broadcast_tail_does_not_advance_unless_both_handle() {
         msgs: vec![],
     };
 
-    let _fut = ctx.attach(Elephant::default());
+    let _fut = ctx.clone().run(Elephant::default());
 
     let _ = addr
         .broadcast(Message::Broadcast { priority: 0 })
@@ -923,17 +923,17 @@ impl Actor for StopInStarted {
 
 #[tokio::test]
 async fn stop_all_stops_immediately() {
-    let (_address, mut ctx) = Context::new(None);
+    let (_address, ctx) = Context::new(None);
 
-    let fut1 = ctx.attach(InstantShutdownAll {
+    let fut1 = ctx.clone().run(InstantShutdownAll {
         stop_all: true,
         number: 1,
     });
-    let fut2 = ctx.attach(InstantShutdownAll {
+    let fut2 = ctx.clone().run(InstantShutdownAll {
         stop_all: false,
         number: 2,
     });
-    let fut3 = ctx.attach(InstantShutdownAll {
+    let fut3 = ctx.run(InstantShutdownAll {
         stop_all: false,
         number: 3,
     });

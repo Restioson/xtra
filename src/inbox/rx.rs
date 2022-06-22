@@ -1,3 +1,4 @@
+use crate::inbox::tx::TxWeak;
 use crate::inbox::*;
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
@@ -34,6 +35,13 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
             inner: self.inner.clone(),
             rc: TxStrong::try_new(&self.inner)?,
         })
+    }
+
+    pub fn weak_sender(&self) -> Sender<A, TxWeak> {
+        Sender {
+            inner: self.inner.clone(),
+            rc: TxWeak::new(&self.inner),
+        }
     }
 
     /// Clone this receiver, keeping its broadcast mailbox.
@@ -204,13 +212,7 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
 }
 
 impl<A, Rc: RxRefCounter> ReceiveFuture<A, Rc> {
-    /// Cancel the receiving future, returning a message if it had been fulfilled with one, but had
-    /// not yet been polled after wakeup. Future calls to `Future::poll` will return `Poll::Pending`,
-    /// and `FusedFuture::is_terminated` will return `true`.
-    ///
-    /// This is important to do over `Drop`, as with `Drop` messages may be sent back into the
-    /// channel and could be observed as received out of order, if multiple receives are concurrent
-    /// on one thread.
+    /// See docs on mailbox::ReceiveFuture::cancel for more
     #[must_use = "If dropped, messages could be lost"]
     pub fn cancel(&mut self) -> Option<ActorMessage<A>> {
         if let ReceiveFutureInner::Waiting { waiting, .. } =
