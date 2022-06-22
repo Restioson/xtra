@@ -46,7 +46,7 @@ async fn main() {
     repeat(10)
         .take(4)
         .map(|number| Ok(Add(number)))
-        .forward(addr.clone())
+        .forward(addr.clone().into_sink())
         .await
         .unwrap();
 

@@ -5,7 +5,7 @@ For better ergonomics with xtra, try the [spaad](https://crates.io/crates/spaad)
 
 ## Features
 - Safe: there is no unsafe code in xtra.
-- Tiny: xtra is less than 2kloc.
+- Tiny: xtra is around 2kloc.
 - Lightweight: xtra has few dependencies, most of which are lightweight (except `futures`).
 - Asynchronous and synchronous message handlers.
 - Simple asynchronous message handling interface which allows `async`/`await` syntax even when borrowing `self`.
@@ -32,7 +32,11 @@ impl Printer {
     }
 }
 
-impl Actor for Printer {}
+#[async_trait]
+impl Actor for Printer {
+    type Stop = ();
+    async fn stopped(self) {}
+}
 
 struct Print(String);
 
@@ -41,7 +45,7 @@ impl Handler<Print> for Printer {
     type Return = ();
 
     async fn handle(&mut self, print: Print, _ctx: &mut Context<Self>) {
-        self.times += 1; // no ActorFuture or anything just to access `self`
+        self.times += 1;
         println!("Printing {}. Printed {} times so far.", print.0, self.times);
     }
 }

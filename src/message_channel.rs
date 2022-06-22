@@ -2,19 +2,15 @@
 //! any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
 //! the message type rather than the actor type.
 
-use std::fmt::Debug;
-
+use crate::address::{ActorJoinHandle, Address, WeakAddress};
+use crate::envelope::ReturningEnvelope;
+use crate::inbox::{PriorityMessageToOne, SentMessage};
+use crate::refcount::{RefCounter, Strong};
+use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture};
+use crate::{Handler, KeepRunning};
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
-
-use crate::address::{Address, WeakAddress};
-use crate::envelope::ReturningEnvelope;
-use crate::manager::AddressMessage;
-use crate::private::Sealed;
-use crate::receiver::Receiver;
-use crate::refcount::{RefCounter, Shared, Strong};
-use crate::send_future::{ResolveToHandlerReturn, SendFuture};
-use crate::{Handler, KeepRunning};
+use std::fmt::Debug;
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
@@ -40,7 +36,7 @@ use crate::{Handler, KeepRunning};
 /// #[async_trait]
 /// impl Actor for Alice {
 ///     type Stop = ();
-///     async fn stopped(self) -> Self::Stop {
+///     async fn stopped(self) {
 ///         println!("Oh no");
 ///     }
 /// }
@@ -78,7 +74,9 @@ use crate::{Handler, KeepRunning};
 ///     })
 /// }
 /// ```
-pub trait MessageChannel<M>: Sealed + Unpin + Debug + Send {
+pub trait MessageChannel<M>:
+    private::IsStrong + private::ToInnerPtr + Unpin + Debug + Send
+{
     /// The return value of the handler for `M`.
     type Return: Send + 'static;
     /// Returns whether the actor referred to by this address is running and accepting messages.
@@ -108,7 +106,7 @@ pub trait MessageChannel<M>: Sealed + Unpin + Debug + Send {
     fn send(
         &self,
         message: M,
-    ) -> SendFuture<Self::Return, BoxFuture<'static, Receiver<Self::Return>>, ResolveToHandlerReturn>;
+    ) -> SendFuture<Self::Return, ActorErasedSending<Self::Return>, ResolveToHandlerReturn>;
 
     /// Attaches a stream to this channel such that all messages produced by it are forwarded to the
     /// actor. This could, for instance, be used to forward messages from a socket to the actor
@@ -127,12 +125,18 @@ pub trait MessageChannel<M>: Sealed + Unpin + Debug + Send {
     /// Clones this channel as a boxed trait object.
     fn clone_channel(&self) -> Box<dyn MessageChannel<M, Return = Self::Return>>;
 
-    /// Determines whether this and the other message channel address the same actor mailbox.
-    fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool;
+    /// Waits until this [`MessageChannel`] becomes disconnected.
+    fn join(&self) -> ActorJoinHandle;
 
-    /// This is an internal method and should never be called manually.
-    #[doc(hidden)]
-    fn _ref_counter_eq(&self, other: *const Shared) -> bool;
+    /// Determines whether this and the other message channel address the same actor mailbox.
+    fn same_actor(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool;
+
+    /// Determines whether this and the other message channel address the same actor mailbox **and**
+    /// they have reference count type equality. This means that this will only return true if
+    /// [`MessageChannel::same_actor`] returns true **and** if they both have weak or strong reference
+    /// counts. [`Either`](crate::refcount::Either) will compare as whichever reference count type
+    /// it wraps.
+    fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool;
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
@@ -202,25 +206,13 @@ where
     fn send(
         &self,
         message: M,
-    ) -> SendFuture<R, BoxFuture<'static, Receiver<R>>, ResolveToHandlerReturn> {
-        if self.is_connected() {
-            let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
-            let sending = self
-                .sink
-                .sender()
-                .clone()
-                .into_send_async(AddressMessage::Message(Box::new(envelope)));
+    ) -> SendFuture<R, ActorErasedSending<Self::Return>, ResolveToHandlerReturn> {
+        let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
+        let msg = PriorityMessageToOne::new(0, Box::new(envelope));
+        let sending = self.0.send(SentMessage::ToOneActor(msg));
 
-            #[allow(clippy::async_yields_async)] // We only want to await the sending.
-            SendFuture::sending_boxed(async move {
-                match sending.await {
-                    Ok(()) => Receiver::new(rx),
-                    Err(_) => Receiver::disconnected(),
-                }
-            })
-        } else {
-            SendFuture::disconnected()
-        }
+        #[allow(clippy::async_yields_async)] // We only want to await the sending.
+        SendFuture::sending_erased(sending, rx)
     }
 
     fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
@@ -234,12 +226,47 @@ where
         Box::new(self.clone())
     }
 
-    fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
-        other._ref_counter_eq(self.ref_counter.as_ptr())
+    fn join(&self) -> ActorJoinHandle {
+        self.join()
     }
 
-    fn _ref_counter_eq(&self, other: *const Shared) -> bool {
-        self.ref_counter.as_ptr() == other
+    fn same_actor(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
+        use private::ToInnerPtr;
+
+        self.to_inner_ptr() == other.to_inner_ptr()
+    }
+
+    fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
+        use private::IsStrong;
+
+        MessageChannel::same_actor(self, other) && (self.is_strong() == other.is_strong())
+    }
+}
+
+/// Contains crate-private traits to allow implementations of [`MessageChannel::same_actor`] and [`MessageChannel::eq`].
+///
+/// Both of these functions only operate on type-erased [`MessageChannel`]s and thus cannot access the underlying [`Address`].
+mod private {
+    use super::*;
+
+    pub trait IsStrong {
+        fn is_strong(&self) -> bool;
+    }
+
+    pub trait ToInnerPtr {
+        fn to_inner_ptr(&self) -> *const ();
+    }
+
+    impl<A, Rc: RefCounter> IsStrong for Address<A, Rc> {
+        fn is_strong(&self) -> bool {
+            self.0.is_strong()
+        }
+    }
+
+    impl<A, Rc: RefCounter> ToInnerPtr for Address<A, Rc> {
+        fn to_inner_ptr(&self) -> *const () {
+            self.0.inner_ptr() as *const ()
+        }
     }
 }
 

@@ -30,8 +30,7 @@ impl Handler<Greet> for Greeter {
 #[tokio::main]
 async fn main() {
     let addr = Greeter::default().create(None).spawn(&mut Tokio::Global);
-
-    greeter_stream(500).forward(addr).await.unwrap();
+    greeter_stream(500).forward(addr.into_sink()).await.unwrap();
 }
 
 fn greeter_stream(delay: u64) -> impl Stream<Item = Result<Greet, Disconnected>> {

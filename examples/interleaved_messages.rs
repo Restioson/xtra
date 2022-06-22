@@ -43,8 +43,7 @@ impl Handler<Initialized> for ActorB {
     async fn handle(&mut self, m: Initialized, ctx: &mut Context<Self>) {
         println!("ActorB: Initialized");
         let actor_a = m.0;
-        let send = actor_a.send(Hello);
-        ctx.join(self, send).await.unwrap();
+        ctx.join(self, actor_a.send(Hello)).await.unwrap();
     }
 }
 

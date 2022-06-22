@@ -1,12 +1,10 @@
-use std::time::{Duration, Instant};
-
-use futures_core::future::BoxFuture;
+use futures_util::FutureExt;
 use std::future::Future;
+use std::time::{Duration, Instant};
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
-use xtra::NameableSending;
-use xtra::Receiver;
 use xtra::SendFuture;
+use xtra::{ActorErasedSending, NameableSending};
 
 struct Counter {
     count: usize,
@@ -94,7 +92,7 @@ impl Handler<TimeReturn> for ReturnTimer {
     }
 }
 
-const COUNT: usize = 50_000_000; // May take a while on some machines
+const COUNT: usize = 10_000_000; // May take a while on some machines
 
 async fn do_address_benchmark<R>(
     name: &str,
@@ -108,7 +106,7 @@ async fn do_address_benchmark<R>(
 
     // rounding overflow
     for _ in 0..COUNT {
-        let _ = f(&addr).await;
+        let _ = f(&addr).now_or_never();
     }
 
     // awaiting on GetCount will make sure all previous messages are processed first BUT introduces
@@ -149,13 +147,11 @@ async fn do_parallel_address_benchmark<R>(
 
 async fn do_channel_benchmark<M, RM>(
     name: &str,
-    f: impl Fn(
-        &dyn MessageChannel<M, Return = ()>,
-    ) -> SendFuture<(), BoxFuture<'static, Receiver<()>>, RM>,
+    f: impl Fn(&dyn MessageChannel<M, Return = ()>) -> SendFuture<(), ActorErasedSending<()>, RM>,
 ) where
     Counter: Handler<M, Return = ()> + Send,
     M: Send + 'static,
-    SendFuture<(), BoxFuture<'static, Receiver<()>>, RM>: Future,
+    SendFuture<(), ActorErasedSending<()>, RM>: Future,
 {
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
     let chan = &addr as &dyn MessageChannel<M, Return = ()>;

@@ -1,10 +1,12 @@
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use catty::{Receiver, Sender};
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 
 use crate::context::Context;
+use crate::inbox::HasPriority;
 use crate::{Actor, Handler};
 
 /// A message envelope is a struct that encapsulates a message and its return channel sender (if applicable).
@@ -13,7 +15,7 @@ use crate::{Actor, Handler};
 /// allows us to erase the type of the message when this is in dyn Trait format, thereby being able to
 /// use only one channel to send all the kinds of messages that the actor can receives. This does,
 /// however, induce a bit of allocation (as envelopes have to be boxed).
-pub(crate) trait MessageEnvelope: Send {
+pub trait MessageEnvelope: Send {
     /// The type of actor that this envelope carries a message for
     type Actor;
 
@@ -47,14 +49,14 @@ pub(crate) trait MessageEnvelope: Send {
 }
 
 /// An envelope that returns a result from a message. Constructed by the `AddressExt::do_send` method.
-pub(crate) struct ReturningEnvelope<A: Actor, M, R> {
+pub struct ReturningEnvelope<A, M, R> {
     message: M,
     result_sender: Sender<R>,
     phantom: PhantomData<fn() -> A>,
 }
 
 impl<A: Actor, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
-    pub(crate) fn new(message: M) -> (Self, Receiver<R>) {
+    pub fn new(message: M) -> (Self, Receiver<R>) {
         let (tx, rx) = catty::oneshot();
         let envelope = ReturningEnvelope {
             message,
@@ -90,13 +92,13 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
 
 /// An envelope that does not return a result from a message. Constructed  by the `AddressExt::do_send`
 /// method.
-pub(crate) struct NonReturningEnvelope<A: Actor, M> {
+pub struct NonReturningEnvelope<A, M> {
     message: M,
     phantom: PhantomData<fn() -> A>,
 }
 
 impl<A: Actor, M> NonReturningEnvelope<A, M> {
-    pub(crate) fn new(message: M) -> Self {
+    pub fn new(message: M) -> Self {
         NonReturningEnvelope {
             message,
             phantom: PhantomData,
@@ -116,24 +118,51 @@ impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<
     }
 }
 
-/// Like MessageEnvelope, but can be cloned.
-pub(crate) trait BroadcastMessageEnvelope: MessageEnvelope + Sync {
-    fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>>;
+/// Like MessageEnvelope, but with an Arc instead of Box
+pub trait BroadcastEnvelope: HasPriority + Send + Sync {
+    type Actor;
+
+    fn handle<'a>(
+        self: Arc<Self>,
+        act: &'a mut Self::Actor,
+        ctx: &'a mut Context<Self::Actor>,
+    ) -> BoxFuture<'a, ()>;
 }
 
-impl<A: Handler<M>, M: Send + 'static + Clone + Sync> BroadcastMessageEnvelope
-    for NonReturningEnvelope<A, M>
-{
-    fn clone(&self) -> Box<dyn BroadcastMessageEnvelope<Actor = Self::Actor>> {
-        Box::new(NonReturningEnvelope {
-            message: self.message.clone(),
+pub struct BroadcastEnvelopeConcrete<A, M> {
+    message: M,
+    priority: u32,
+    phantom: PhantomData<fn() -> A>,
+}
+
+impl<A, M> BroadcastEnvelopeConcrete<A, M> {
+    pub fn new(message: M, priority: u32) -> Self {
+        BroadcastEnvelopeConcrete {
+            message,
+            priority,
             phantom: PhantomData,
-        })
+        }
     }
 }
 
-impl<A> Clone for Box<dyn BroadcastMessageEnvelope<Actor = A>> {
-    fn clone(&self) -> Self {
-        BroadcastMessageEnvelope::clone(&**self)
+impl<A: Handler<M>, M> BroadcastEnvelope for BroadcastEnvelopeConcrete<A, M>
+where
+    A: Handler<M, Return = ()>,
+    M: Clone + Send + Sync + 'static,
+{
+    type Actor = A;
+
+    fn handle<'a>(
+        self: Arc<Self>,
+        act: &'a mut Self::Actor,
+        ctx: &'a mut Context<Self::Actor>,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(act.handle(self.message.clone(), ctx))
+    }
+}
+
+impl<A, M> HasPriority for BroadcastEnvelopeConcrete<A, M> {
+    fn priority(&self) -> u32 {
+        self.priority
     }
 }
