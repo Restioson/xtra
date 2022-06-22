@@ -939,8 +939,8 @@ async fn stop_all_stops_immediately() {
     });
 
     fut1.now_or_never().expect("Should stop immediately");
-    fut2.now_or_never().expect("Should stop immediately"); // if it stops immediately, this returns `Some`
-    fut3.now_or_never().expect("Should stop immediately"); // if it stops immediately, this returns `Some`
+    fut2.now_or_never().expect("Should stop immediately");
+    fut3.now_or_never().expect("Should stop immediately");
 }
 
 struct InstantShutdownAll {
