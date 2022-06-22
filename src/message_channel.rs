@@ -212,7 +212,7 @@ where
         let sending = self.0.send(SentMessage::ToOneActor(msg));
 
         #[allow(clippy::async_yields_async)] // We only want to await the sending.
-        SendFuture::sending_boxed(sending, rx)
+        SendFuture::sending_erased(sending, rx)
     }
 
     fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>

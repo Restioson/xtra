@@ -165,7 +165,8 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         Address(self.0.clone().into_either_rc())
     }
 
-    /// Send a message to the actor with a given priority.
+    /// Send a message to the actor. The message will, by default, have a priority of 0 and be sent
+    /// into the ordered queue. This can be configured through [`SendFuture::priority`].
     ///
     /// The actor must implement [`Handler<Message>`] for this to work.
     ///

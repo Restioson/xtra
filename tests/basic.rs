@@ -99,7 +99,7 @@ impl Handler<StopSelf> for DropTester {
     type Return = ();
 
     async fn handle(&mut self, _: StopSelf, ctx: &mut Context<Self>) {
-        ctx.stop_all();
+        ctx.stop_self();
     }
 }
 
@@ -922,7 +922,7 @@ impl Actor for StopInStarted {
 }
 
 #[tokio::test]
-async fn stop_all_in_stopping_actor_stops_immediately() {
+async fn stop_all_stops_immediately() {
     let (_address, mut ctx) = Context::new(None);
 
     let fut1 = ctx.attach(InstantShutdownAll {
@@ -938,9 +938,9 @@ async fn stop_all_in_stopping_actor_stops_immediately() {
         number: 3,
     });
 
-    fut1.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
-    fut2.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
-    fut3.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
+    fut1.now_or_never().expect("Should stop immediately");
+    fut2.now_or_never().expect("Should stop immediately"); // if it stops immediately, this returns `Some`
+    fut3.now_or_never().expect("Should stop immediately"); // if it stops immediately, this returns `Some`
 }
 
 struct InstantShutdownAll {

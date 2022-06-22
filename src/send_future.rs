@@ -84,7 +84,7 @@ where
 }
 
 impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
-    pub(crate) fn sending_boxed<F>(sending: F, rx: catty::Receiver<R>) -> Self
+    pub(crate) fn sending_erased<F>(sending: F, rx: catty::Receiver<R>) -> Self
     where
         F: SendingWithSetPriority<Result<(), Disconnected>>,
     {
