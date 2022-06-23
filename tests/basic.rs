@@ -5,12 +5,11 @@ use std::task::Poll;
 use std::time::Duration;
 
 use futures_util::task::noop_waker_ref;
-use futures_util::{FutureExt, SinkExt};
+use futures_util::{FutureExt, SinkExt, StreamExt};
 use smol::stream;
 use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::KeepRunning;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
@@ -216,11 +215,9 @@ impl Actor for StreamCancelTester {
 
 #[async_trait]
 impl Handler<StreamCancelMessage> for StreamCancelTester {
-    type Return = KeepRunning;
+    type Return = ();
 
-    async fn handle(&mut self, _: StreamCancelMessage, _: &mut Context<Self>) -> KeepRunning {
-        KeepRunning::Yes
-    }
+    async fn handle(&mut self, _: StreamCancelMessage, _: &mut Context<Self>) {}
 }
 
 #[tokio::test]
@@ -230,8 +227,9 @@ async fn test_stream_cancel_join() {
     let addr2 = addr.clone().downgrade();
     // attach a stream that blocks forever
     let handle = tokio::spawn(async move {
-        addr2
-            .attach_stream(stream::pending::<StreamCancelMessage>())
+        stream::pending::<StreamCancelMessage>()
+            .map(Ok)
+            .forward(addr2.into_sink())
             .await
     });
     drop(addr); // stop the actor

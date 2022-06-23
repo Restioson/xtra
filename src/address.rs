@@ -10,15 +10,15 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use event_listener::EventListener;
-use futures_core::{FusedFuture, Stream};
+use futures_core::FusedFuture;
 use futures_sink::Sink;
-use futures_util::{future, FutureExt, StreamExt};
+use futures_util::FutureExt;
 
 use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
-use crate::{inbox, BroadcastFuture, Handler, KeepRunning, NameableSending, SendFuture};
+use crate::{inbox, BroadcastFuture, Handler, NameableSending, SendFuture};
 
 /// The actor is no longer running and disconnected from the sending address.
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -200,40 +200,6 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         A: Handler<M, Return = ()>,
     {
         BroadcastFuture::new(msg, self.0.clone())
-    }
-
-    /// Attaches a stream to this actor such that all messages produced by it are forwarded to the
-    /// actor. This could, for instance, be used to forward messages from a socket to the actor
-    /// (after the messages have been appropriately `map`ped). This is a convenience method over
-    /// explicitly forwarding a stream to this address and checking when to stop forwarding.
-    ///
-    /// Often, this should be spawned onto an executor to run in the background. **Do not await this
-    /// inside of an actor** - this will cause it to await forever and never receive any messages.
-    ///
-    /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
-    /// method should be called on [`Address`]. Otherwise, it should be called
-    /// on [`WeakAddress`].
-    pub async fn attach_stream<S, M, K>(self, stream: S)
-    where
-        K: Into<KeepRunning> + Send,
-        M: Send + 'static,
-        A: Handler<M, Return = K>,
-        S: Stream<Item = M> + Send,
-    {
-        let mut stopped = self.join();
-        futures_util::pin_mut!(stream);
-
-        loop {
-            if let future::Either::Left((Some(m), _)) =
-                future::select(&mut stream.next(), &mut stopped).await
-            {
-                let res = self.send(m); // Bound to make it Sync
-                if matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
-                    continue;
-                }
-            }
-            break;
-        }
     }
 
     /// Waits until this address becomes disconnected. Note that if this is called on a strong
