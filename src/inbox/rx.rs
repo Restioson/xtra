@@ -1,7 +1,3 @@
-use crate::inbox::tx::TxWeak;
-use crate::inbox::*;
-use futures_core::FusedFuture;
-use futures_util::FutureExt;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::future::Future;
@@ -9,6 +5,12 @@ use std::pin::Pin;
 use std::sync::{atomic, Arc};
 use std::task::{Context, Poll, Waker};
 use std::{cmp, mem};
+
+use futures_core::FusedFuture;
+use futures_util::FutureExt;
+
+use crate::inbox::tx::TxWeak;
+use crate::inbox::*;
 
 pub struct Receiver<A, Rc: RxRefCounter> {
     pub(super) inner: Arc<Chan<A>>,

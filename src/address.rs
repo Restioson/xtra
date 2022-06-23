@@ -1,15 +1,6 @@
 //! An address to an actor is a way to send it a message. An address allows an actor to be sent any
 //! kind of message that it can receive.
 
-use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
-use crate::inbox::{PriorityMessageToOne, SentMessage};
-use crate::refcount::{Either, RefCounter, Strong, Weak};
-use crate::send_future::ResolveToHandlerReturn;
-use crate::{inbox, BroadcastFuture, Handler, KeepRunning, NameableSending, SendFuture};
-use event_listener::EventListener;
-use futures_core::{FusedFuture, Stream};
-use futures_sink::Sink;
-use futures_util::{future, FutureExt, StreamExt};
 use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt::{self, Debug, Display, Formatter};
@@ -17,6 +8,17 @@ use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+use event_listener::EventListener;
+use futures_core::{FusedFuture, Stream};
+use futures_sink::Sink;
+use futures_util::{future, FutureExt, StreamExt};
+
+use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
+use crate::inbox::{PriorityMessageToOne, SentMessage};
+use crate::refcount::{Either, RefCounter, Strong, Weak};
+use crate::send_future::ResolveToHandlerReturn;
+use crate::{inbox, BroadcastFuture, Handler, KeepRunning, NameableSending, SendFuture};
 
 /// The actor is no longer running and disconnected from the sending address. For why this could
 /// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and

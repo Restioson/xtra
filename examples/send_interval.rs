@@ -1,7 +1,8 @@
+use std::time::Duration;
+
 use futures_core::Stream;
 use futures_util::stream::repeat;
 use futures_util::StreamExt;
-use std::time::Duration;
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
 use xtra::Disconnected;

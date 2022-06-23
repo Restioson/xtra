@@ -1,9 +1,11 @@
-use crate::address::{ActorJoinHandle, Address};
-use crate::refcount::RefCounter;
-use futures_util::FutureExt;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+use futures_util::FutureExt;
+
+use crate::address::{ActorJoinHandle, Address};
+use crate::refcount::RefCounter;
 
 /// Scope a given task to the lifecycle of an actor - see [`ScopedTask`].
 pub fn scoped<A, Rc, F, R>(address: &Address<A, Rc>, task: F) -> ScopedTask<F>

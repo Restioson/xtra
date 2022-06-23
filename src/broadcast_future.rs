@@ -1,14 +1,16 @@
-use crate::envelope::BroadcastEnvelopeConcrete;
-use crate::inbox::tx::TxRefCounter;
-use crate::inbox::{SendFuture, SentMessage};
-use crate::{inbox, Disconnected, Handler};
-use futures_core::FusedFuture;
-use futures_util::FutureExt;
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+
+use futures_core::FusedFuture;
+use futures_util::FutureExt;
+
+use crate::envelope::BroadcastEnvelopeConcrete;
+use crate::inbox::tx::TxRefCounter;
+use crate::inbox::{SendFuture, SentMessage};
+use crate::{inbox, Disconnected, Handler};
 
 /// A [`Future`] that represents the state of broadcasting a message to all actors connected to an
 /// [`Address`](crate::Address).
