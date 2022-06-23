@@ -14,6 +14,7 @@
 - Previously, `stop_all` would immediately disconnect the address. However, `stop_self` done on every actor would actually
   not do this in one case - if there were a free-floating (not executing an actor event loop) Context. This change brings
   `stop_all` in line with `stop_self`.
+- `InstrumentedExt` was removed. All messages are now instrumented automatically when `with-tracing-0_1` is enabled.
 
 ## 0.5.0
 

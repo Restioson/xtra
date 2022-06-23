@@ -53,7 +53,7 @@ pub trait MessageEnvelope: Send {
 #[cfg(feature = "with-tracing-0_1")]
 struct Instrumentation {
     parent: Span,
-    in_queue: Span,
+    _in_queue: Span,
 }
 
 #[cfg(feature = "with-tracing-0_1")]
@@ -74,9 +74,11 @@ impl Instrumentation {
             actor = std::any::type_name::<A>(),
             message = std::any::type_name::<M>(),
         );
-        let _ = in_queue.enter(); // Enter now to start the span up TODO is this needed?
 
-        Instrumentation { parent, in_queue }
+        Instrumentation {
+            parent,
+            _in_queue: in_queue,
+        }
     }
 }
 
@@ -133,8 +135,7 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
 
         #[cfg(feature = "with-tracing-0_1")]
         let fut = {
-            let _ = instrumentation.in_queue.entered();
-            let parent = instrumentation.parent;
+            let Instrumentation { parent, .. } = instrumentation;
             let executing = debug_span!(
                 parent: &parent,
                 "xtra message handler",
@@ -193,8 +194,7 @@ impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<
 
         #[cfg(feature = "with-tracing-0_1")]
         let fut = {
-            let _ = instrumentation.in_queue.entered();
-            let parent = instrumentation.parent;
+            let Instrumentation { parent, .. } = instrumentation;
             let executing = debug_span!(parent: parent, "actor_message_handler");
             fut.instrument(executing)
         };
