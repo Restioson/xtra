@@ -62,10 +62,10 @@ impl Instrumentation {
         let parent = debug_span!(parent: Span::current(), "xtra actor request");
         // TODO rename: this is technically from send() not in queue alone. Counts waiting to get in
         // to queue too.
-        let in_queue = debug_span!(parent: parent.clone(), "xtra message in queue");
+        let in_queue = debug_span!(parent: &parent, "xtra message in queue");
         let _ = in_queue.enter(); // Enter now to start the span up TODO is this needed?
 
-        Instrumentation { parent, in_queue, }
+        Instrumentation { parent, in_queue }
     }
 }
 
