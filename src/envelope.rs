@@ -4,9 +4,8 @@ use std::sync::Arc;
 use catty::{Receiver, Sender};
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
-use tracing::Instrument;
 #[cfg(feature = "with-tracing-0_1")]
-use tracing::{debug_span, Span};
+use tracing::{debug_span, Span, Instrument};
 
 use crate::context::Context;
 use crate::inbox::HasPriority;
