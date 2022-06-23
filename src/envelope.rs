@@ -59,15 +59,13 @@ struct Instrumentation {
 #[cfg(feature = "with-tracing-0_1")]
 impl Instrumentation {
     fn new() -> Self {
+        let parent = debug_span!(parent: Span::current(), "xtra actor request");
         // TODO rename: this is technically from send() not in queue alone. Counts waiting to get in
         // to queue too.
-        let in_queue = debug_span!(parent: Span::current(), "actor_message_in_queue");
+        let in_queue = debug_span!(parent: parent.clone(), "xtra message in queue");
         let _ = in_queue.enter(); // Enter now to start the span up TODO is this needed?
 
-        Instrumentation {
-            parent: Span::current(),
-            in_queue,
-        }
+        Instrumentation { parent, in_queue, }
     }
 }
 
@@ -126,7 +124,7 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
         let fut = {
             let _ = instrumentation.in_queue.entered();
             let parent = instrumentation.parent;
-            let executing = debug_span!(parent: parent, "actor_message_handler");
+            let executing = debug_span!(parent: parent, "Xtra message handler");
             fut.instrument(executing)
         };
 
