@@ -133,9 +133,8 @@ impl<A: Actor> Context<A> {
     /// Joins on a future by handling all incoming messages whilst polling it. The future will
     /// always be polled to completion, even if the actor is stopped. If the actor is stopped,
     /// handling of messages will cease, and only the future will be polled. It is somewhat
-    /// analagous to [`futures::join`](https://docs.rs/futures/latest/futures/macro.join.html),
-    /// but it will not wait for the incoming stream of messages from addresses to end before
-    /// returning - it will return as soon as the provided future does.
+    /// analagous to [`futures::join`](futures_util::future::join), but it will not wait for the incoming stream of messages
+    /// from addresses to end before returning - it will return as soon as the provided future does.
     ///
     /// ## Example
     ///
@@ -197,7 +196,7 @@ impl<A: Actor> Context<A> {
     /// [`Context::join`], but will exit if the actor is stopped, returning the future. Returns
     /// `Ok` with the result of the future if it was successfully completed, or `Err` with the
     /// future if the actor was stopped before it could complete. It is analagous to
-    /// [`futures::select`](https://docs.rs/futures/latest/futures/macro.select.html).
+    /// [`futures::select`](futures_util::future::select).
     ///
     /// ## Example
     ///
@@ -277,8 +276,7 @@ impl<A: Actor> Context<A> {
     }
 
     /// Notify the actor with a message every interval until it is stopped (either directly with
-    /// [`Context::stop`](struct.Context.html#method.stop), or for a lack of strong
-    /// [`Address`es](address/struct.Address.html)). This does not take priority over other messages.
+    /// [`Context::stop_self`], or for a lack of strong [`Address`]es. This does not take priority over other messages.
     ///
     /// This function is subject to back-pressure by the actor's mailbox. Thus, if the mailbox is full
     /// the loop will wait until a slot is available. It is therefore not guaranteed that a message
