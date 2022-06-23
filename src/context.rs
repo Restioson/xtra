@@ -13,8 +13,6 @@ use {futures_timer::Delay, std::time::Duration};
 
 use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
 use crate::inbox::ActorMessage;
-use crate::inbox::{rx::RxStrong, ActorMessage};
-use crate::{inbox, Actor, Address, Handler};
 use crate::{inbox, Actor, Address, Handler, WeakAddress};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
