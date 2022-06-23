@@ -1,4 +1,5 @@
 use std::cmp::Ordering as CmpOrdering;
+use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
@@ -10,7 +11,7 @@ use smol::stream;
 use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::KeepRunning;
+use xtra::{ActorManager, Error, KeepRunning};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
@@ -962,4 +963,64 @@ impl Actor for InstantShutdownAll {
     async fn stopped(self) {
         println!("Actor {} stopped", self.number);
     }
+}
+
+struct Pending;
+
+#[async_trait]
+impl Handler<Pending> for Greeter {
+    type Return = ();
+
+    async fn handle(&mut self, _: Pending, _ctx: &mut Context<Self>) {
+        futures_util::future::pending().await
+    }
+}
+
+#[tokio::test]
+async fn timeout_returns_interrupted() {
+    let ActorManager {
+        address,
+        mut actor,
+        mut ctx,
+    } = Greeter.create(None);
+
+    tokio::spawn(async move {
+        loop {
+            let msg = ctx.next_message().await;
+
+            let ctrl = ctx
+                .tick(msg, &mut actor)
+                .timeout(Duration::from_secs(1))
+                .await;
+
+            if let Some(ControlFlow::Break(_)) = ctrl {
+                break;
+            }
+        }
+    });
+
+    address
+        .send(Hello("world"))
+        .await
+        .expect("Counter should not be dropped");
+    assert_eq!(
+        address.send(Pending).await,
+        Err(Error::Interrupted),
+        "Timeout should return Interrupted"
+    );
+    address
+        .send(Hello("world"))
+        .await
+        .expect("Counter should not be dropped");
+
+    let weak = address.downgrade();
+    let join = address.join();
+    drop(address);
+
+    join.await;
+    assert_eq!(
+        weak.send(Hello("world")).await,
+        Err(Error::Disconnected),
+        "Interrupt should not be returned after actor stops"
+    );
 }

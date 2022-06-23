@@ -1,9 +1,8 @@
-use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::ops::ControlFlow;
 use std::pin::Pin;
+use std::task;
 use std::task::Poll;
-use std::{fmt, task};
 
 use futures_core::FusedFuture;
 use futures_util::future::{self, Either};
@@ -13,7 +12,7 @@ use {futures_timer::Delay, std::time::Duration};
 
 use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
 use crate::inbox::ActorMessage;
-use crate::{inbox, Actor, Address, Handler, WeakAddress};
+use crate::{inbox, Actor, Address, Error, Handler, WeakAddress};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
@@ -94,8 +93,11 @@ impl<A: Actor> Context<A> {
     }
 
     /// Get an address to the current actor if there are still external addresses to the actor.
-    pub fn address(&self) -> Result<Address<A>, ActorShutdown> {
-        self.mailbox.sender().ok_or(ActorShutdown).map(Address)
+    pub fn address(&self) -> Result<Address<A>, Error> {
+        self.mailbox
+            .sender()
+            .ok_or(Error::Disconnected)
+            .map(Address)
     }
 
     /// Get a weak address to the current actor.
@@ -304,7 +306,7 @@ impl<A: Actor> Context<A> {
         &mut self,
         duration: Duration,
         constructor: F,
-    ) -> Result<impl Future<Output = ()>, ActorShutdown>
+    ) -> Result<impl Future<Output = ()>, Error>
     where
         F: Send + 'static + Fn() -> M,
         M: Send + 'static,
@@ -343,7 +345,7 @@ impl<A: Actor> Context<A> {
         &mut self,
         duration: Duration,
         notification: M,
-    ) -> Result<impl Future<Output = ()>, ActorShutdown>
+    ) -> Result<impl Future<Output = ()>, Error>
     where
         M: Send + 'static,
         A: Handler<M>,
@@ -399,15 +401,5 @@ impl<A> Future for ReceiveFuture<A> {
 impl<A> FusedFuture for ReceiveFuture<A> {
     fn is_terminated(&self) -> bool {
         self.0.is_terminated()
-    }
-}
-
-/// The operation failed because the actor is being shut down
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct ActorShutdown;
-
-impl Display for ActorShutdown {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("Actor is shutting down")
     }
 }

@@ -12,7 +12,7 @@ use futures_util::FutureExt;
 use super::*;
 use crate::inbox::tx::private::RefCounterInner;
 use crate::send_future::private::SetPriority;
-use crate::Disconnected;
+use crate::Error;
 
 pub struct Sender<A, Rc: TxRefCounter> {
     pub(super) inner: Arc<Chan<A>>,
@@ -202,13 +202,13 @@ pub enum SendFutureInner<A> {
 }
 
 impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
-    type Output = Result<(), Disconnected>;
+    type Output = Result<(), Error>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Disconnected>> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         match mem::replace(&mut self.inner, SendFutureInner::Complete) {
             SendFutureInner::New(msg) => match self.tx.try_send(msg) {
                 Ok(()) => Poll::Ready(Ok(())),
-                Err(TrySendFail::Disconnected) => Poll::Ready(Err(Disconnected)),
+                Err(TrySendFail::Disconnected) => Poll::Ready(Err(Error::Disconnected)),
                 Err(TrySendFail::Full(waiting)) => {
                     // Start waiting. The waiting sender should be immediately polled, in case a
                     // receive operation happened between `try_send` and here, in which case the

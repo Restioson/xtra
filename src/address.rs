@@ -2,8 +2,7 @@
 //! kind of message that it can receive.
 
 use std::cmp::Ordering;
-use std::error::Error;
-use std::fmt::{self, Debug, Display, Formatter};
+use std::fmt::{self, Debug, Formatter};
 use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::pin::Pin;
@@ -18,19 +17,7 @@ use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
-use crate::{inbox, BroadcastFuture, Handler, KeepRunning, NameableSending, SendFuture};
-
-/// The actor is no longer running and disconnected from the sending address.
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Disconnected;
-
-impl Display for Disconnected {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("Actor address disconnected")
-    }
-}
-
-impl Error for Disconnected {}
+use crate::{inbox, BroadcastFuture, Error, Handler, KeepRunning, NameableSending, SendFuture};
 
 /// An [`Address`] is a reference to an actor through which messages can be
 /// sent. It can be cloned to create more addresses to the same actor.
@@ -342,11 +329,17 @@ where
     A: Handler<M, Return = ()>,
     M: Send + 'static,
 {
-    type Error = Disconnected;
+    type Error = Error;
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        if let Poll::Ready(Err(Disconnected)) = self.0.poll_unpin(cx) {
-            Poll::Ready(Err(Disconnected))
+        if let Poll::Ready(Err(err)) = self.0.poll_unpin(cx) {
+            match err {
+                Error::Disconnected => Poll::Ready(Err(err)),
+                Error::Interrupted => unreachable!(
+                    "AddressSink does not send a oneshot channel,\
+                    so Interrupted should not be possible"
+                ),
+            }
         } else if self.0.is_terminated() {
             Poll::Ready(Ok(()))
         } else {
