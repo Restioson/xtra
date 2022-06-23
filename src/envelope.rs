@@ -58,11 +58,22 @@ struct Instrumentation {
 
 #[cfg(feature = "with-tracing-0_1")]
 impl Instrumentation {
-    fn new() -> Self {
-        let parent = debug_span!(parent: Span::current(), "xtra actor request");
+    fn new<A: Actor, M>() -> Self {
+        let parent = debug_span!(
+            parent: Span::current(),
+            "xtra actor request",
+            actor = std::any::type_name::<A>(),
+            message = std::any::type_name::<M>(),
+        );
+
         // TODO rename: this is technically from send() not in queue alone. Counts waiting to get in
         // to queue too.
-        let in_queue = debug_span!(parent: &parent, "xtra message in queue");
+        let in_queue = debug_span!(
+            parent: &parent,
+            "xtra message in queue",
+            actor = std::any::type_name::<A>(),
+            message = std::any::type_name::<M>(),
+        );
         let _ = in_queue.enter(); // Enter now to start the span up TODO is this needed?
 
         Instrumentation { parent, in_queue }
@@ -86,7 +97,7 @@ impl<A: Actor, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
             result_sender: tx,
             phantom: PhantomData,
             #[cfg(feature = "with-tracing-0_1")]
-            instrumentation: Instrumentation::new(),
+            instrumentation: Instrumentation::new::<A, M>(),
         };
 
         (envelope, rx)
@@ -124,7 +135,12 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
         let fut = {
             let _ = instrumentation.in_queue.entered();
             let parent = instrumentation.parent;
-            let executing = debug_span!(parent: &parent, "Xtra message handler");
+            let executing = debug_span!(
+                parent: &parent,
+                "xtra message handler",
+                actor = std::any::type_name::<A>(),
+                message = std::any::type_name::<M>(),
+            );
             fut.instrument(executing)
         };
 
@@ -150,7 +166,7 @@ impl<A: Actor, M> NonReturningEnvelope<A, M> {
             message,
             phantom: PhantomData,
             #[cfg(feature = "with-tracing-0_1")]
-            instrumentation: Instrumentation::new(),
+            instrumentation: Instrumentation::new::<A, M>(),
         }
     }
 }
