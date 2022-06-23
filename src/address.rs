@@ -20,9 +20,7 @@ use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
 use crate::{inbox, BroadcastFuture, Handler, KeepRunning, NameableSending, SendFuture};
 
-/// The actor is no longer running and disconnected from the sending address. For why this could
-/// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and
-/// [`Actor::stopped`](../trait.Actor.html#method.stopped) methods.
+/// The actor is no longer running and disconnected from the sending address.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Disconnected;
 
