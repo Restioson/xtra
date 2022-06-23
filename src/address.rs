@@ -20,9 +20,7 @@ use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
 use crate::{inbox, BroadcastFuture, Handler, KeepRunning, NameableSending, SendFuture};
 
-/// The actor is no longer running and disconnected from the sending address. For why this could
-/// occur, see the [`Actor::stopping`](../trait.Actor.html#method.stopping) and
-/// [`Actor::stopped`](../trait.Actor.html#method.stopped) methods.
+/// The actor is no longer running and disconnected from the sending address.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Disconnected;
 
@@ -34,15 +32,15 @@ impl Display for Disconnected {
 
 impl Error for Disconnected {}
 
-/// An `Address` is a reference to an actor through which [`Message`s](../trait.Message.html) can be
+/// An [`Address`] is a reference to an actor through which messages can be
 /// sent. It can be cloned to create more addresses to the same actor.
 /// By default (i.e without specifying the second type parameter, `Rc`, to be
-/// [weak](../refcount/struct.Weak.html)), `Address`es are strong. Therefore, when all `Address`es
-/// are dropped, the actor will be stopped. In other words, any existing `Address`es will inhibit
-/// the dropping of an actor. If this is undesirable, then a [`WeakAddress`](type.WeakAddress.html)
+/// [`Weak`], [`Address`]es are strong. Therefore, when all [`Address`]es
+/// are dropped, the actor will be stopped. In other words, any existing [`Address`]es will inhibit
+/// the dropping of an actor. If this is undesirable, then a [`WeakAddress`]
 /// should be used instead. An address is created by calling the
-/// [`Actor::create`](../trait.Actor.html#method.create) or
-/// [`Context::run`](../struct.Context.html#method.run) methods, or by cloning another `Address`.
+/// [`Actor::create`](crate::Actor::create) or [`Context::run`](crate::Context::run)
+/// methods, or by cloning another [`Address`].
 ///
 /// ## Mailboxes
 ///
@@ -88,9 +86,9 @@ impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
     }
 }
 
-/// A `WeakAddress` is a reference to an actor through which [`Message`s](../trait.Message.html) can be
-/// sent. It can be cloned. Unlike [`Address`](struct.Address.html), a `WeakAddress` will not inhibit
-/// the dropping of an actor. It is created by the [`Address::downgrade`](struct.Address.html#method.downgrade)
+/// A [`WeakAddress`] is a reference to an actor through which messages can be
+/// sent. It can be cloned. Unlike [`Address`], a [`WeakAddress`] will not inhibit
+/// the dropping of an actor. It is created by the [`Address::downgrade`]
 /// method.
 pub type WeakAddress<A> = Address<A, Weak>;
 
@@ -213,8 +211,8 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// inside of an actor** - this will cause it to await forever and never receive any messages.
     ///
     /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
-    /// method should be called on [`Address`](struct.Address.html). Otherwise, it should be called
-    /// on [`WeakAddress`](type.WeakAddress.html).
+    /// method should be called on [`Address`]. Otherwise, it should be called
+    /// on [`WeakAddress`].
     pub async fn attach_stream<S, M, K>(self, stream: S)
     where
         K: Into<KeepRunning> + Send,
@@ -239,8 +237,8 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     }
 
     /// Waits until this address becomes disconnected. Note that if this is called on a strong
-    /// address, it will only ever trigger if the actor calls [`Context::stop`], as the address
-    /// would prevent the actor being dropped due to too few strong addresses.
+    /// address, it will only ever trigger if the actor calls [`Context::stop_self`](crate::Context::stop_self),
+    /// as the address would prevent the actor being dropped due to too few strong addresses.
     pub fn join(&self) -> ActorJoinHandle {
         ActorJoinHandle(self.0.disconnect_notice())
     }

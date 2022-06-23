@@ -66,7 +66,7 @@ impl<R, F, TResolveMarker> SendFuture<R, F, TResolveMarker>
 where
     F: SetPriority,
 {
-    /// Set the priority of a given message. See [`Address`] documentation for more info.
+    /// Set the priority of a given message. See [`Address`](crate::Address) documentation for more info.
     ///
     /// Panics if this future has already been polled.
     pub fn priority(mut self, new_priority: u32) -> Self {
