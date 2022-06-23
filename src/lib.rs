@@ -51,8 +51,7 @@ pub mod refcount {
     pub use crate::inbox::tx::TxWeak as Weak;
 }
 
-/// A trait indicating that an [`Actor`](trait.Actor.html) can handle a given [`Message`](trait.Message.html)
-/// asynchronously, and the logic to handle the message.
+/// Defines that an [`Actor`] can handle a given message `M`.
 ///
 /// This is an [`async_trait`](https://docs.rs/async-trait), so implementations should
 /// be annotated `#[async_trait]`.
@@ -94,14 +93,13 @@ pub trait Handler<M>: Actor {
     async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::Return;
 }
 
-/// An actor which can handle [`Message`s](trait.Message.html) one at a time. Actors can only be
-/// communicated with by sending [`Message`s](trait.Message.html) through their [`Address`es](address/struct.Address.html).
+/// An actor which can handle message one at a time. Actors can only be
+/// communicated with by sending messages through their [`Address`]es.
 /// They can modify their private state, respond to messages, and spawn other actors. They can also
-/// stop themselves through their [`Context`](struct.Context.html) by calling [`Context::stop`](struct.Context.html#method.stop).
+/// stop themselves through their [`Context`] by calling [`Context::stop_self`].
 /// This will result in any attempt to send messages to the actor in future failing.
 ///
-/// This is an [`async_trait`](https://docs.rs/async-trait), so implementations should
-/// be annotated `#[async_trait]`.
+/// This is an [`async_trait`], so implementations should be annotated `#[async_trait]`.
 ///
 /// # Example
 ///
@@ -154,19 +152,19 @@ pub trait Actor: 'static + Send + Sized {
     #[allow(unused_variables)]
     async fn started(&mut self, ctx: &mut Context<Self>) {}
 
-    /// Called when the actor is in the process of stopping. This could be because
-    /// [`KeepRunning::StopAll`](enum.KeepRunning.html#variant.StopAll) or
-    /// [`KeepRunning::StopSelf`](enum.KeepRunning.html#variant.StopSelf) was returned from the
-    /// [`Actor::stopping`](trait.Actor.html#method.stopping) method, or because there are no more
-    /// strong addresses ([`Address`](address/struct.Address.html), as opposed to
-    /// [`WeakAddress`](address/type.WeakAddress.html). This should be used for any final cleanup before
-    /// the actor is dropped.
+    /// Called at the end of an actor's event loop.
+    ///
+    /// An actor's event loop can stop for several reasons:
+    ///
+    /// - The actor called [`Context::stop_self`].
+    /// - An actor called [`Context::stop_all`].
+    /// - The last [`Address`] with a [`Strong`](crate::refcount::Strong) reference count was dropped.
     async fn stopped(self) -> Self::Stop;
 
     /// Returns the actor's address and manager in a ready-to-start state, given the cap for the
     /// actor's mailbox. If `None` is passed, it will be of unbounded size. To spawn the actor,
-    /// the [`ActorManager::spawn`](struct.ActorManager.html#method.spawn) must be called, or
-    /// the [`ActorManager::run`](struct.ActorManager.html#method.run) method must be called
+    /// the [`ActorManager::spawn`] must be called, or
+    /// the [`ActorManager::run`] method must be called
     /// and the future it returns spawned onto an executor.
     /// # Example
     ///

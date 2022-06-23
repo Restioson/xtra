@@ -1,5 +1,5 @@
 //! A message channel is a channel through which you can send only one kind of message, but to
-//! any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
+//! any actor that can handle it. It is like [`Address`], but associated with
 //! the message type rather than the actor type.
 
 use std::fmt::Debug;
@@ -15,14 +15,13 @@ use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture}
 use crate::{Handler, KeepRunning};
 
 /// A message channel is a channel through which you can send only one kind of message, but to
-/// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
+/// any actor that can handle it. It is like [`Address`], but associated with
 /// the message type rather than the actor type. This trait represents *any kind of message channel*.
-/// There are two traits which inherit from it - one for
-/// [weak message channels](trait.WeakMessageChannel.html), and one for
-/// [strong message channels](trait.StrongMessageChannel.html). Both of these traits may be
-/// downcasted to this trait using their respective `downcast` methods. Therefore, this trait is
-/// most useful when you want to be generic over both strong and weak message channels. If this is
-/// undesireable or not needed, simply use their respective trait objects instead.
+/// There are two traits which inherit from it - one for [`WeakMessageChannel`], and one for
+/// [`StrongMessageChannel`]. Both of these traits may be downcasted to this trait using their
+/// respective `downcast` methods. Therefore, this trait is most useful when you want to be generic
+/// over both strong and weak message channels. If this is undesirable or not needed, simply use
+/// their respective trait objects instead.
 ///
 /// # Example
 ///
@@ -118,8 +117,8 @@ pub trait MessageChannel<M>:
     /// stream is no longer being forwarded).
     ///
     /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
-    /// method should be called on [`MessageChannel`](trait.MessageChannel.html). Otherwise, it should be called
-    /// on [`WeakMessageChannel`](trait.WeakMessageChannel.html).
+    /// method should be called on [`MessageChannel`]. Otherwise, it should be called
+    /// on [`WeakMessageChannel`].
     fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
     where
         Self::Return: Into<KeepRunning> + Send;
@@ -142,11 +141,11 @@ pub trait MessageChannel<M>:
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
-/// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
+/// any actor that can handle it. It is like [`Address`], but associated with
 /// the message type rather than the actor type. Any existing `MessageChannel`s will prevent the
-/// dropping of the actor. If this is undesirable, then the [`WeakMessageChannel`](trait.WeakMessageChannel.html)
-/// struct should be used instead. A `StrongMessageChannel` trait object is created by casting a
-/// strong [`Address`](../address/struct.Address.html).
+/// dropping of the actor. If this is undesirable, then the [`WeakMessageChannel`]
+/// struct should be used instead. A [`StrongMessageChannel`] trait object is created by casting a
+/// strong [`Address`].
 pub trait StrongMessageChannel<M>: MessageChannel<M> {
     /// Create a weak message channel. Unlike with the strong variety of message channel (this kind),
     /// an actor will not be prevented from being dropped if only weak sinks, channels, and
@@ -154,11 +153,11 @@ pub trait StrongMessageChannel<M>: MessageChannel<M> {
     fn downgrade(&self) -> Box<dyn WeakMessageChannel<M, Return = Self::Return>>;
 
     /// Upcasts this strong message channel into a boxed generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
+    /// [`MessageChannel`] trait object
     fn upcast(self) -> Box<dyn MessageChannel<M, Return = Self::Return>>;
 
     /// Upcasts this strong message channel into a reference to the generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
+    /// [`MessageChannel`] trait object
     fn upcast_ref(&self) -> &dyn MessageChannel<M, Return = Self::Return>;
 
     /// Clones this channel as a boxed trait object.
@@ -166,19 +165,19 @@ pub trait StrongMessageChannel<M>: MessageChannel<M> {
 }
 
 /// A message channel is a channel through which you can send only one kind of message, but to
-/// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
+/// any actor that can handle it. It is like [`Address`], but associated with
 /// the message type rather than the actor type. Any existing `WeakMessageChannel`s will *not* prevent the
-/// dropping of the actor. If this is undesirable, then  [`StrongMessageChannel`](trait.StrongMessageChannel.html)
+/// dropping of the actor. If this is undesirable, then  [`StrongMessageChannel`]
 /// should be used instead. A `WeakMessageChannel` trait object is created by calling
-/// [`StrongMessageChannel::downgrade`](trait.StrongMessageChannel.html#method.downgrade) or by
-/// casting a [`WeakAddress`](../address/type.WeakAddress.html).
+/// [`StrongMessageChannel::downgrade`] or by
+/// casting a [`WeakAddress`].
 pub trait WeakMessageChannel<M>: MessageChannel<M> {
     /// Upcasts this weak message channel into a boxed generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
+    /// [`MessageChannel`] trait object
     fn upcast(self) -> Box<dyn MessageChannel<M, Return = Self::Return>>;
 
     /// Upcasts this weak message channel into a reference to the generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
+    /// [`MessageChannel`] trait object
     fn upcast_ref(&self) -> &dyn MessageChannel<M, Return = Self::Return>;
 
     /// Clones this channel as a boxed trait object.
@@ -282,13 +281,13 @@ where
     }
 
     /// Upcasts this strong message channel into a boxed generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
+    /// [`MessageChannel`] trait object
     fn upcast(self) -> Box<dyn MessageChannel<M, Return = Self::Return>> {
         Box::new(self)
     }
 
     /// Upcasts this strong message channel into a reference to the generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
+    /// [`MessageChannel`] trait object
     fn upcast_ref(&self) -> &dyn MessageChannel<M, Return = Self::Return> {
         self
     }
@@ -304,13 +303,13 @@ where
     M: Send + 'static,
 {
     /// Upcasts this weak message channel into a boxed generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
+    /// [`MessageChannel`] trait object
     fn upcast(self) -> Box<dyn MessageChannel<M, Return = Self::Return>> {
         Box::new(self)
     }
 
     /// Upcasts this weak message channel into a reference to the generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
+    /// [`MessageChannel`] trait object
     fn upcast_ref(&self) -> &dyn MessageChannel<M, Return = Self::Return> {
         self
     }
