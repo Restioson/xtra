@@ -202,7 +202,7 @@ pub enum Error {
     /// The message request operation was interrupted. This happens when the message result sender
     /// is dropped. Therefore, it should never be returned from send futures split from their
     /// receivers with [`SendFuture::split_receiver`]. This could be due to the actor's event loop
-    /// being shut down, or due to a custom timeout. Unlike [`Disconnected`], it does not
+    /// being shut down, or due to a custom timeout. Unlike [`Error::Disconnected`], it does not
     /// necessarily imply that any retries or further attempts to interact with the actor will
     /// result in an error.
     Interrupted,
