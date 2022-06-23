@@ -1,10 +1,12 @@
-use crate::Disconnected;
-use futures_util::future::MapErr;
-use futures_util::{FutureExt, TryFutureExt};
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+use futures_util::future::MapErr;
+use futures_util::{FutureExt, TryFutureExt};
+
+use crate::Disconnected;
 
 /// A [`Future`] that resolves to the [`Return`](crate::Handler::Return) value of a [`Handler`](crate::Handler).
 ///

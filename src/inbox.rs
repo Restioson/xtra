@@ -4,18 +4,19 @@
 pub mod rx;
 pub mod tx;
 
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, VecDeque};
+use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::{atomic, Arc, Mutex, Weak};
+use std::{cmp, mem};
+
+use event_listener::Event;
 pub use rx::Receiver;
 pub use tx::{SendFuture, Sender};
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope};
 use crate::inbox::rx::{RxStrong, WaitingReceiver};
 use crate::inbox::tx::{TxStrong, WaitingSender};
-use event_listener::Event;
-use std::cmp::Ordering;
-use std::collections::{BinaryHeap, VecDeque};
-use std::sync::atomic::{AtomicBool, AtomicUsize};
-use std::sync::{atomic, Arc, Mutex, Weak};
-use std::{cmp, mem};
 
 type Spinlock<T> = spin::Mutex<T>;
 pub type MessageToOneActor<A> = Box<dyn MessageEnvelope<Actor = A>>;

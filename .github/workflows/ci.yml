@@ -40,7 +40,7 @@ jobs:
 
       - run: cargo +nightly update -Z minimal-versions
 
-      - run: cargo fmt -- --check
+      - run: cargo check-custom-fmt
 
       - run: cargo clippy --workspace --all-targets ${{ matrix.args }} -- -D warnings
 

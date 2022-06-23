@@ -1,14 +1,16 @@
-use crate::receiver::Receiver;
-use crate::refcount::{RefCounter, Strong};
-use crate::send_future::private::SetPriority;
-use crate::{inbox, Disconnected};
-use futures_core::FusedFuture;
-use futures_util::FutureExt;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+use futures_core::FusedFuture;
+use futures_util::FutureExt;
+
+use crate::receiver::Receiver;
+use crate::refcount::{RefCounter, Strong};
+use crate::send_future::private::SetPriority;
+use crate::{inbox, Disconnected};
 
 /// A [`Future`] that represents the state of sending a message to an actor.
 ///

@@ -31,6 +31,8 @@ pub mod tracing;
 
 /// Commonly used types from xtra
 pub mod prelude {
+    pub use async_trait::async_trait;
+
     pub use crate::address::Address;
     pub use crate::context::Context;
     pub use crate::message_channel::{MessageChannel, StrongMessageChannel, WeakMessageChannel};
@@ -38,8 +40,6 @@ pub mod prelude {
     pub use crate::tracing::InstrumentedExt;
     #[doc(no_inline)]
     pub use crate::{Actor, Handler};
-
-    pub use async_trait::async_trait;
 }
 
 /// This module contains types representing the strength of an address's reference counting, which

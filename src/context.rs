@@ -1,12 +1,14 @@
-use crate::inbox::{rx::RxStrong, ActorMessage};
-use crate::{inbox, Actor, Address, Handler};
-use futures_util::future::{self, Either};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::ops::ControlFlow;
+
+use futures_util::future::{self, Either};
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
+
+use crate::inbox::{rx::RxStrong, ActorMessage};
+use crate::{inbox, Actor, Address, Handler};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
