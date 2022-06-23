@@ -160,9 +160,14 @@ where
 /// [`MessageChannel::same_actor`] returns true **and** if they both have weak or strong reference
 /// counts. [`Either`](crate::refcount::Either) will compare as whichever reference count type
 /// it wraps.
-impl<M, R, Rc> PartialEq for MessageChannel<M, R, Rc> {
+impl<M, R, Rc> PartialEq for MessageChannel<M, R, Rc>
+where
+    M: Send + 'static,
+    R: Send + 'static,
+    Rc: Send + 'static,
+{
     fn eq(&self, other: &Self) -> bool {
-        todo!()
+        self.same_actor(&other) && (self.inner.is_strong() == other.inner.is_strong())
     }
 }
 
@@ -177,17 +182,29 @@ where
     }
 }
 
-impl<M, R> MessageChannel<M, R, Strong> {
+impl<M, R> MessageChannel<M, R, Strong>
+where
+    M: Send + 'static,
+    R: Send + 'static,
+{
     /// TODO(docs)
     pub fn downgrade(&self) -> MessageChannel<M, R, Weak> {
-        todo!()
+        MessageChannel {
+            inner: self.inner.to_weak(),
+        }
     }
 }
 
-impl<M, R> MessageChannel<M, R, Either> {
+impl<M, R> MessageChannel<M, R, Either>
+where
+    M: Send + 'static,
+    R: Send + 'static,
+{
     /// TODO(docs)
     pub fn downgrade(&self) -> MessageChannel<M, R, Weak> {
-        todo!()
+        MessageChannel {
+            inner: self.inner.to_weak(),
+        }
     }
 }
 
@@ -216,6 +233,12 @@ trait MessageChannelTrait<M, Rc> {
     fn join(&self) -> ActorJoinHandle;
 
     fn to_inner_ptr(&self) -> *const ();
+
+    fn is_strong(&self) -> bool;
+
+    fn to_weak(
+        &self,
+    ) -> Box<dyn MessageChannelTrait<M, Weak, Return = Self::Return> + Send + Sync + 'static>;
 }
 
 impl<A, R, M, Rc: RefCounter> MessageChannelTrait<M, Rc> for Address<A, Rc>
@@ -269,5 +292,15 @@ where
 
     fn to_inner_ptr(&self) -> *const () {
         self.0.inner_ptr() as *const ()
+    }
+
+    fn is_strong(&self) -> bool {
+        self.0.is_strong()
+    }
+
+    fn to_weak(
+        &self,
+    ) -> Box<dyn MessageChannelTrait<M, Weak, Return = Self::Return> + Send + Sync + 'static> {
+        Box::new(Address(self.0.downgrade()))
     }
 }
