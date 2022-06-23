@@ -124,7 +124,7 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
         let fut = {
             let _ = instrumentation.in_queue.entered();
             let parent = instrumentation.parent;
-            let executing = debug_span!(parent: parent, "Xtra message handler");
+            let executing = debug_span!(parent: &parent, "Xtra message handler");
             fut.instrument(executing)
         };
 
