@@ -52,7 +52,7 @@ impl Handler<Print> for Printer {
 async fn main() {
     let (addr, ctx) = Context::new(Some(32));
     for n in 0..4 {
-        smol::spawn(ctx.clone().run(Printer::new(n))).detach();
+        smol::spawn(ctx.attach(Printer::new(n))).detach();
     }
 
     // This must be dropped, otherwise it will keep the actors from correctly shutting down. It

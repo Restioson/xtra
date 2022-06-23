@@ -16,7 +16,6 @@ mod broadcast_future;
 mod context;
 mod envelope;
 mod inbox;
-pub mod mailbox;
 mod manager;
 pub mod message_channel;
 mod receiver;

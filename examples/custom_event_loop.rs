@@ -45,7 +45,7 @@ async fn main() {
     tokio::spawn(async move {
         loop {
             let start = Instant::now();
-            let msg = ctx.mailbox.next().await;
+            let msg = ctx.next_message().await;
             println!("Got message in {}us", start.elapsed().as_micros());
 
             let before = actor.count;
