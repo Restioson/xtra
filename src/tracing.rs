@@ -1,5 +1,6 @@
-use crate::Handler;
 use tracing::{Instrument, Span};
+
+use crate::Handler;
 
 /// Instrument a message with `tracing`. This will attach the message handler span to the given
 /// `parent` span. If `IS_CHILD` is true, the message handler span will be instrumented with the

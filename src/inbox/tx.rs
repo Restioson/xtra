@@ -1,16 +1,18 @@
-use super::*;
-use crate::inbox::tx::private::RefCounterInner;
-use crate::send_future::private::SetPriority;
-use crate::Disconnected;
-use event_listener::EventListener;
-use futures_core::FusedFuture;
-use futures_util::FutureExt;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
 use std::sync::{atomic, Arc};
 use std::task::{Context, Poll, Waker};
+
+use event_listener::EventListener;
+use futures_core::FusedFuture;
+use futures_util::FutureExt;
+
+use super::*;
+use crate::inbox::tx::private::RefCounterInner;
+use crate::send_future::private::SetPriority;
+use crate::Disconnected;
 
 pub struct Sender<A, Rc: TxRefCounter> {
     pub(super) inner: Arc<Chan<A>>,
@@ -334,10 +336,11 @@ pub enum TxEither {
 }
 
 mod private {
-    use super::{TxEither, TxStrong, TxWeak};
-    use crate::inbox::Chan;
     use std::sync::atomic;
     use std::sync::atomic::Ordering;
+
+    use super::{TxEither, TxStrong, TxWeak};
+    use crate::inbox::Chan;
 
     pub trait RefCounterInner {
         /// Increments the reference counter, returning a new reference counter for the same

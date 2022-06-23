@@ -2,15 +2,17 @@
 //! any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
 //! the message type rather than the actor type.
 
+use std::fmt::Debug;
+
+use futures_core::future::BoxFuture;
+use futures_core::stream::BoxStream;
+
 use crate::address::{ActorJoinHandle, Address, WeakAddress};
 use crate::envelope::ReturningEnvelope;
 use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{RefCounter, Strong};
 use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture};
 use crate::{Handler, KeepRunning};
-use futures_core::future::BoxFuture;
-use futures_core::stream::BoxStream;
-use std::fmt::Debug;
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
