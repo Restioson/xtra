@@ -258,7 +258,6 @@ where
         let msg = PriorityMessageToOne::new(0, Box::new(envelope));
         let sending = self.0.send(SentMessage::ToOneActor(msg));
 
-        #[allow(clippy::async_yields_async)] // We only want to await the sending.
         SendFuture::sending_erased(sending, rx)
     }
 
