@@ -252,6 +252,16 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
 
     /// Converts this address into a sink that can be used to send messages to the actor. These
     /// messages will have default priority and be handled in send order.
+    ///
+    /// When converting an [`Address`] into a [`Sink`], it is important to think about the address'
+    /// reference counts. By default [`Address`]es are [`Strong`]. An [`AddressSink`] will inherit
+    /// the reference count type from the [`Address`] it was created from.
+    ///
+    /// If you are going to use [`AddressSink`] in combination with things like
+    /// [`Stream::forward`](futures_util::stream::StreamExt::forward), bear in mind that a
+    /// [`Strong`] [`AddressSink`] will keep the actor alive for as long as that
+    /// [`Stream`](futures_util::stream::Stream) is being polled. Depending on your usecase, you
+    /// may want to use a [`WeakAddress`] instead.
     pub fn into_sink(self) -> AddressSink<A, Rc> {
         AddressSink(inbox::SendFuture::empty(self.0))
     }
