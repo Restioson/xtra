@@ -239,8 +239,8 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     }
 
     /// Waits until this address becomes disconnected. Note that if this is called on a strong
-    /// address, it will only ever trigger if the actor calls [`Context::stop`], as the address
-    /// would prevent the actor being dropped due to too few strong addresses.
+    /// address, it will only ever trigger if the actor calls [`Context::stop_self`](crate::Context::stop_self),
+    /// as the address would prevent the actor being dropped due to too few strong addresses.
     pub fn join(&self) -> ActorJoinHandle {
         ActorJoinHandle(self.0.disconnect_notice())
     }
