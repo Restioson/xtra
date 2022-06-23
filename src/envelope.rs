@@ -5,7 +5,7 @@ use catty::{Receiver, Sender};
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 #[cfg(feature = "with-tracing-0_1")]
-use tracing::{debug_span, Span, Instrument};
+use tracing::{debug_span, Instrument, Span};
 
 use crate::context::Context;
 use crate::inbox::HasPriority;
