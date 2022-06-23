@@ -42,6 +42,8 @@ jobs:
 
       - run: cargo check-custom-fmt
 
+      - run: RUSTDOCFLAGS="--deny rustdoc::broken_intra_doc_links" cargo doc --no-deps --document-private-items --all-features
+
       - run: cargo clippy --workspace --all-targets ${{ matrix.args }} -- -D warnings
 
       - run: cargo test --workspace ${{ matrix.args }}
