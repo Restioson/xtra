@@ -4,6 +4,9 @@ use std::sync::Arc;
 use catty::{Receiver, Sender};
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
+#[cfg(feature = "with-tracing-0_1")]
+use tracing::{Span, debug_span};
+use tracing::Instrument;
 
 use crate::context::Context;
 use crate::inbox::HasPriority;
@@ -48,11 +51,34 @@ pub trait MessageEnvelope: Send {
     ) -> BoxFuture<'a, ()>;
 }
 
+#[cfg(feature = "with-tracing-0_1")]
+struct Instrumentation {
+    parent: Span,
+    in_queue: Span,
+}
+
+#[cfg(feature = "with-tracing-0_1")]
+impl Instrumentation {
+    fn new() -> Self {
+        // TODO rename: this is technically from send() not in queue alone. Counts waiting to get in
+        // to queue too.
+        let in_queue = debug_span!(parent: Span::current(), "actor_message_in_queue");
+        let _ = in_queue.enter(); // Enter now to start the span up TODO is this needed?
+
+        Instrumentation {
+            parent: Span::current(),
+            in_queue,
+        }
+    }
+}
+
 /// An envelope that returns a result from a message. Constructed by the `AddressExt::do_send` method.
 pub struct ReturningEnvelope<A, M, R> {
     message: M,
     result_sender: Sender<R>,
     phantom: PhantomData<fn() -> A>,
+    #[cfg(feature = "with-tracing-0_1")]
+    instrumentation: Instrumentation,
 }
 
 impl<A: Actor, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
@@ -62,6 +88,8 @@ impl<A: Actor, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
             message,
             result_sender: tx,
             phantom: PhantomData,
+            #[cfg(feature = "with-tracing-0_1")]
+            instrumentation: Instrumentation::new(),
         };
 
         (envelope, rx)
@@ -78,12 +106,23 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> BoxFuture<'a, ()> {
-        let Self {
-            message,
-            result_sender,
-            ..
-        } = *self;
-        Box::pin(act.handle(message, ctx).map(move |r| {
+        #[cfg(feature = "with-tracing-0_1")]
+        let Self { message, result_sender, instrumentation, .. } = *self;
+
+        #[cfg(not(feature = "with-tracing-0_1"))]
+        let Self { message, result_sender, .. } = *self;
+
+        let fut = act.handle(message, ctx);
+
+        #[cfg(feature = "with-tracing-0_1")]
+        let fut = {
+            let _ = instrumentation.in_queue.entered();
+            let parent = instrumentation.parent;
+            let executing = debug_span!(parent: parent, "actor_message_handler");
+            fut.instrument(executing)
+        };
+
+        Box::pin(fut.map(move |r| {
             // We don't actually care if the receiver is listening
             let _ = result_sender.send(r);
         }))
@@ -95,6 +134,8 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
 pub struct NonReturningEnvelope<A, M> {
     message: M,
     phantom: PhantomData<fn() -> A>,
+    #[cfg(feature = "with-tracing-0_1")]
+    instrumentation: Instrumentation,
 }
 
 impl<A: Actor, M> NonReturningEnvelope<A, M> {
@@ -102,6 +143,8 @@ impl<A: Actor, M> NonReturningEnvelope<A, M> {
         NonReturningEnvelope {
             message,
             phantom: PhantomData,
+            #[cfg(feature = "with-tracing-0_1")]
+            instrumentation: Instrumentation::new()
         }
     }
 }
@@ -114,10 +157,27 @@ impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> BoxFuture<'a, ()> {
-        Box::pin(act.handle(self.message, ctx).map(|_| ()))
+        #[cfg(feature = "with-tracing-0_1")]
+        let Self { message, instrumentation, .. } = *self;
+
+        #[cfg(not(feature = "with-tracing-0_1"))]
+        let Self { message, .. } = *self;
+
+        let fut = act.handle(message, ctx);
+
+        #[cfg(feature = "with-tracing-0_1")]
+        let fut = {
+            let _ = instrumentation.in_queue.entered();
+            let parent = instrumentation.parent;
+            let executing = debug_span!(parent: parent, "actor_message_handler");
+            fut.instrument(executing)
+        };
+
+        Box::pin(fut.map(|_| ()))
     }
 }
 
+// TODO instrument
 /// Like MessageEnvelope, but with an Arc instead of Box
 pub trait BroadcastEnvelope: HasPriority + Send + Sync {
     type Actor;
