@@ -4,15 +4,14 @@
 
 use std::fmt::Debug;
 
-use futures_core::future::BoxFuture;
-use futures_core::stream::BoxStream;
+use futures_sink::Sink;
 
 use crate::address::{ActorJoinHandle, Address};
 use crate::envelope::ReturningEnvelope;
 use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture};
-use crate::{Handler, KeepRunning};
+use crate::{Disconnected, Handler};
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`], but associated with
@@ -128,19 +127,6 @@ where
         self.inner.send(message)
     }
 
-    /// Attaches a stream to this channel such that all messages produced by it are forwarded to the
-    /// actor. This could, for instance, be used to forward messages from a socket to the actor
-    /// (after the messages have been appropriately `map`ped). This is a convenience method over
-    /// explicitly forwarding a stream to this address, spawning that future onto the executor,
-    /// and mapping the error away (because disconnects are expected and will simply mean that the
-    /// stream is no longer being forwarded).
-    pub fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
-    where
-        R: Into<KeepRunning> + Send,
-    {
-        todo!()
-    }
-
     /// Waits until this [`MessageChannel`] becomes disconnected.
     pub fn join(&self) -> ActorJoinHandle {
         self.inner.join()
@@ -152,6 +138,13 @@ where
         Rc2: Send + 'static,
     {
         self.inner.to_inner_ptr() == other.inner.to_inner_ptr()
+    }
+}
+
+impl<M, Rc> MessageChannel<M, (), Rc> where M: Send + 'static {
+    /// TODO(docs)
+    pub fn into_sink(self) -> impl Sink<M, Error = Disconnected> {
+        futures_util::sink::unfold((), move |(), message| self.send(message))
     }
 }
 
@@ -222,10 +215,6 @@ trait MessageChannelTrait<M, Rc> {
         message: M,
     ) -> SendFuture<Self::Return, ActorErasedSending<Self::Return>, ResolveToHandlerReturn>;
 
-    fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
-    where
-        Self::Return: Into<KeepRunning> + Send;
-
     fn clone_channel(
         &self,
     ) -> Box<dyn MessageChannelTrait<M, Rc, Return = Self::Return> + Send + Sync + 'static>;
@@ -271,13 +260,6 @@ where
 
         #[allow(clippy::async_yields_async)] // We only want to await the sending.
         SendFuture::sending_erased(sending, rx)
-    }
-
-    fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
-    where
-        R: Into<KeepRunning> + Send,
-    {
-        Box::pin(Address::attach_stream(self, stream))
     }
 
     fn clone_channel(
