@@ -4,9 +4,9 @@ use std::sync::Arc;
 use catty::{Receiver, Sender};
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
-#[cfg(feature = "with-tracing-0_1")]
-use tracing::{Span, debug_span};
 use tracing::Instrument;
+#[cfg(feature = "with-tracing-0_1")]
+use tracing::{debug_span, Span};
 
 use crate::context::Context;
 use crate::inbox::HasPriority;
@@ -107,10 +107,19 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
         ctx: &'a mut Context<Self::Actor>,
     ) -> BoxFuture<'a, ()> {
         #[cfg(feature = "with-tracing-0_1")]
-        let Self { message, result_sender, instrumentation, .. } = *self;
+        let Self {
+            message,
+            result_sender,
+            instrumentation,
+            ..
+        } = *self;
 
         #[cfg(not(feature = "with-tracing-0_1"))]
-        let Self { message, result_sender, .. } = *self;
+        let Self {
+            message,
+            result_sender,
+            ..
+        } = *self;
 
         let fut = act.handle(message, ctx);
 
@@ -144,7 +153,7 @@ impl<A: Actor, M> NonReturningEnvelope<A, M> {
             message,
             phantom: PhantomData,
             #[cfg(feature = "with-tracing-0_1")]
-            instrumentation: Instrumentation::new()
+            instrumentation: Instrumentation::new(),
         }
     }
 }
@@ -158,7 +167,11 @@ impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<
         ctx: &'a mut Context<Self::Actor>,
     ) -> BoxFuture<'a, ()> {
         #[cfg(feature = "with-tracing-0_1")]
-        let Self { message, instrumentation, .. } = *self;
+        let Self {
+            message,
+            instrumentation,
+            ..
+        } = *self;
 
         #[cfg(not(feature = "with-tracing-0_1"))]
         let Self { message, .. } = *self;
