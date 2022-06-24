@@ -52,17 +52,17 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
                 match res {
                     Ok(()) => Ok(()),
                     Err(WakeReason::MessageToOneActor(m))
-                    if m.priority == 0 && !self.inner.is_full(inner.ordered_queue.len()) =>
-                        {
-                            inner.ordered_queue.push_back(m.val);
-                            Ok(())
-                        }
+                        if m.priority == 0 && !self.inner.is_full(inner.ordered_queue.len()) =>
+                    {
+                        inner.ordered_queue.push_back(m.val);
+                        Ok(())
+                    }
                     Err(WakeReason::MessageToOneActor(m))
-                    if m.priority != 0 && !self.inner.is_full(inner.priority_queue.len()) =>
-                        {
-                            inner.priority_queue.push(m);
-                            Ok(())
-                        }
+                        if m.priority != 0 && !self.inner.is_full(inner.priority_queue.len()) =>
+                    {
+                        inner.priority_queue.push(m);
+                        Ok(())
+                    }
                     Err(WakeReason::MessageToOneActor(m)) => {
                         let waiting = WaitingSender::new(m.into());
                         inner.waiting_senders.push_back(Arc::downgrade(&waiting));
@@ -70,7 +70,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
                     }
                     _ => unreachable!(),
                 }
-            },
+            }
         }
     }
 

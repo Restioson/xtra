@@ -3,9 +3,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
 #![deny(unsafe_code, missing_docs)]
 
-use std::error::Error as StdError;
 use std::fmt;
-use std::fmt::{Display, Formatter};
 
 pub use self::address::{Address, WeakAddress};
 pub use self::broadcast_future::BroadcastFuture;
@@ -208,8 +206,8 @@ pub enum Error {
     Interrupted,
 }
 
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Disconnected => f.write_str("Actor address disconnected"),
             Error::Interrupted => f.write_str("Message request interrupted"),
@@ -217,7 +215,7 @@ impl Display for Error {
     }
 }
 
-impl StdError for Error {}
+impl std::error::Error for Error {}
 
 /// Whether or not to keep an attached stream forwarding.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
