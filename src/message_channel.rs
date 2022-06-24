@@ -152,6 +152,18 @@ where
     }
 }
 
+impl<A, M, R, Rc> From<&Address<A, Rc>> for MessageChannel<M, R, Rc>
+where
+    A: Handler<M, Return = R>,
+    R: Send + 'static,
+    M: Send + 'static,
+    Rc: RefCounter,
+{
+    fn from(address: &Address<A, Rc>) -> Self {
+        MessageChannel::new(address)
+    }
+}
+
 impl<M, R, Rc> fmt::Debug for MessageChannel<M, R, Rc>
 where
     R: Send + 'static,
