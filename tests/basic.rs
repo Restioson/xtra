@@ -336,7 +336,7 @@ async fn receiving_async_on_address_returns_immediately_after_dispatch() {
 #[tokio::test]
 async fn receiving_async_on_message_channel_returns_immediately_after_dispatch() {
     let address = LongRunningHandler.create(None).spawn_global();
-    let channel = StrongMessageChannel::clone_channel(&address);
+    let channel = MessageChannel::new(address);
 
     let send_future = channel.send(Duration::from_secs(3)).split_receiver();
     let handler_future = send_future
@@ -534,7 +534,7 @@ async fn set_priority_msg_channel() {
     let fut = {
         let (addr, fut) = Elephant::default().create(None).run();
 
-        let channel = &addr as &dyn MessageChannel<Message, Return = ()>;
+        let channel = MessageChannel::new(addr);
 
         let _ = channel
             .send(Message::Ordered { ord: 0 })
@@ -712,15 +712,15 @@ impl Handler<Hello> for Greeter {
 }
 
 #[derive(Clone)]
-struct BroadcastHello(&'static str);
+struct PrintHello(&'static str);
 
 #[async_trait]
-impl Handler<BroadcastHello> for Greeter {
+impl Handler<PrintHello> for Greeter {
     type Return = ();
 
     async fn handle(
         &mut self,
-        BroadcastHello(name): BroadcastHello,
+        PrintHello(name): PrintHello,
         _: &mut Context<Self>,
     ) -> Self::Return {
         println!("Hello {}", name)
@@ -777,7 +777,7 @@ async fn address_send_exercises_backpressure() {
     context.yield_once(&mut Greeter).await; // process one message
 
     let _ = address
-        .send(BroadcastHello("world"))
+        .send(PrintHello("world"))
         .priority(1)
         .split_receiver()
         .now_or_never()
@@ -786,12 +786,12 @@ async fn address_send_exercises_backpressure() {
     // Broadcast
 
     let _ = address
-        .broadcast(BroadcastHello("world"))
+        .broadcast(PrintHello("world"))
         .priority(2)
         .now_or_never()
         .expect("be able to queue 1 broadcast because the mailbox is empty");
     let handler2 = address
-        .broadcast(BroadcastHello("world"))
+        .broadcast(PrintHello("world"))
         .priority(1)
         .now_or_never();
     assert!(
@@ -802,7 +802,7 @@ async fn address_send_exercises_backpressure() {
     context.yield_once(&mut Greeter).await; // process one message
 
     let _ = address
-        .broadcast(BroadcastHello("world"))
+        .broadcast(PrintHello("world"))
         .priority(2)
         .now_or_never()
         .expect("be able to queue another broadcast because the mailbox is empty again");
@@ -827,6 +827,28 @@ fn address_debug() {
         format!("{:?}", weak_addr),
         "Address(Sender<basic::Greeter> { \
         shutdown: false, rx_count: 1, tx_count: 2, rc: TxWeak(()) })"
+    );
+}
+
+#[test]
+fn message_channel_debug() {
+    let (addr1, _ctx) = Context::<Greeter>::new(None);
+
+    let mc = MessageChannel::<Hello, String>::new(addr1);
+    let weak_mc = mc.downgrade();
+
+    assert_eq!(
+        format!("{:?}", mc),
+        "MessageChannel<basic::Hello, alloc::string::String>(\
+            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 1, rc: TxStrong(()) }\
+        )"
+    );
+
+    assert_eq!(
+        format!("{:?}", weak_mc),
+        "MessageChannel<basic::Hello, alloc::string::String>(\
+            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 1, rc: TxWeak(()) }\
+        )"
     );
 }
 
@@ -874,20 +896,18 @@ fn test_addr_cmp_hash_eq() {
     assert_ne!(addr1, addr2);
     assert_ne!(addr1, addr1.downgrade());
     assert_eq!(addr1, addr1.clone());
-    assert_ne!(addr1, addr2);
     assert!(addr1.same_actor(&addr1));
     assert!(addr1.same_actor(&addr1.downgrade()));
     assert!(!addr1.same_actor(&addr2));
     assert!(addr1 > addr1.downgrade());
 
-    let chan1 = &addr1 as &dyn StrongMessageChannel<Hello, Return = String>;
-    let chan2 = &addr2 as &dyn StrongMessageChannel<Hello, Return = String>;
-    assert!(chan1.eq(chan1.upcast_ref()));
-    assert!(chan1.eq(chan1.upcast_ref()));
-    assert!(!chan1.eq(chan2.upcast_ref()));
-    assert!(chan1.same_actor(chan1.upcast_ref()));
-    assert!(chan1.same_actor(chan1.downgrade().upcast_ref()));
-    assert!(!chan1.same_actor(chan2.upcast_ref()));
+    let chan1 = MessageChannel::<Hello, String>::new(addr1);
+    let chan2 = MessageChannel::<Hello, String>::new(addr2);
+    assert!(chan1.eq(&chan1));
+    assert!(!chan1.eq(&chan2));
+    assert!(chan1.same_actor(&chan1));
+    assert!(chan1.same_actor(&chan1.downgrade()));
+    assert!(!chan1.same_actor(&chan2));
 }
 
 #[tokio::test]

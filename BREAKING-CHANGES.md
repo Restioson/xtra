@@ -14,6 +14,8 @@
 - Previously, `stop_all` would immediately disconnect the address. However, `stop_self` done on every actor would actually
   not do this in one case - if there were a free-floating (not executing an actor event loop) Context. This change brings
   `stop_all` in line with `stop_self`.
+- `MessageChannel` is now a `struct` that can be constructed from an `Address` via `MessageChannel::new` or using
+  `From`/`Into`.
 
 ## 0.5.0
 
