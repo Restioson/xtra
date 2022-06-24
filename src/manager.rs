@@ -7,7 +7,7 @@ use crate::Actor;
 
 /// A manager for the actor which handles incoming messages and stores the context. Its managing
 /// loop can be started with [`ActorManager::run`].
-pub struct ActorManager<A: Actor> {
+pub struct ActorManager<A> {
     pub(crate) address: Address<A>,
     pub(crate) actor: A,
     pub(crate) ctx: Context<A>,
