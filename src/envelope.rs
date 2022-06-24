@@ -54,7 +54,7 @@ pub trait MessageEnvelope: Send {
 #[derive(Clone)]
 struct Instrumentation {
     parent: Span,
-    _in_queue: Span,
+    _waiting_for_actor: Span,
 }
 
 #[cfg(feature = "with-tracing-0_1")]
@@ -67,9 +67,7 @@ impl Instrumentation {
             message = std::any::type_name::<M>(),
         );
 
-        // TODO rename: this is technically from send() not in queue alone. Counts waiting to get in
-        // to queue too.
-        let in_queue = debug_span!(
+        let waiting_for_actor = debug_span!(
             parent: &parent,
             "xtra message waiting for actor",
             actor = std::any::type_name::<A>(),
@@ -78,7 +76,7 @@ impl Instrumentation {
 
         Instrumentation {
             parent,
-            _in_queue: in_queue,
+            _waiting_for_actor: waiting_for_actor,
         }
     }
 }
