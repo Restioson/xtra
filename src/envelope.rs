@@ -1,11 +1,10 @@
+use std::future::Future;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
 use catty::{Receiver, Sender};
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
-#[cfg(feature = "with-tracing-0_1")]
-use tracing::{debug_span, Instrument, Span};
 
 use crate::context::Context;
 use crate::inbox::HasPriority;
@@ -50,34 +49,59 @@ pub trait MessageEnvelope: Send {
     ) -> BoxFuture<'a, ()>;
 }
 
-#[cfg(feature = "with-tracing-0_1")]
 #[derive(Clone)]
 struct Instrumentation {
-    parent: Span,
-    _waiting_for_actor: Span,
+    #[cfg(feature = "instrumentation")]
+    parent: tracing::Span,
+    #[cfg(feature = "instrumentation")]
+    _waiting_for_actor: tracing::Span,
 }
 
-#[cfg(feature = "with-tracing-0_1")]
 impl Instrumentation {
-    fn new<A: Actor, M>() -> Self {
-        let parent = debug_span!(
-            parent: Span::current(),
-            "xtra actor request",
-            actor = std::any::type_name::<A>(),
-            message = std::any::type_name::<M>(),
-        );
+    fn new<A, M>() -> Self {
+        #[cfg(feature = "instrumentation")]
+        {
+            let parent = tracing::debug_span!(
+                parent: tracing::Span::current(),
+                "xtra actor request",
+                actor = std::any::type_name::<A>(),
+                message = std::any::type_name::<M>(),
+            );
 
-        let waiting_for_actor = debug_span!(
-            parent: &parent,
-            "xtra message waiting for actor",
-            actor = std::any::type_name::<A>(),
-            message = std::any::type_name::<M>(),
-        );
+            let waiting_for_actor = tracing::debug_span!(
+                parent: &parent,
+                "xtra message waiting for actor",
+                actor = std::any::type_name::<A>(),
+                message = std::any::type_name::<M>(),
+            );
 
-        Instrumentation {
-            parent,
-            _waiting_for_actor: waiting_for_actor,
+            Instrumentation {
+                parent,
+                _waiting_for_actor: waiting_for_actor,
+            }
         }
+
+        #[cfg(not(feature = "instrumentation"))]
+        Instrumentation {}
+    }
+
+    fn apply<A, M, F>(self, fut: F) -> impl Future<Output = F::Output>
+        where F: Future,
+    {
+        #[cfg(feature = "instrumentation")]
+        {
+            let executing = tracing::debug_span!(
+                parent: &self.parent,
+                "xtra message handler",
+                actor = std::any::type_name::<A>(),
+                message = std::any::type_name::<M>(),
+            );
+
+            tracing::Instrument::instrument(fut, executing)
+        }
+
+        #[cfg(not(feature = "instrumentation"))]
+        fut
     }
 }
 
@@ -86,18 +110,16 @@ pub struct ReturningEnvelope<A, M, R> {
     message: M,
     result_sender: Sender<R>,
     phantom: PhantomData<fn() -> A>,
-    #[cfg(feature = "with-tracing-0_1")]
     instrumentation: Instrumentation,
 }
 
-impl<A: Actor, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
+impl<A, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
     pub fn new(message: M) -> (Self, Receiver<R>) {
         let (tx, rx) = catty::oneshot();
         let envelope = ReturningEnvelope {
             message,
             result_sender: tx,
             phantom: PhantomData,
-            #[cfg(feature = "with-tracing-0_1")]
             instrumentation: Instrumentation::new::<A, M>(),
         };
 
@@ -115,7 +137,6 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> BoxFuture<'a, ()> {
-        #[cfg(feature = "with-tracing-0_1")]
         let Self {
             message,
             result_sender,
@@ -123,28 +144,7 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
             ..
         } = *self;
 
-        #[cfg(not(feature = "with-tracing-0_1"))]
-        let Self {
-            message,
-            result_sender,
-            ..
-        } = *self;
-
-        let fut = act.handle(message, ctx);
-
-        #[cfg(feature = "with-tracing-0_1")]
-        let fut = {
-            let Instrumentation { parent, .. } = instrumentation;
-            let executing = debug_span!(
-                parent: &parent,
-                "xtra message handler",
-                actor = std::any::type_name::<A>(),
-                message = std::any::type_name::<M>(),
-            );
-            fut.instrument(executing)
-        };
-
-        Box::pin(fut.map(move |r| {
+        Box::pin(instrumentation.apply::<A, M, _>(act.handle(message, ctx)).map(move |r| {
             // We don't actually care if the receiver is listening
             let _ = result_sender.send(r);
         }))
@@ -156,7 +156,6 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
 pub struct NonReturningEnvelope<A, M> {
     message: M,
     phantom: PhantomData<fn() -> A>,
-    #[cfg(feature = "with-tracing-0_1")]
     instrumentation: Instrumentation,
 }
 
@@ -165,7 +164,6 @@ impl<A: Actor, M> NonReturningEnvelope<A, M> {
         NonReturningEnvelope {
             message,
             phantom: PhantomData,
-            #[cfg(feature = "with-tracing-0_1")]
             instrumentation: Instrumentation::new::<A, M>(),
         }
     }
@@ -179,31 +177,13 @@ impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> BoxFuture<'a, ()> {
-        #[cfg(feature = "with-tracing-0_1")]
         let Self {
             message,
             instrumentation,
             ..
         } = *self;
 
-        #[cfg(not(feature = "with-tracing-0_1"))]
-        let Self { message, .. } = *self;
-
-        let fut = act.handle(message, ctx);
-
-        #[cfg(feature = "with-tracing-0_1")]
-        let fut = {
-            let Instrumentation { parent, .. } = instrumentation;
-            let executing = debug_span!(
-                parent: &parent,
-                "xtra message handler",
-                actor = std::any::type_name::<A>(),
-                message = std::any::type_name::<M>(),
-            );
-            fut.instrument(executing)
-        };
-
-        Box::pin(fut.map(|_| ()))
+        Box::pin(instrumentation.apply::<A, M, _>(act.handle(message, ctx)).map(|_| ()))
     }
 }
 
@@ -222,7 +202,6 @@ pub struct BroadcastEnvelopeConcrete<A, M> {
     message: M,
     priority: u32,
     phantom: PhantomData<fn() -> A>,
-    #[cfg(feature = "with-tracing-0_1")]
     instrumentation: Instrumentation,
 }
 
@@ -232,7 +211,6 @@ impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
             message,
             priority,
             phantom: PhantomData,
-            #[cfg(feature = "with-tracing-0_1")]
             instrumentation: Instrumentation::new::<A, M>(),
         }
     }
@@ -250,24 +228,9 @@ where
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> BoxFuture<'a, ()> {
-        let fut = act.handle(self.message.clone(), ctx);
-
-        #[cfg(feature = "with-tracing-0_1")]
-        let fut = {
-            let Instrumentation { parent, .. } = self.instrumentation.clone();
-            drop(self); // Drop self early to get time in queue to end ASAP
-
-            let executing = debug_span!(
-                parent: &parent,
-                "xtra message handler",
-                actor = std::any::type_name::<A>(),
-                message = std::any::type_name::<M>(),
-            );
-
-            fut.instrument(executing)
-        };
-
-        Box::pin(fut)
+        let (msg, instrumentation) = (self.message.clone(), self.instrumentation.clone());
+        drop(self); // Drop ASAP to end the message waiting for actor span
+        Box::pin(instrumentation.apply::<A, M, _>(act.handle(msg, ctx)))
     }
 }
 
