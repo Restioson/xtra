@@ -71,7 +71,7 @@ impl Instrumentation {
         // to queue too.
         let in_queue = debug_span!(
             parent: &parent,
-            "xtra message in queue",
+            "xtra message waiting for actor",
             actor = std::any::type_name::<A>(),
             message = std::any::type_name::<M>(),
         );
