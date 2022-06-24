@@ -224,7 +224,7 @@ impl Handler<StreamCancelMessage> for StreamCancelTester {
 async fn test_stream_cancel_join() {
     let addr = StreamCancelTester {}.create(None).spawn_global();
     let jh = addr.join();
-    let addr2 = addr.clone().downgrade();
+    let addr2 = addr.downgrade();
     // attach a stream that blocks forever
     let handle = tokio::spawn(async move {
         stream::pending::<StreamCancelMessage>()

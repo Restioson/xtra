@@ -228,8 +228,24 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// [`Strong`] [`AddressSink`] will keep the actor alive for as long as that
     /// [`Stream`](futures_util::stream::Stream) is being polled. Depending on your usecase, you
     /// may want to use a [`WeakAddress`] instead.
-    pub fn into_sink(self) -> AddressSink<A, Rc> {
-        AddressSink(inbox::SendFuture::empty(self.0))
+    pub fn into_sink<M>(self) -> impl Sink<M, Error = Disconnected> + Unpin
+    where
+        A: Handler<M, Return = ()>,
+        M: Send + 'static,
+    {
+        use futures_util::*;
+
+        sink::unfold((), move |(), item| {
+            let send_future = self.send(item);
+            let join_handle = self.join();
+
+            Box::pin(async move {
+                match future::select(join_handle, send_future).await {
+                    future::Either::Right((send_result, _join_handle)) => send_result,
+                    future::Either::Left(((), _pending_send_result)) => Err(Disconnected),
+                }
+            })
+        })
     }
 }
 
