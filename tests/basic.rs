@@ -5,7 +5,7 @@ use std::task::Poll;
 use std::time::Duration;
 
 use futures_util::task::noop_waker_ref;
-use futures_util::{FutureExt, SinkExt};
+use futures_util::FutureExt;
 use smol::stream;
 use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
@@ -93,6 +93,7 @@ impl Actor for DropTester {
 }
 
 struct StopAll;
+
 struct StopSelf;
 
 #[async_trait]
@@ -558,7 +559,7 @@ async fn set_priority_msg_channel() {
         vec![
             Message::Priority { priority: 2 },
             Message::Priority { priority: 1 },
-            Message::Ordered { ord: 0 }
+            Message::Ordered { ord: 0 },
         ]
     );
 }
