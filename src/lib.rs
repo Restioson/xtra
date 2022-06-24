@@ -27,9 +27,6 @@ pub mod scoped_task;
 mod send_future;
 /// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
 pub mod spawn;
-#[cfg(feature = "with-tracing-0_1")]
-/// Integration with [`tracing`](https://tracing.rs).
-pub mod tracing;
 
 /// Commonly used types from xtra
 pub mod prelude {
@@ -38,8 +35,6 @@ pub mod prelude {
     pub use crate::address::Address;
     pub use crate::context::Context;
     pub use crate::message_channel::MessageChannel;
-    #[cfg(feature = "with-tracing-0_1")]
-    pub use crate::tracing::InstrumentedExt;
     #[doc(no_inline)]
     pub use crate::{Actor, Handler};
 }
