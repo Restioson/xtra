@@ -78,7 +78,7 @@ impl Error for Disconnected {}
 /// of their priority. All actors must handle a message for it to be removed from the mailbox and
 /// the length to decrease. This means that the backpressure provided by [`Address::broadcast`] will
 /// wait for the slowest actor.
-pub struct Address<A: 'static, Rc: RefCounter = Strong>(pub(crate) inbox::Sender<A, Rc>);
+pub struct Address<A, Rc: RefCounter = Strong>(pub(crate) inbox::Sender<A, Rc>);
 
 impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
