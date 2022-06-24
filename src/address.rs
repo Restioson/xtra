@@ -17,7 +17,9 @@ use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
 use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
-use crate::{inbox, BroadcastFuture, Error, Handler, KeepRunning, NameableSending, SendFuture};
+use crate::{
+    inbox, BroadcastFuture, Error, ErrorKind, Handler, KeepRunning, NameableSending, SendFuture,
+};
 
 /// An [`Address`] is a reference to an actor through which messages can be
 /// sent. It can be cloned to create more addresses to the same actor.
@@ -175,7 +177,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
         let msg = SentMessage::ToOneActor(PriorityMessageToOne::new(0, Box::new(envelope)));
         let tx = self.0.send(msg);
-        SendFuture::sending_named(tx, rx)
+        SendFuture::sending_named::<M>(tx, rx)
     }
 
     /// Send a message to all actors on this address.
@@ -333,9 +335,9 @@ where
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         if let Poll::Ready(Err(err)) = self.0.poll_unpin(cx) {
-            match err {
-                Error::Disconnected => Poll::Ready(Err(err)),
-                Error::Interrupted => unreachable!(
+            match err.kind {
+                ErrorKind::Disconnected => Poll::Ready(Err(err)),
+                ErrorKind::Interrupted => unreachable!(
                     "AddressSink does not send a oneshot channel,\
                     so Interrupted should not be possible"
                 ),

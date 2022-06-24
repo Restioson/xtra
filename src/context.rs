@@ -12,7 +12,7 @@ use {futures_timer::Delay, std::time::Duration};
 
 use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
 use crate::inbox::ActorMessage;
-use crate::{inbox, Actor, Address, Error, Handler, WeakAddress};
+use crate::{inbox, Actor, Address, Error, ErrorKind, Handler, WeakAddress};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
@@ -96,7 +96,11 @@ impl<A: Actor> Context<A> {
     pub fn address(&self) -> Result<Address<A>, Error> {
         self.mailbox
             .sender()
-            .ok_or(Error::Disconnected)
+            .ok_or(Error {
+                actor: Some(std::any::type_name::<A>()),
+                message: None,
+                kind: ErrorKind::Disconnected,
+            })
             .map(Address)
     }
 

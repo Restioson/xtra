@@ -11,7 +11,7 @@ use smol::stream;
 use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::{ActorManager, Error, KeepRunning};
+use xtra::{ActorManager, ErrorKind, KeepRunning};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
@@ -1024,8 +1024,8 @@ async fn timeout_returns_interrupted() {
         .await
         .expect("Counter should not be dropped");
     assert_eq!(
-        address.send(Pending).await,
-        Err(Error::Interrupted),
+        *address.send(Pending).await.unwrap_err().kind(),
+        ErrorKind::Interrupted,
         "Timeout should return Interrupted"
     );
     address
@@ -1039,8 +1039,8 @@ async fn timeout_returns_interrupted() {
 
     join.await;
     assert_eq!(
-        weak.send(Hello("world")).await,
-        Err(Error::Disconnected),
+        *weak.send(Hello("world")).await.unwrap_err().kind(),
+        ErrorKind::Disconnected,
         "Interrupt should not be returned after actor stops"
     );
 }

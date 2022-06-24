@@ -101,14 +101,14 @@ impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
 }
 
 impl<A, R, Rc: RefCounter> SendFuture<R, NameableSending<A, R, Rc>, ResolveToHandlerReturn> {
-    pub(crate) fn sending_named(
+    pub(crate) fn sending_named<M>(
         send_fut: inbox::SendFuture<A, Rc>,
         receiver: catty::Receiver<R>,
     ) -> Self {
         Self {
             inner: SendFutureInner::Sending(NameableSending {
                 inner: send_fut,
-                receiver: Some(Receiver::new(receiver)),
+                receiver: Some(Receiver::new_named::<A, M>(receiver)),
             }),
             phantom: PhantomData,
         }
@@ -154,6 +154,22 @@ impl<T, F> SendingWithSetPriority<T> for F where
 
 type BoxedSending<T> = Box<dyn SendingWithSetPriority<T>>;
 
+trait ActorName {
+    fn actor_name() -> Option<&'static str>;
+}
+
+impl<R> ActorName for ActorErasedSending<R> {
+    fn actor_name() -> Option<&'static str> {
+        None
+    }
+}
+
+impl<A, R, Rc: RefCounter> ActorName for NameableSending<A, R, Rc> {
+    fn actor_name() -> Option<&'static str> {
+        Some(std::any::type_name::<A>())
+    }
+}
+
 /// "Sending" state of [`SendFuture`] for cases where the actor type is erased.
 pub struct ActorErasedSending<R> {
     future: BoxedSending<Result<(), Error>>,
@@ -184,7 +200,7 @@ impl<R> SetPriority for ActorErasedSending<R> {
 
 impl<R, F> Future for SendFuture<R, F, ResolveToHandlerReturn>
 where
-    F: Future<Output = Receiver<R>> + Unpin,
+    F: Future<Output = Receiver<R>> + ActorName + Unpin,
 {
     type Output = Result<R, Error>;
 
@@ -203,8 +219,13 @@ where
                 }
             },
             SendFutureInner::Receiving(mut rx) => match rx.poll_unpin(ctx) {
-                Poll::Ready(item) => {
+                Poll::Ready(mut item) => {
                     this.inner = SendFutureInner::Done;
+
+                    if let Err(e) = &mut item {
+                        e.actor = F::actor_name();
+                    }
+
                     Poll::Ready(item)
                 }
                 Poll::Pending => {

@@ -6,7 +6,7 @@ use std::task::{Context, Poll};
 use futures_util::future::MapErr;
 use futures_util::{FutureExt, TryFutureExt};
 
-use crate::Error;
+use crate::{Error, ErrorKind};
 
 /// A [`Future`] that resolves to the [`Return`](crate::Handler::Return) value of a [`Handler`](crate::Handler).
 ///
@@ -25,7 +25,21 @@ impl<R> Receiver<R> {
 
     pub(crate) fn new(receiver: catty::Receiver<R>) -> Self {
         Self {
-            inner: Inner::Receiving(receiver.map_err(|_| Error::Interrupted)),
+            inner: Inner::Receiving(receiver.map_err(|_| Error {
+                actor: None,
+                message: None,
+                kind: ErrorKind::Interrupted,
+            })),
+        }
+    }
+
+    pub(crate) fn new_named<A, M>(receiver: catty::Receiver<R>) -> Self {
+        Self {
+            inner: Inner::Receiving(receiver.map_err(|_| Error {
+                actor: Some(std::any::type_name::<A>()),
+                message: Some(std::any::type_name::<M>()),
+                kind: ErrorKind::Interrupted,
+            })),
         }
     }
 }
@@ -45,7 +59,11 @@ impl<R> Future for Receiver<R> {
         match mem::replace(&mut this.inner, Inner::Done) {
             Inner::Disconnected => {
                 this.inner = Inner::Done;
-                Poll::Ready(Err(Error::Disconnected))
+                Poll::Ready(Err(Error {
+                    actor: None,
+                    message: None,
+                    kind: ErrorKind::Disconnected,
+                }))
             }
             Inner::Receiving(mut rx) => match rx.poll_unpin(cx) {
                 Poll::Ready(item) => {

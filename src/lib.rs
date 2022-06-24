@@ -194,7 +194,52 @@ pub trait Actor: 'static + Send + Sized {
 
 /// An error related to the actor system
 #[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Error {
+pub struct Error {
+    actor: Option<&'static str>,
+    message: Option<&'static str>,
+    kind: ErrorKind,
+}
+
+impl Error {
+    /// The name of the actor that this error is associated with, if not erased.
+    pub fn actor(&self) -> Option<&'static str> {
+        self.actor
+    }
+
+    /// The name of the message that this error is associated with, if relevant.
+    pub fn message(&self) -> Option<&'static str> {
+        self.message
+    }
+
+    /// The [kind](ErrorKind) of this error.
+    pub fn kind(&self) -> &ErrorKind {
+        &self.kind
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            ErrorKind::Disconnected => write!(
+                f,
+                "{} address disconnected",
+                self.actor.unwrap_or("<unknown>")
+            ),
+            ErrorKind::Interrupted => write!(
+                f,
+                "Message ({}) request to {} interrupted",
+                self.message.unwrap_or("<unknown>"),
+                self.actor.unwrap_or("<unknown>")
+            ),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+/// A specific type of [`Error`]
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub enum ErrorKind {
     /// The actor is no longer running and disconnected from the sending address.
     Disconnected,
     /// The message request operation was interrupted. This happens when the message result sender
@@ -205,17 +250,6 @@ pub enum Error {
     /// result in an error.
     Interrupted,
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Disconnected => f.write_str("Actor address disconnected"),
-            Error::Interrupted => f.write_str("Message request interrupted"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 /// Whether or not to keep an attached stream forwarding.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
