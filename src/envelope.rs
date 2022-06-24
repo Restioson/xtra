@@ -48,7 +48,7 @@ pub trait MessageEnvelope: Send {
     ) -> BoxFuture<'a, ()>;
 }
 
-/// An envelope that returns a result from a message. Constructed by the `AddressExt::do_send` method.
+/// An envelope that returns a result from a message. Constructed by the `AddressExt::send` method.
 pub struct ReturningEnvelope<A, M, R> {
     message: M,
     result_sender: Sender<R>,
