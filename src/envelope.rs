@@ -51,6 +51,7 @@ pub trait MessageEnvelope: Send {
 }
 
 #[cfg(feature = "with-tracing-0_1")]
+#[derive(Clone)]
 struct Instrumentation {
     parent: Span,
     _in_queue: Span,
@@ -195,7 +196,12 @@ impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<
         #[cfg(feature = "with-tracing-0_1")]
         let fut = {
             let Instrumentation { parent, .. } = instrumentation;
-            let executing = debug_span!(parent: parent, "actor_message_handler");
+            let executing = debug_span!(
+                parent: &parent,
+                "xtra message handler",
+                actor = std::any::type_name::<A>(),
+                message = std::any::type_name::<M>(),
+            );
             fut.instrument(executing)
         };
 
@@ -203,7 +209,6 @@ impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<
     }
 }
 
-// TODO instrument
 /// Like MessageEnvelope, but with an Arc instead of Box
 pub trait BroadcastEnvelope: HasPriority + Send + Sync {
     type Actor;
@@ -219,14 +224,18 @@ pub struct BroadcastEnvelopeConcrete<A, M> {
     message: M,
     priority: u32,
     phantom: PhantomData<fn() -> A>,
+    #[cfg(feature = "with-tracing-0_1")]
+    instrumentation: Instrumentation,
 }
 
-impl<A, M> BroadcastEnvelopeConcrete<A, M> {
+impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
     pub fn new(message: M, priority: u32) -> Self {
         BroadcastEnvelopeConcrete {
             message,
             priority,
             phantom: PhantomData,
+            #[cfg(feature = "with-tracing-0_1")]
+            instrumentation: Instrumentation::new::<A, M>(),
         }
     }
 }
@@ -243,7 +252,24 @@ where
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> BoxFuture<'a, ()> {
-        Box::pin(act.handle(self.message.clone(), ctx))
+        let fut = act.handle(self.message.clone(), ctx);
+
+        #[cfg(feature = "with-tracing-0_1")]
+        let fut = {
+            let Instrumentation { parent, .. } = self.instrumentation.clone();
+            drop(self); // Drop self early to get time in queue to end ASAP
+
+            let executing = debug_span!(
+                parent: &parent,
+                "xtra message handler",
+                actor = std::any::type_name::<A>(),
+                message = std::any::type_name::<M>(),
+            );
+
+            fut.instrument(executing)
+        };
+
+        Box::pin(fut)
     }
 }
 
