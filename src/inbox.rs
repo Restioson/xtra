@@ -92,11 +92,8 @@ impl<A> Chan<A> {
             self.shutdown.store(true, atomic::Ordering::SeqCst);
             self.on_shutdown.notify(usize::MAX);
 
-            for queue in inner
-                .broadcast_queues
-                .drain(..)
-                .flat_map(|weak| weak.upgrade())
-            {
+            let iter = inner.broadcast_queues.drain(..).flat_map(|weak| weak.upgrade());
+            for queue in iter {
                 *queue.lock() = BinaryHeap::new();
             }
 

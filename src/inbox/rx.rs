@@ -214,7 +214,7 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
 }
 
 impl<A, Rc: RxRefCounter> ReceiveFuture<A, Rc> {
-    /// See docs on [`mailbox::ReceiveFuture::cancel`] for more
+    /// See docs on [`inbox::ReceiveFuture::cancel`] for more
     #[must_use = "If dropped, messages could be lost"]
     pub fn cancel(&mut self) -> Option<ActorMessage<A>> {
         if let ReceiveFutureInner::Waiting { waiting, .. } =
@@ -244,7 +244,8 @@ impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
             // may overflow (probably not enough to cause backpressure issues), but this is better
             // than dropping a message.
             if let Some(WakeReason::MessageToOneActor(msg)) = waiting.lock().cancel() {
-                match inner.try_fulfill_receiver(WakeReason::MessageToOneActor(msg)) {
+                let res = inner.try_fulfill_receiver(WakeReason::MessageToOneActor(msg));
+                match res {
                     Ok(()) => (),
                     Err(WakeReason::MessageToOneActor(msg)) => {
                         if msg.priority == 0 {

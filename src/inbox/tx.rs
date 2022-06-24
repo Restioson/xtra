@@ -47,26 +47,29 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
                 inner.waiting_senders.push_back(Arc::downgrade(&waiting));
                 Err(TrySendFail::Full(waiting))
             }
-            msg => match inner.try_fulfill_receiver(msg.into()) {
-                Ok(()) => Ok(()),
-                Err(WakeReason::MessageToOneActor(m))
+            msg => {
+                let res = inner.try_fulfill_receiver(msg.into());
+                match res {
+                    Ok(()) => Ok(()),
+                    Err(WakeReason::MessageToOneActor(m))
                     if m.priority == 0 && !self.inner.is_full(inner.ordered_queue.len()) =>
-                {
-                    inner.ordered_queue.push_back(m.val);
-                    Ok(())
-                }
-                Err(WakeReason::MessageToOneActor(m))
+                        {
+                            inner.ordered_queue.push_back(m.val);
+                            Ok(())
+                        }
+                    Err(WakeReason::MessageToOneActor(m))
                     if m.priority != 0 && !self.inner.is_full(inner.priority_queue.len()) =>
-                {
-                    inner.priority_queue.push(m);
-                    Ok(())
+                        {
+                            inner.priority_queue.push(m);
+                            Ok(())
+                        }
+                    Err(WakeReason::MessageToOneActor(m)) => {
+                        let waiting = WaitingSender::new(m.into());
+                        inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+                        Err(TrySendFail::Full(waiting))
+                    }
+                    _ => unreachable!(),
                 }
-                Err(WakeReason::MessageToOneActor(m)) => {
-                    let waiting = WaitingSender::new(m.into());
-                    inner.waiting_senders.push_back(Arc::downgrade(&waiting));
-                    Err(TrySendFail::Full(waiting))
-                }
-                _ => unreachable!(),
             },
         }
     }
