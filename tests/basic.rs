@@ -5,7 +5,7 @@ use std::task::Poll;
 use std::time::Duration;
 
 use futures_util::task::noop_waker_ref;
-use futures_util::{FutureExt, SinkExt};
+use futures_util::FutureExt;
 use smol::stream;
 use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
@@ -93,6 +93,7 @@ impl Actor for DropTester {
 }
 
 struct StopAll;
+
 struct StopSelf;
 
 #[async_trait]
@@ -558,7 +559,7 @@ async fn set_priority_msg_channel() {
         vec![
             Message::Priority { priority: 2 },
             Message::Priority { priority: 1 },
-            Message::Ordered { ord: 0 }
+            Message::Ordered { ord: 0 },
         ]
     );
 }
@@ -752,18 +753,6 @@ async fn address_send_exercises_backpressure() {
         .expect("be able to queue another message because the mailbox is empty again");
 
     context.yield_once(&mut Greeter).await; // process one message
-
-    // Sink
-    let mut sink = address.into_sink();
-    let _ = sink
-        .send(PrintHello("world"))
-        .now_or_never()
-        .expect("be able to queue another message because the mailbox is empty again");
-
-    assert!(
-        sink.send(PrintHello("world")).now_or_never().is_none(),
-        "Fail to queue 2nd message because mailbox is full"
-    );
 
     // Priority send
 
