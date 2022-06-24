@@ -155,7 +155,7 @@ async fn do_channel_benchmark<M, RM>(
     SendFuture<(), ActorErasedSending<()>, RM>: Future,
 {
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
-    let chan = MessageChannel::new(&addr);
+    let chan = MessageChannel::new(addr.clone());
 
     let start = Instant::now();
     for _ in 0..COUNT {

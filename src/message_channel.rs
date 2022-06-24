@@ -84,13 +84,13 @@ where
     /// Construct a new [`MessageChannel`] from the given [`Address`].
     ///
     /// The actor behind the [`Address`] must implement the [`Handler`] trait for the message type.
-    pub fn new<A>(address: &Address<A, Rc>) -> Self
+    pub fn new<A>(address: Address<A, Rc>) -> Self
     where
         A: Handler<M, Return = R>,
         Rc: RefCounter,
     {
         Self {
-            inner: Box::new(address.clone()),
+            inner: Box::new(address),
         }
     }
 
@@ -162,14 +162,14 @@ where
     }
 }
 
-impl<A, M, R, Rc> From<&Address<A, Rc>> for MessageChannel<M, R, Rc>
+impl<A, M, R, Rc> From<Address<A, Rc>> for MessageChannel<M, R, Rc>
 where
     A: Handler<M, Return = R>,
     R: Send + 'static,
     M: Send + 'static,
     Rc: RefCounter,
 {
-    fn from(address: &Address<A, Rc>) -> Self {
+    fn from(address: Address<A, Rc>) -> Self {
         MessageChannel::new(address)
     }
 }

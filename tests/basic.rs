@@ -335,7 +335,7 @@ async fn receiving_async_on_address_returns_immediately_after_dispatch() {
 #[tokio::test]
 async fn receiving_async_on_message_channel_returns_immediately_after_dispatch() {
     let address = LongRunningHandler.create(None).spawn_global();
-    let channel = MessageChannel::new(&address);
+    let channel = MessageChannel::new(address);
 
     let send_future = channel.send(Duration::from_secs(3)).split_receiver();
     let handler_future = send_future
@@ -533,7 +533,7 @@ async fn set_priority_msg_channel() {
     let fut = {
         let (addr, fut) = Elephant::default().create(None).run();
 
-        let channel = MessageChannel::new(&addr);
+        let channel = MessageChannel::new(addr);
 
         let _ = channel
             .send(Message::Ordered { ord: 0 })
@@ -845,7 +845,7 @@ fn address_debug() {
 fn message_channel_debug() {
     let (addr1, _ctx) = Context::<Greeter>::new(None);
 
-    let mc = MessageChannel::<Hello, String>::new(&addr1);
+    let mc = MessageChannel::<Hello, String>::new(addr1);
     let weak_mc = mc.downgrade();
 
     assert_eq!(
@@ -912,8 +912,8 @@ fn test_addr_cmp_hash_eq() {
     assert!(!addr1.same_actor(&addr2));
     assert!(addr1 > addr1.downgrade());
 
-    let chan1 = MessageChannel::<Hello, String>::new(&addr1);
-    let chan2 = MessageChannel::<Hello, String>::new(&addr2);
+    let chan1 = MessageChannel::<Hello, String>::new(addr1);
+    let chan2 = MessageChannel::<Hello, String>::new(addr2);
     assert!(chan1.eq(&chan1));
     assert!(!chan1.eq(&chan2));
     assert!(chan1.same_actor(&chan1));
