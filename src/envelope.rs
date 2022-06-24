@@ -92,37 +92,6 @@ impl<A, M, R> MessageEnvelope for ReturningEnvelope<A, M, R>
     }
 }
 
-/// An envelope that does not return a result from a message. Constructed  by the `AddressExt::do_send`
-/// method.
-pub struct NonReturningEnvelope<A, M> {
-    message: M,
-    phantom: PhantomData<fn() -> A>,
-}
-
-impl<A: Actor, M> NonReturningEnvelope<A, M> {
-    pub fn new(message: M) -> Self {
-        NonReturningEnvelope {
-            message,
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<A, M> MessageEnvelope for NonReturningEnvelope<A, M>
-    where A: Handler<M>,
-          M: Send + 'static
-{
-    type Actor = A;
-
-    fn handle<'a>(
-        self: Box<Self>,
-        act: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
-    ) -> BoxFuture<'a, ()> {
-        Box::pin(act.handle(self.message, ctx).map(|_| ()))
-    }
-}
-
 /// Like MessageEnvelope, but with an Arc instead of Box
 pub trait BroadcastEnvelope: HasPriority + Send + Sync {
     type Actor;
