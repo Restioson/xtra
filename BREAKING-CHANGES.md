@@ -13,7 +13,7 @@
   `stop_all` in line with `stop_self`.
 - `MessageChannel` is now a `struct` that can be constructed from an `Address` via `MessageChannel::new` or using
   `From`/`Into`.
-- `AddressSink` was removed in favor of using `impl Trait` for the [`Address::into_sink`] method.
+- `AddressSink` was removed in favor of using `impl Trait` for the `Address::into_sink` method.
 
 ## 0.5.0
 
