@@ -68,6 +68,6 @@ async fn main() {
         let name = "world!".to_owned();
 
         println!("Greeting {}", name);
-        let _ = address.send(Hello(name)).split_receiver().await;
+        let _ = address.send(Hello(name)).split_receiver().await.unwrap();
     }
 }

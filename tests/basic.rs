@@ -69,7 +69,7 @@ async fn accumulate_to_ten() {
     let (addr, fut) = Accumulator(0).create(None).run();
     tokio::spawn(fut);
     for _ in 0..10 {
-        let _ = addr.send(Inc).split_receiver().await;
+        let _ = addr.send(Inc).split_receiver().await.unwrap();
     }
 
     assert_eq!(addr.send(Report).await.unwrap().0, 10);
@@ -124,7 +124,7 @@ async fn test_stop_and_drop() {
     let handle = tokio::spawn(fut);
     let weak = addr.downgrade();
     let join = weak.join();
-    let _ = addr.send(StopSelf).split_receiver().await;
+    let _ = addr.send(StopSelf).split_receiver().await.unwrap();
     handle.await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
     assert!(!weak.is_connected());
@@ -146,7 +146,7 @@ async fn test_stop_and_drop() {
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
     let weak = addr.downgrade();
     let join = weak.join();
-    let _ = addr.send(StopSelf).split_receiver().await;
+    let _ = addr.send(StopSelf).split_receiver().await.unwrap();
     tokio::spawn(fut).await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
     assert!(!weak.is_connected());
@@ -158,7 +158,7 @@ async fn handle_left_messages() {
     let (addr, fut) = Accumulator(0).create(None).run();
 
     for _ in 0..10 {
-        let _ = addr.send(Inc).split_receiver().await;
+        let _ = addr.send(Inc).split_receiver().await.unwrap();
     }
 
     drop(addr);
@@ -171,13 +171,13 @@ async fn do_not_handle_drained_messages() {
     let (addr, fut) = Accumulator(0).create(None).run();
 
     for _ in 0..5 {
-        let _ = addr.send(Inc).split_receiver().await;
+        let _ = addr.send(Inc).split_receiver().await.unwrap();
     }
 
-    let _ = addr.send(StopSelf).split_receiver().await;
+    let _ = addr.send(StopSelf).split_receiver().await.unwrap();
 
     for _ in 0..5 {
-        let _ = addr.send(Inc).split_receiver().await;
+        let _ = addr.send(Inc).split_receiver().await.unwrap();
     }
 
     assert_eq!(fut.await, 5);
@@ -187,10 +187,10 @@ async fn do_not_handle_drained_messages() {
     let fut2 = ctx.run(Accumulator(0));
 
     for _ in 0..5 {
-        let _ = addr.send(Inc).split_receiver().await;
+        let _ = addr.send(Inc).split_receiver().await.unwrap();
     }
 
-    let _ = addr.send(StopAll).split_receiver().await;
+    let _ = addr.send(StopAll).split_receiver().await.unwrap();
 
     assert_eq!(fut1.await, 5);
     assert!(!addr.is_connected());
@@ -246,7 +246,7 @@ async fn test_stream_cancel_join() {
 #[tokio::test]
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
     let (address, fut) = ActorStopSelf.create(None).run();
-    let _ = address.send(StopSelf).split_receiver().await;
+    let _ = address.send(StopSelf).split_receiver().await.unwrap();
     assert!(fut.now_or_never().is_some());
     assert!(address.join().now_or_never().is_some());
     assert!(!address.is_connected());
@@ -327,7 +327,8 @@ async fn receiving_async_on_address_returns_immediately_after_dispatch() {
     let send_future = address.send(Duration::from_secs(3)).split_receiver();
     let handler_future = send_future
         .now_or_never()
-        .expect("Dispatch should be immediate on first poll");
+        .expect("Dispatch should be immediate on first poll")
+        .expect("Actor should still be connected");
 
     handler_future.await.unwrap();
 }
@@ -340,7 +341,8 @@ async fn receiving_async_on_message_channel_returns_immediately_after_dispatch()
     let send_future = channel.send(Duration::from_secs(3)).split_receiver();
     let handler_future = send_future
         .now_or_never()
-        .expect("Dispatch should be immediate on first poll");
+        .expect("Dispatch should be immediate on first poll")
+        .expect("Actor should still be connected");
 
     handler_future.await.unwrap();
 }
@@ -430,10 +432,15 @@ async fn handle_order() {
                         let _ = ele.broadcast(msg).priority(priority).await;
                     }
                     Message::Priority { priority } => {
-                        let _ = ele.send(msg).priority(priority).split_receiver().await;
+                        let _ = ele
+                            .send(msg)
+                            .priority(priority)
+                            .split_receiver()
+                            .await
+                            .unwrap();
                     }
                     Message::Ordered { .. } => {
-                        let _ = ele.send(msg).split_receiver().await;
+                        let _ = ele.send(msg).split_receiver().await.unwrap();
                     }
                 }
             }
@@ -538,17 +545,20 @@ async fn set_priority_msg_channel() {
         let _ = channel
             .send(Message::Ordered { ord: 0 })
             .split_receiver()
-            .await;
+            .await
+            .expect("actor is not disconnected");
         let _ = channel
             .send(Message::Priority { priority: 1 })
             .priority(1)
             .split_receiver()
-            .await;
+            .await
+            .expect("actor is not disconnected");
         let _ = channel
             .send(Message::Priority { priority: 2 })
             .split_receiver()
             .priority(2)
-            .await;
+            .await
+            .expect("actor is not disconnected");
 
         fut
     };
@@ -736,7 +746,8 @@ async fn address_send_exercises_backpressure() {
         .send(Hello("world"))
         .split_receiver()
         .now_or_never()
-        .expect("be able to queue 1 message because the mailbox is empty");
+        .expect("be able to queue 1 message because the mailbox is empty")
+        .expect("actor is not disconnected");
     let handler2 = address.send(Hello("world")).split_receiver().now_or_never();
     assert!(
         handler2.is_none(),
@@ -749,7 +760,8 @@ async fn address_send_exercises_backpressure() {
         .send(Hello("world"))
         .split_receiver()
         .now_or_never()
-        .expect("be able to queue another message because the mailbox is empty again");
+        .expect("be able to queue another message because the mailbox is empty again")
+        .expect("actor is not disconnected");
 
     context.yield_once(&mut Greeter).await; // process one message
 
@@ -774,7 +786,8 @@ async fn address_send_exercises_backpressure() {
         .priority(1)
         .split_receiver()
         .now_or_never()
-        .expect("be able to queue 1 priority message because the mailbox is empty");
+        .expect("be able to queue 1 priority message because the mailbox is empty")
+        .expect("actor is not disconnected");
     let handler2 = address
         .send(Hello("world"))
         .priority(1)
@@ -792,7 +805,8 @@ async fn address_send_exercises_backpressure() {
         .priority(1)
         .split_receiver()
         .now_or_never()
-        .expect("be able to queue another priority message because the mailbox is empty again");
+        .expect("be able to queue another priority message because the mailbox is empty again")
+        .expect("actor is not disconnected");
 
     // Broadcast
 

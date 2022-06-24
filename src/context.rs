@@ -165,7 +165,7 @@ impl<A: Actor> Context<A> {
     ///     async fn handle(&mut self, _msg: Joining, ctx: &mut Context<Self>) -> bool {
     ///         let addr = ctx.address().unwrap();
     ///         let join = ctx.join(self, future::ready::<()>(()));
-    ///         let _ = addr.send(Stop).split_receiver().await;
+    ///         let _ = addr.send(Stop).split_receiver().await.unwrap();
     ///
     ///         // Actor is stopping, but the join should still evaluate correctly
     ///         join.now_or_never().is_some()
@@ -233,7 +233,7 @@ impl<A: Actor> Context<A> {
     ///
     ///         let addr = ctx.address().unwrap();
     ///         let select = ctx.select(self, future::pending::<()>());
-    ///         let _ = addr.send(Stop).split_receiver().await;
+    ///         let _ = addr.send(Stop).split_receiver().await.unwrap();
     ///
     ///         // Actor is stopping, so this will return Err, even though the future will
     ///         // usually never complete.

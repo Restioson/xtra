@@ -1,7 +1,6 @@
 use std::future::Future;
 use std::time::{Duration, Instant};
 
-use futures_util::FutureExt;
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
 use xtra::SendFuture;
@@ -107,7 +106,7 @@ async fn do_address_benchmark<R>(
 
     // rounding overflow
     for _ in 0..COUNT {
-        let _ = f(&addr).now_or_never();
+        let _ = f(&addr).await;
     }
 
     // awaiting on GetCount will make sure all previous messages are processed first BUT introduces

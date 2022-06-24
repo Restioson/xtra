@@ -128,7 +128,7 @@ impl<A, R, Rc: RefCounter> SetPriority for NameableSending<A, R, Rc> {
 }
 
 impl<A, R, Rc: RefCounter> Future for NameableSending<A, R, Rc> {
-    type Output = Receiver<R>;
+    type Output = Result<Receiver<R>, Disconnected>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -136,8 +136,8 @@ impl<A, R, Rc: RefCounter> Future for NameableSending<A, R, Rc> {
         let result = futures_util::ready!(this.inner.poll_unpin(cx));
 
         match result {
-            Ok(()) => Poll::Ready(this.receiver.take().expect("polled after completion")),
-            Err(_) => Poll::Ready(Receiver::disconnected()),
+            Ok(()) => Poll::Ready(Ok(this.receiver.take().expect("polled after completion"))),
+            Err(_) => Poll::Ready(Err(Disconnected)),
         }
     }
 }
@@ -161,16 +161,16 @@ pub struct ActorErasedSending<R> {
 }
 
 impl<R> Future for ActorErasedSending<R> {
-    type Output = Receiver<R>;
+    type Output = Result<Receiver<R>, Disconnected>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.future.poll_unpin(cx) {
-            Poll::Ready(Ok(())) => Poll::Ready(Receiver::new(
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(Receiver::new(
                 self.rx
                     .take()
                     .expect("polling after completion not supported"),
-            )),
-            Poll::Ready(Err(_)) => Poll::Ready(Receiver::disconnected()),
+            ))),
+            Poll::Ready(Err(_)) => Poll::Ready(Err(Disconnected)),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -184,7 +184,7 @@ impl<R> SetPriority for ActorErasedSending<R> {
 
 impl<R, F> Future for SendFuture<R, F, ResolveToHandlerReturn>
 where
-    F: Future<Output = Receiver<R>> + Unpin,
+    F: Future<Output = Result<Receiver<R>, Disconnected>> + Unpin,
 {
     type Output = Result<R, Disconnected>;
 
@@ -193,10 +193,11 @@ where
 
         match mem::replace(&mut this.inner, SendFutureInner::Done) {
             SendFutureInner::Sending(mut send_fut) => match send_fut.poll_unpin(ctx) {
-                Poll::Ready(rx) => {
+                Poll::Ready(Ok(rx)) => {
                     this.inner = SendFutureInner::Receiving(rx);
                     this.poll_unpin(ctx)
                 }
+                Poll::Ready(Err(Disconnected)) => Poll::Ready(Err(Disconnected)),
                 Poll::Pending => {
                     this.inner = SendFutureInner::Sending(send_fut);
                     Poll::Pending
@@ -221,28 +222,22 @@ where
 
 impl<R, F> Future for SendFuture<R, F, ResolveToReceiver>
 where
-    F: Future<Output = Receiver<R>> + Unpin,
+    F: Future<Output = Result<Receiver<R>, Disconnected>> + Unpin,
 {
-    type Output = Receiver<R>;
+    type Output = Result<Receiver<R>, Disconnected>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
 
         match mem::replace(&mut this.inner, SendFutureInner::Done) {
             SendFutureInner::Sending(mut send_fut) => match send_fut.poll_unpin(ctx) {
-                Poll::Ready(rx) => {
-                    this.inner = SendFutureInner::Receiving(rx);
-                    this.poll_unpin(ctx)
-                }
+                ready @ Poll::Ready(_) => ready,
                 Poll::Pending => {
                     this.inner = SendFutureInner::Sending(send_fut);
                     Poll::Pending
                 }
             },
-            SendFutureInner::Receiving(rx) => {
-                this.inner = SendFutureInner::Done;
-                Poll::Ready(rx)
-            }
+            SendFutureInner::Receiving(rx) => Poll::Ready(Ok(rx)),
             SendFutureInner::Done => {
                 panic!("Polled after completion")
             }
