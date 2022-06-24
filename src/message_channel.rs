@@ -15,15 +15,13 @@ use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture}
 use crate::{Disconnected, Handler};
 
 /// A message channel is a channel through which you can send only one kind of message, but to
-/// any actor that can handle it. It is like [`Address`], but associated with
-/// the message type rather than the actor type.
+/// any actor that can handle it. It is like [`Address`], but associated with the message type rather
+/// than the actor type.
 ///
 /// # Example
 ///
 /// ```rust
 /// # use xtra::prelude::*;
-/// # use smol::Timer;
-/// # use std::time::Duration;
 /// struct WhatsYourName;
 ///
 /// struct Alice;
@@ -62,7 +60,7 @@ use crate::{Disconnected, Handler};
 ///         let  alice = Alice.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///         let  bob = Bob.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///
-///         let channels: [MessageChannel<WhatsYourName, &'static str>; 2] = [
+///         let channels = [
 ///             MessageChannel::new(&alice),
 ///             MessageChannel::new(&bob)
 ///         ];
@@ -83,7 +81,9 @@ where
     M: Send + 'static,
     R: Send + 'static,
 {
-    /// TODO(docs)
+    /// Construct a new [`MessageChannel`] from the given [`Address`].
+    ///
+    /// The actor behind the [`Address`] must implement the [`Handler`] trait for the message type.
     pub fn new<A>(address: &Address<A, Rc>) -> Self
     where
         A: Handler<M, Return = R>,
@@ -94,21 +94,24 @@ where
         }
     }
 
-    /// Returns whether the actor referred to by this address is running and accepting messages.
+    /// Returns whether the actor referred to by this message channel is running and accepting messages.
     pub fn is_connected(&self) -> bool {
         self.inner.is_connected()
     }
 
-    /// Returns the number of messages in the actor's mailbox. Note that this does **not**
-    /// differentiate between types of messages; it will return the count of all messages in the
-    /// actor's mailbox, not only the messages sent by this message channel type.
+    /// Returns the number of messages in the actor's mailbox.
+    ///
+    /// Note that this does **not** differentiate between types of messages; it will return the
+    /// count of all messages in the actor's mailbox, not only the messages sent by this
+    /// [`MessageChannel`].
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
-    /// The total capacity of the actor's mailbox. Note that this does **not** differentiate between
-    /// types of messages; it will return the total capacity of actor's mailbox, not only the
-    /// messages sent by this message channel type
+    /// The total capacity of the actor's mailbox.
+    ///
+    /// Note that this does **not** differentiate between types of messages; it will return the
+    /// total capacity of actor's mailbox, not only the messages sent by this [`MessageChannel`].
     pub fn capacity(&self) -> Option<usize> {
         self.inner.capacity()
     }
@@ -119,8 +122,6 @@ where
     }
 
     /// Send a message to the actor.
-    ///
-    /// The actor must implement [`Handler<Message>`] for this to work.
     ///
     /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
     /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
@@ -133,7 +134,7 @@ where
         self.inner.join()
     }
 
-    /// Determines whether this and the other message channel address the same actor mailbox.
+    /// Determines whether this and the other [`MessageChannel`] address the same actor mailbox.
     pub fn same_actor<Rc2>(&self, other: &MessageChannel<M, R, Rc2>) -> bool
     where
         Rc2: Send + 'static,
@@ -146,7 +147,16 @@ impl<M, Rc> MessageChannel<M, (), Rc>
 where
     M: Send + 'static,
 {
-    /// TODO(docs)
+    /// Construct a [`Sink`] from this [`MessageChannel`].
+    ///
+    /// Sending an item into a [`Sink`]s does not return a value. Consequently, this function is
+    /// only available on [`MessageChannel`]s with a return value of `()`.
+    ///
+    /// To create such a [`MessageChannel`] use an [`Address`] that points to an actor where the
+    /// [`Handler`] of a given message has [`Return`](Handler::Return) set to `()`.
+    ///
+    /// The provided [`Sink`] will process one message at a time completely and thus enforces
+    /// back-pressure according to the bounds of the actor's mailbox.
     pub fn into_sink(self) -> impl Sink<M, Error = Disconnected> {
         futures_util::sink::unfold((), move |(), message| self.send(message))
     }
@@ -183,8 +193,7 @@ where
 /// Determines whether this and the other message channel address the same actor mailbox **and**
 /// they have reference count type equality. This means that this will only return true if
 /// [`MessageChannel::same_actor`] returns true **and** if they both have weak or strong reference
-/// counts. [`Either`](crate::refcount::Either) will compare as whichever reference count type
-/// it wraps.
+/// counts. [`Either`] will compare as whichever reference count type it wraps.
 impl<M, R, Rc> PartialEq for MessageChannel<M, R, Rc>
 where
     M: Send + 'static,
@@ -212,7 +221,7 @@ where
     M: Send + 'static,
     R: Send + 'static,
 {
-    /// TODO(docs)
+    /// Downgrade this [`MessageChannel`] to a [`Weak`] reference count.
     pub fn downgrade(&self) -> MessageChannel<M, R, Weak> {
         MessageChannel {
             inner: self.inner.to_weak(),
@@ -225,7 +234,7 @@ where
     M: Send + 'static,
     R: Send + 'static,
 {
-    /// TODO(docs)
+    /// Downgrade this [`MessageChannel`] to a [`Weak`] reference count.
     pub fn downgrade(&self) -> MessageChannel<M, R, Weak> {
         MessageChannel {
             inner: self.inner.to_weak(),
