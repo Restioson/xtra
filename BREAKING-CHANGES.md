@@ -3,7 +3,6 @@
 ## 0.6.0
 
 - Sealed `RefCounter`, `MessageChannel`, and `MessageSink` traits
-- `AddressSink` no longer exists - `Address` now implements `Sink` directly for any handlers returning `()`.
 - `Message` no longer exists - `Return` is now specified on the `Handler` trait itself.
 - `Address` is no longer `Sync`, due to it implementing `AddressSink`. You should just be able to clone it and then send
   it, though.
@@ -16,6 +15,7 @@
   `stop_all` in line with `stop_self`.
 - `MessageChannel` is now a `struct` that can be constructed from an `Address` via `MessageChannel::new` or using
   `From`/`Into`.
+- `AddressSink` was removed in favor of using `impl Trait` for the [`Address::into_sink`] method.
 
 ## 0.5.0
 
