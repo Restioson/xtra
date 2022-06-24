@@ -160,7 +160,7 @@ where
         let message_type = &std::any::type_name::<M>();
         let return_type = &std::any::type_name::<R>();
 
-        write!(f, "MessageChannel<{message_type}, {return_type}>(")?;
+        write!(f, "MessageChannel<{}, {}>(", message_type, return_type)?;
         self.inner.debug_fmt(f)?;
         write!(f, ")")?;
 
