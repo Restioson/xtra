@@ -2,10 +2,8 @@
 
 ## 0.6.0
 
-- Sealed `RefCounter`, `MessageChannel`, and `MessageSink` traits
+- Sealed `RefCounter` and `MessageChannel` traits
 - `Message` no longer exists - `Return` is now specified on the `Handler` trait itself.
-- `Address` is no longer `Sync`, due to it implementing `AddressSink`. You should just be able to clone it and then send
-  it, though.
 - `Context::notify_interval` and `Context::notify_after` are now subject to back-pressure, in case the address mailbox
   is full. These aren't API breaking but a semantic changes.
 - `stopping` has been removed in favour of `stop_self` and `stop_all`. If logic to determine if the actor should stop
