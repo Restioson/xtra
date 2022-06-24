@@ -2,6 +2,7 @@
 //! any actor that can handle it. It is like [`Address`], but associated with
 //! the message type rather than the actor type.
 
+use std::fmt;
 use std::fmt::Debug;
 
 use futures_sink::Sink;
@@ -141,10 +142,29 @@ where
     }
 }
 
-impl<M, Rc> MessageChannel<M, (), Rc> where M: Send + 'static {
+impl<M, Rc> MessageChannel<M, (), Rc>
+where
+    M: Send + 'static,
+{
     /// TODO(docs)
     pub fn into_sink(self) -> impl Sink<M, Error = Disconnected> {
         futures_util::sink::unfold((), move |(), message| self.send(message))
+    }
+}
+
+impl<M, R, Rc> fmt::Debug for MessageChannel<M, R, Rc>
+where
+    R: Send + 'static,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message_type = &std::any::type_name::<M>();
+        let return_type = &std::any::type_name::<R>();
+
+        write!(f, "MessageChannel<{message_type}, {return_type}>(")?;
+        self.inner.debug_fmt(f)?;
+        write!(f, ")")?;
+
+        Ok(())
     }
 }
 
@@ -160,7 +180,7 @@ where
     Rc: Send + 'static,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.same_actor(&other) && (self.inner.is_strong() == other.inner.is_strong())
+        self.same_actor(other) && (self.inner.is_strong() == other.inner.is_strong())
     }
 }
 
@@ -228,6 +248,8 @@ trait MessageChannelTrait<M, Rc> {
     fn to_weak(
         &self,
     ) -> Box<dyn MessageChannelTrait<M, Weak, Return = Self::Return> + Send + Sync + 'static>;
+
+    fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result;
 }
 
 impl<A, R, M, Rc: RefCounter> MessageChannelTrait<M, Rc> for Address<A, Rc>
@@ -283,5 +305,9 @@ where
         &self,
     ) -> Box<dyn MessageChannelTrait<M, Weak, Return = Self::Return> + Send + Sync + 'static> {
         Box::new(Address(self.0.downgrade()))
+    }
+
+    fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
     }
 }

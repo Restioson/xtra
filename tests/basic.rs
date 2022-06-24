@@ -842,6 +842,28 @@ fn address_debug() {
 }
 
 #[test]
+fn message_channel_debug() {
+    let (addr1, _ctx) = Context::<Greeter>::new(None);
+
+    let mc = MessageChannel::<Hello, String>::new(&addr1.clone());
+    let weak_mc = mc.downgrade();
+
+    assert_eq!(
+        format!("{:?}", mc),
+        "MessageChannel<basic::Hello, alloc::string::String>(\
+            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 2, rc: TxStrong(()) }\
+        )"
+    );
+
+    assert_eq!(
+        format!("{:?}", weak_mc),
+        "MessageChannel<basic::Hello, alloc::string::String>(\
+            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 2, rc: TxWeak(()) }\
+        )"
+    );
+}
+
+#[test]
 fn scoped_task() {
     // Completes when address is connected
     let (addr, ctx) = Context::<Greeter>::new(None);
