@@ -214,7 +214,7 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
 }
 
 impl<A, Rc: RxRefCounter> ReceiveFuture<A, Rc> {
-    /// See docs on mailbox::ReceiveFuture::cancel for more
+    /// See docs on [`mailbox::ReceiveFuture::cancel`] for more
     #[must_use = "If dropped, messages could be lost"]
     pub fn cancel(&mut self) -> Option<ActorMessage<A>> {
         if let ReceiveFutureInner::Waiting { waiting, .. } =
