@@ -3,7 +3,6 @@
 //! the message type rather than the actor type.
 
 use std::fmt;
-use std::fmt::Debug;
 
 use futures_sink::Sink;
 
@@ -329,6 +328,6 @@ where
     }
 
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
+        fmt::Debug::fmt(&self.0, f)
     }
 }
