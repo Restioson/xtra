@@ -335,7 +335,7 @@ async fn receiving_async_on_address_returns_immediately_after_dispatch() {
 #[tokio::test]
 async fn receiving_async_on_message_channel_returns_immediately_after_dispatch() {
     let address = LongRunningHandler.create(None).spawn_global();
-    let channel = StrongMessageChannel::clone_channel(&address);
+    let channel = MessageChannel::new(address);
 
     let send_future = channel.send(Duration::from_secs(3)).split_receiver();
     let handler_future = send_future
@@ -533,7 +533,7 @@ async fn set_priority_msg_channel() {
     let fut = {
         let (addr, fut) = Elephant::default().create(None).run();
 
-        let channel = &addr as &dyn MessageChannel<Message, Return = ()>;
+        let channel = MessageChannel::new(addr);
 
         let _ = channel
             .send(Message::Ordered { ord: 0 })
@@ -842,6 +842,28 @@ fn address_debug() {
 }
 
 #[test]
+fn message_channel_debug() {
+    let (addr1, _ctx) = Context::<Greeter>::new(None);
+
+    let mc = MessageChannel::<Hello, String>::new(addr1);
+    let weak_mc = mc.downgrade();
+
+    assert_eq!(
+        format!("{:?}", mc),
+        "MessageChannel<basic::Hello, alloc::string::String>(\
+            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 1, rc: TxStrong(()) }\
+        )"
+    );
+
+    assert_eq!(
+        format!("{:?}", weak_mc),
+        "MessageChannel<basic::Hello, alloc::string::String>(\
+            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 1, rc: TxWeak(()) }\
+        )"
+    );
+}
+
+#[test]
 fn scoped_task() {
     // Completes when address is connected
     let (addr, ctx) = Context::<Greeter>::new(None);
@@ -885,20 +907,18 @@ fn test_addr_cmp_hash_eq() {
     assert_ne!(addr1, addr2);
     assert_ne!(addr1, addr1.downgrade());
     assert_eq!(addr1, addr1.clone());
-    assert_ne!(addr1, addr2);
     assert!(addr1.same_actor(&addr1));
     assert!(addr1.same_actor(&addr1.downgrade()));
     assert!(!addr1.same_actor(&addr2));
     assert!(addr1 > addr1.downgrade());
 
-    let chan1 = &addr1 as &dyn StrongMessageChannel<Hello, Return = String>;
-    let chan2 = &addr2 as &dyn StrongMessageChannel<Hello, Return = String>;
-    assert!(chan1.eq(chan1.upcast_ref()));
-    assert!(chan1.eq(chan1.upcast_ref()));
-    assert!(!chan1.eq(chan2.upcast_ref()));
-    assert!(chan1.same_actor(chan1.upcast_ref()));
-    assert!(chan1.same_actor(chan1.downgrade().upcast_ref()));
-    assert!(!chan1.same_actor(chan2.upcast_ref()));
+    let chan1 = MessageChannel::<Hello, String>::new(addr1);
+    let chan2 = MessageChannel::<Hello, String>::new(addr2);
+    assert!(chan1.eq(&chan1));
+    assert!(!chan1.eq(&chan2));
+    assert!(chan1.same_actor(&chan1));
+    assert!(chan1.same_actor(&chan1.downgrade()));
+    assert!(!chan1.same_actor(&chan2));
 }
 
 #[tokio::test]

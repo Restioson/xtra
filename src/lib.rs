@@ -35,7 +35,7 @@ pub mod prelude {
 
     pub use crate::address::Address;
     pub use crate::context::Context;
-    pub use crate::message_channel::{MessageChannel, StrongMessageChannel, WeakMessageChannel};
+    pub use crate::message_channel::MessageChannel;
     #[cfg(feature = "with-tracing-0_1")]
     pub use crate::tracing::InstrumentedExt;
     #[doc(no_inline)]
