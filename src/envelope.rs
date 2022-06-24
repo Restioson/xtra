@@ -63,14 +63,14 @@ impl Instrumentation {
         {
             let parent = tracing::debug_span!(
                 parent: tracing::Span::current(),
-                "xtra actor request",
+                "xtra_actor_request",
                 actor = std::any::type_name::<A>(),
                 message = std::any::type_name::<M>(),
             );
 
             let waiting_for_actor = tracing::debug_span!(
                 parent: &parent,
-                "xtra message waiting for actor",
+                "xtra_message_waiting_for_actor",
                 actor = std::any::type_name::<A>(),
                 message = std::any::type_name::<M>(),
             );
@@ -86,13 +86,14 @@ impl Instrumentation {
     }
 
     fn apply<A, M, F>(self, fut: F) -> impl Future<Output = F::Output>
-        where F: Future,
+    where
+        F: Future,
     {
         #[cfg(feature = "instrumentation")]
         {
             let executing = tracing::debug_span!(
                 parent: &self.parent,
-                "xtra message handler",
+                "xtra_message_handler",
                 actor = std::any::type_name::<A>(),
                 message = std::any::type_name::<M>(),
             );
@@ -144,10 +145,14 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
             ..
         } = *self;
 
-        Box::pin(instrumentation.apply::<A, M, _>(act.handle(message, ctx)).map(move |r| {
-            // We don't actually care if the receiver is listening
-            let _ = result_sender.send(r);
-        }))
+        Box::pin(
+            instrumentation
+                .apply::<A, M, _>(act.handle(message, ctx))
+                .map(move |r| {
+                    // We don't actually care if the receiver is listening
+                    let _ = result_sender.send(r);
+                }),
+        )
     }
 }
 
@@ -183,7 +188,11 @@ impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<
             ..
         } = *self;
 
-        Box::pin(instrumentation.apply::<A, M, _>(act.handle(message, ctx)).map(|_| ()))
+        Box::pin(
+            instrumentation
+                .apply::<A, M, _>(act.handle(message, ctx))
+                .map(|_| ()),
+        )
     }
 }
 
