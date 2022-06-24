@@ -2,11 +2,8 @@
 
 ## 0.6.0
 
-- Sealed `RefCounter`, `MessageChannel`, and `MessageSink` traits
-- `AddressSink` no longer exists - `Address` now implements `Sink` directly for any handlers returning `()`.
+- Sealed `RefCounter` and `MessageChannel` traits
 - `Message` no longer exists - `Return` is now specified on the `Handler` trait itself.
-- `Address` is no longer `Sync`, due to it implementing `AddressSink`. You should just be able to clone it and then send
-  it, though.
 - `Context::notify_interval` and `Context::notify_after` are now subject to back-pressure, in case the address mailbox
   is full. These aren't API breaking but a semantic changes.
 - `stopping` has been removed in favour of `stop_self` and `stop_all`. If logic to determine if the actor should stop
@@ -14,6 +11,9 @@
 - Previously, `stop_all` would immediately disconnect the address. However, `stop_self` done on every actor would actually
   not do this in one case - if there were a free-floating (not executing an actor event loop) Context. This change brings
   `stop_all` in line with `stop_self`.
+- `MessageChannel` is now a `struct` that can be constructed from an `Address` via `MessageChannel::new` or using
+  `From`/`Into`.
+- `AddressSink` was removed in favor of using `impl Trait` for the `Address::into_sink` method.
 - `InstrumentedExt` was removed. All messages are now instrumented automatically when `instrumentation` is enabled.
 
 ## 0.5.0

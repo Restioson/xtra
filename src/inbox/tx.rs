@@ -177,13 +177,6 @@ impl<A, Rc: TxRefCounter> SendFuture<A, Rc> {
             inner: SendFutureInner::New(msg),
         }
     }
-
-    pub fn empty(tx: Sender<A, Rc>) -> Self {
-        SendFuture {
-            tx,
-            inner: SendFutureInner::Complete,
-        }
-    }
 }
 
 impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
@@ -274,8 +267,8 @@ impl<A, Rc: TxRefCounter> FusedFuture for SendFuture<A, Rc> {
 
 /// This trait represents the strength of an address's reference counting. It is an internal trait.
 /// There are two implementations of this trait: [`Weak`](TxWeak) and [`Strong`](TxStrong). These
-/// can be provided as the second type argument to [`Address`] in order to change how the address
-/// affects the actor's dropping. Read the docs of [`Address`] to find out more.
+/// can be provided as the second type argument to [`Address`](crate::Address) in order to change how the address
+/// affects the actor's dropping. Read the docs of [`Address`](crate::Address) to find out more.
 pub trait TxRefCounter: RefCounterInner + Unpin + Debug + Send + Sync + 'static {}
 
 impl TxRefCounter for TxStrong {}
@@ -283,13 +276,13 @@ impl TxRefCounter for TxWeak {}
 impl TxRefCounter for TxEither {}
 
 /// The reference count of a strong address. Strong addresses will prevent the actor from being
-/// dropped as long as they live. Read the docs of [`Address`] to find
+/// dropped as long as they live. Read the docs of [`Address`](crate::Address) to find
 /// out more.
 #[derive(Debug)]
 pub struct TxStrong(());
 
 /// The reference count of a weak address. Weak addresses will bit prevent the actor from being
-/// dropped. Read the docs of [`Address`] to find out more.
+/// dropped. Read the docs of [`Address`](crate::Address) to find out more.
 #[derive(Debug)]
 pub struct TxWeak(());
 

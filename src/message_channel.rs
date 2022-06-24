@@ -1,35 +1,26 @@
 //! A message channel is a channel through which you can send only one kind of message, but to
-//! any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
+//! any actor that can handle it. It is like [`Address`], but associated with
 //! the message type rather than the actor type.
 
-use std::fmt::Debug;
+use std::fmt;
 
-use futures_core::future::BoxFuture;
-use futures_core::stream::BoxStream;
+use futures_sink::Sink;
 
-use crate::address::{ActorJoinHandle, Address, WeakAddress};
+use crate::address::{ActorJoinHandle, Address};
 use crate::envelope::ReturningEnvelope;
 use crate::inbox::{PriorityMessageToOne, SentMessage};
-use crate::refcount::{RefCounter, Strong};
+use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture};
-use crate::{Handler, KeepRunning};
+use crate::{Disconnected, Handler};
 
 /// A message channel is a channel through which you can send only one kind of message, but to
-/// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
-/// the message type rather than the actor type. This trait represents *any kind of message channel*.
-/// There are two traits which inherit from it - one for
-/// [weak message channels](trait.WeakMessageChannel.html), and one for
-/// [strong message channels](trait.StrongMessageChannel.html). Both of these traits may be
-/// downcasted to this trait using their respective `downcast` methods. Therefore, this trait is
-/// most useful when you want to be generic over both strong and weak message channels. If this is
-/// undesireable or not needed, simply use their respective trait objects instead.
+/// any actor that can handle it. It is like [`Address`], but associated with the message type rather
+/// than the actor type.
 ///
 /// # Example
 ///
 /// ```rust
 /// # use xtra::prelude::*;
-/// # use smol::Timer;
-/// # use std::time::Duration;
 /// struct WhatsYourName;
 ///
 /// struct Alice;
@@ -65,127 +56,223 @@ use crate::{Handler, KeepRunning};
 /// fn main() {
 /// # #[cfg(feature = "with-smol-1")]
 /// smol::block_on(async {
-///         let channels: [Box<dyn StrongMessageChannel<WhatsYourName, Return = &'static str>>; 2] = [
-///             Box::new(Alice.create(None).spawn(&mut xtra::spawn::Smol::Global)),
-///             Box::new(Bob.create(None).spawn(&mut xtra::spawn::Smol::Global))
+///         let alice = Alice.create(None).spawn(&mut xtra::spawn::Smol::Global);
+///         let bob = Bob.create(None).spawn(&mut xtra::spawn::Smol::Global);
+///
+///         let channels = [
+///             MessageChannel::new(alice),
+///             MessageChannel::new(bob)
 ///         ];
 ///         let name = ["Alice", "Bob"];
+///
 ///         for (channel, name) in channels.iter().zip(&name) {
 ///             assert_eq!(*name, channel.send(WhatsYourName).await.unwrap());
 ///         }
 ///     })
 /// }
 /// ```
-pub trait MessageChannel<M>:
-    private::IsStrong + private::ToInnerPtr + Unpin + Debug + Send
+pub struct MessageChannel<M, R, Rc = Strong> {
+    inner: Box<dyn MessageChannelTrait<M, Rc, Return = R> + Send + Sync + 'static>,
+}
+
+impl<M, Rc, R> MessageChannel<M, R, Rc>
+where
+    M: Send + 'static,
+    R: Send + 'static,
 {
-    /// The return value of the handler for `M`.
-    type Return: Send + 'static;
-    /// Returns whether the actor referred to by this address is running and accepting messages.
-    fn is_connected(&self) -> bool;
+    /// Construct a new [`MessageChannel`] from the given [`Address`].
+    ///
+    /// The actor behind the [`Address`] must implement the [`Handler`] trait for the message type.
+    pub fn new<A>(address: Address<A, Rc>) -> Self
+    where
+        A: Handler<M, Return = R>,
+        Rc: RefCounter,
+    {
+        Self {
+            inner: Box::new(address),
+        }
+    }
 
-    /// Returns the number of messages in the actor's mailbox. Note that this does **not**
-    /// differentiate between types of messages; it will return the count of all messages in the
-    /// actor's mailbox, not only the messages sent by this message channel type.
-    fn len(&self) -> usize;
+    /// Returns whether the actor referred to by this message channel is running and accepting messages.
+    pub fn is_connected(&self) -> bool {
+        self.inner.is_connected()
+    }
 
-    /// The total capacity of the actor's mailbox. Note that this does **not** differentiate between
-    /// types of messages; it will return the total capacity of actor's mailbox, not only the
-    /// messages sent by this message channel type
-    fn capacity(&self) -> Option<usize>;
+    /// Returns the number of messages in the actor's mailbox.
+    ///
+    /// Note that this does **not** differentiate between types of messages; it will return the
+    /// count of all messages in the actor's mailbox, not only the messages sent by this
+    /// [`MessageChannel`].
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// The total capacity of the actor's mailbox.
+    ///
+    /// Note that this does **not** differentiate between types of messages; it will return the
+    /// total capacity of actor's mailbox, not only the messages sent by this [`MessageChannel`].
+    pub fn capacity(&self) -> Option<usize> {
+        self.inner.capacity()
+    }
 
     /// Returns whether the actor's mailbox is empty.
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Send a message to the actor.
     ///
-    /// The actor must implement [`Handler<Message>`] for this to work.
-    ///
     /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
     /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
+    pub fn send(&self, message: M) -> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
+        self.inner.send(message)
+    }
+
+    /// Waits until this [`MessageChannel`] becomes disconnected.
+    pub fn join(&self) -> ActorJoinHandle {
+        self.inner.join()
+    }
+
+    /// Determines whether this and the other [`MessageChannel`] address the same actor mailbox.
+    pub fn same_actor<Rc2>(&self, other: &MessageChannel<M, R, Rc2>) -> bool
+    where
+        Rc2: Send + 'static,
+    {
+        self.inner.to_inner_ptr() == other.inner.to_inner_ptr()
+    }
+}
+
+impl<M, Rc> MessageChannel<M, (), Rc>
+where
+    M: Send + 'static,
+{
+    /// Construct a [`Sink`] from this [`MessageChannel`].
+    ///
+    /// Sending an item into a [`Sink`]s does not return a value. Consequently, this function is
+    /// only available on [`MessageChannel`]s with a return value of `()`.
+    ///
+    /// To create such a [`MessageChannel`] use an [`Address`] that points to an actor where the
+    /// [`Handler`] of a given message has [`Return`](Handler::Return) set to `()`.
+    ///
+    /// The provided [`Sink`] will process one message at a time completely and thus enforces
+    /// back-pressure according to the bounds of the actor's mailbox.
+    pub fn into_sink(self) -> impl Sink<M, Error = Disconnected> {
+        futures_util::sink::unfold((), move |(), message| self.send(message))
+    }
+}
+
+impl<A, M, R, Rc> From<Address<A, Rc>> for MessageChannel<M, R, Rc>
+where
+    A: Handler<M, Return = R>,
+    R: Send + 'static,
+    M: Send + 'static,
+    Rc: RefCounter,
+{
+    fn from(address: Address<A, Rc>) -> Self {
+        MessageChannel::new(address)
+    }
+}
+
+impl<M, R, Rc> fmt::Debug for MessageChannel<M, R, Rc>
+where
+    R: Send + 'static,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message_type = &std::any::type_name::<M>();
+        let return_type = &std::any::type_name::<R>();
+
+        write!(f, "MessageChannel<{}, {}>(", message_type, return_type)?;
+        self.inner.debug_fmt(f)?;
+        write!(f, ")")?;
+
+        Ok(())
+    }
+}
+
+/// Determines whether this and the other message channel address the same actor mailbox **and**
+/// they have reference count type equality. This means that this will only return true if
+/// [`MessageChannel::same_actor`] returns true **and** if they both have weak or strong reference
+/// counts. [`Either`] will compare as whichever reference count type it wraps.
+impl<M, R, Rc> PartialEq for MessageChannel<M, R, Rc>
+where
+    M: Send + 'static,
+    R: Send + 'static,
+    Rc: Send + 'static,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.same_actor(other) && (self.inner.is_strong() == other.inner.is_strong())
+    }
+}
+
+impl<M, R, Rc> Clone for MessageChannel<M, R, Rc>
+where
+    R: Send + 'static,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone_channel(),
+        }
+    }
+}
+
+impl<M, R> MessageChannel<M, R, Strong>
+where
+    M: Send + 'static,
+    R: Send + 'static,
+{
+    /// Downgrade this [`MessageChannel`] to a [`Weak`] reference count.
+    pub fn downgrade(&self) -> MessageChannel<M, R, Weak> {
+        MessageChannel {
+            inner: self.inner.to_weak(),
+        }
+    }
+}
+
+impl<M, R> MessageChannel<M, R, Either>
+where
+    M: Send + 'static,
+    R: Send + 'static,
+{
+    /// Downgrade this [`MessageChannel`] to a [`Weak`] reference count.
+    pub fn downgrade(&self) -> MessageChannel<M, R, Weak> {
+        MessageChannel {
+            inner: self.inner.to_weak(),
+        }
+    }
+}
+
+trait MessageChannelTrait<M, Rc> {
+    type Return: Send + 'static;
+
+    fn is_connected(&self) -> bool;
+
+    fn len(&self) -> usize;
+
+    fn capacity(&self) -> Option<usize>;
+
     fn send(
         &self,
         message: M,
     ) -> SendFuture<Self::Return, ActorErasedSending<Self::Return>, ResolveToHandlerReturn>;
 
-    /// Attaches a stream to this channel such that all messages produced by it are forwarded to the
-    /// actor. This could, for instance, be used to forward messages from a socket to the actor
-    /// (after the messages have been appropriately `map`ped). This is a convenience method over
-    /// explicitly forwarding a stream to this address, spawning that future onto the executor,
-    /// and mapping the error away (because disconnects are expected and will simply mean that the
-    /// stream is no longer being forwarded).
-    ///
-    /// **Note:** if this stream's continuation should prevent the actor from being dropped, this
-    /// method should be called on [`MessageChannel`](trait.MessageChannel.html). Otherwise, it should be called
-    /// on [`WeakMessageChannel`](trait.WeakMessageChannel.html).
-    fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
-    where
-        Self::Return: Into<KeepRunning> + Send;
+    fn clone_channel(
+        &self,
+    ) -> Box<dyn MessageChannelTrait<M, Rc, Return = Self::Return> + Send + Sync + 'static>;
 
-    /// Clones this channel as a boxed trait object.
-    fn clone_channel(&self) -> Box<dyn MessageChannel<M, Return = Self::Return>>;
-
-    /// Waits until this [`MessageChannel`] becomes disconnected.
     fn join(&self) -> ActorJoinHandle;
 
-    /// Determines whether this and the other message channel address the same actor mailbox.
-    fn same_actor(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool;
+    fn to_inner_ptr(&self) -> *const ();
 
-    /// Determines whether this and the other message channel address the same actor mailbox **and**
-    /// they have reference count type equality. This means that this will only return true if
-    /// [`MessageChannel::same_actor`] returns true **and** if they both have weak or strong reference
-    /// counts. [`Either`](crate::refcount::Either) will compare as whichever reference count type
-    /// it wraps.
-    fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool;
+    fn is_strong(&self) -> bool;
+
+    fn to_weak(
+        &self,
+    ) -> Box<dyn MessageChannelTrait<M, Weak, Return = Self::Return> + Send + Sync + 'static>;
+
+    fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result;
 }
 
-/// A message channel is a channel through which you can send only one kind of message, but to
-/// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
-/// the message type rather than the actor type. Any existing `MessageChannel`s will prevent the
-/// dropping of the actor. If this is undesirable, then the [`WeakMessageChannel`](trait.WeakMessageChannel.html)
-/// struct should be used instead. A `StrongMessageChannel` trait object is created by casting a
-/// strong [`Address`](../address/struct.Address.html).
-pub trait StrongMessageChannel<M>: MessageChannel<M> {
-    /// Create a weak message channel. Unlike with the strong variety of message channel (this kind),
-    /// an actor will not be prevented from being dropped if only weak sinks, channels, and
-    /// addresses exist.
-    fn downgrade(&self) -> Box<dyn WeakMessageChannel<M, Return = Self::Return>>;
-
-    /// Upcasts this strong message channel into a boxed generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast(self) -> Box<dyn MessageChannel<M, Return = Self::Return>>;
-
-    /// Upcasts this strong message channel into a reference to the generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast_ref(&self) -> &dyn MessageChannel<M, Return = Self::Return>;
-
-    /// Clones this channel as a boxed trait object.
-    fn clone_channel(&self) -> Box<dyn StrongMessageChannel<M, Return = Self::Return>>;
-}
-
-/// A message channel is a channel through which you can send only one kind of message, but to
-/// any actor that can handle it. It is like [`Address`](../address/struct.Address.html), but associated with
-/// the message type rather than the actor type. Any existing `WeakMessageChannel`s will *not* prevent the
-/// dropping of the actor. If this is undesirable, then  [`StrongMessageChannel`](trait.StrongMessageChannel.html)
-/// should be used instead. A `WeakMessageChannel` trait object is created by calling
-/// [`StrongMessageChannel::downgrade`](trait.StrongMessageChannel.html#method.downgrade) or by
-/// casting a [`WeakAddress`](../address/type.WeakAddress.html).
-pub trait WeakMessageChannel<M>: MessageChannel<M> {
-    /// Upcasts this weak message channel into a boxed generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast(self) -> Box<dyn MessageChannel<M, Return = Self::Return>>;
-
-    /// Upcasts this weak message channel into a reference to the generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast_ref(&self) -> &dyn MessageChannel<M, Return = Self::Return>;
-
-    /// Clones this channel as a boxed trait object.
-    fn clone_channel(&self) -> Box<dyn WeakMessageChannel<M, Return = Self::Return>>;
-}
-
-impl<A, R, M, Rc: RefCounter> MessageChannel<M> for Address<A, Rc>
+impl<A, R, M, Rc: RefCounter> MessageChannelTrait<M, Rc> for Address<A, Rc>
 where
     A: Handler<M, Return = R>,
     M: Send + 'static,
@@ -213,18 +300,12 @@ where
         let msg = PriorityMessageToOne::new(0, Box::new(envelope));
         let sending = self.0.send(SentMessage::ToOneActor(msg));
 
-        #[allow(clippy::async_yields_async)] // We only want to await the sending.
         SendFuture::sending_erased(sending, rx)
     }
 
-    fn attach_stream(self, stream: BoxStream<M>) -> BoxFuture<()>
-    where
-        R: Into<KeepRunning> + Send,
-    {
-        Box::pin(Address::attach_stream(self, stream))
-    }
-
-    fn clone_channel(&self) -> Box<dyn MessageChannel<M, Return = Self::Return>> {
+    fn clone_channel(
+        &self,
+    ) -> Box<dyn MessageChannelTrait<M, Rc, Return = Self::Return> + Send + Sync + 'static> {
         Box::new(self.clone())
     }
 
@@ -232,90 +313,21 @@ where
         self.join()
     }
 
-    fn same_actor(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
-        use private::ToInnerPtr;
-
-        self.to_inner_ptr() == other.to_inner_ptr()
+    fn to_inner_ptr(&self) -> *const () {
+        self.0.inner_ptr() as *const ()
     }
 
-    fn eq(&self, other: &dyn MessageChannel<M, Return = Self::Return>) -> bool {
-        use private::IsStrong;
-
-        MessageChannel::same_actor(self, other) && (self.is_strong() == other.is_strong())
-    }
-}
-
-/// Contains crate-private traits to allow implementations of [`MessageChannel::same_actor`] and [`MessageChannel::eq`].
-///
-/// Both of these functions only operate on type-erased [`MessageChannel`]s and thus cannot access the underlying [`Address`].
-mod private {
-    use super::*;
-
-    pub trait IsStrong {
-        fn is_strong(&self) -> bool;
+    fn is_strong(&self) -> bool {
+        self.0.is_strong()
     }
 
-    pub trait ToInnerPtr {
-        fn to_inner_ptr(&self) -> *const ();
+    fn to_weak(
+        &self,
+    ) -> Box<dyn MessageChannelTrait<M, Weak, Return = Self::Return> + Send + Sync + 'static> {
+        Box::new(Address(self.0.downgrade()))
     }
 
-    impl<A, Rc: RefCounter> IsStrong for Address<A, Rc> {
-        fn is_strong(&self) -> bool {
-            self.0.is_strong()
-        }
-    }
-
-    impl<A, Rc: RefCounter> ToInnerPtr for Address<A, Rc> {
-        fn to_inner_ptr(&self) -> *const () {
-            self.0.inner_ptr() as *const ()
-        }
-    }
-}
-
-impl<A, M> StrongMessageChannel<M> for Address<A, Strong>
-where
-    A: Handler<M>,
-    M: Send + 'static,
-{
-    fn downgrade(&self) -> Box<dyn WeakMessageChannel<M, Return = Self::Return>> {
-        Box::new(self.downgrade())
-    }
-
-    /// Upcasts this strong message channel into a boxed generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast(self) -> Box<dyn MessageChannel<M, Return = Self::Return>> {
-        Box::new(self)
-    }
-
-    /// Upcasts this strong message channel into a reference to the generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast_ref(&self) -> &dyn MessageChannel<M, Return = Self::Return> {
-        self
-    }
-
-    fn clone_channel(&self) -> Box<dyn StrongMessageChannel<M, Return = Self::Return>> {
-        Box::new(self.clone())
-    }
-}
-
-impl<A, M> WeakMessageChannel<M> for WeakAddress<A>
-where
-    A: Handler<M>,
-    M: Send + 'static,
-{
-    /// Upcasts this weak message channel into a boxed generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast(self) -> Box<dyn MessageChannel<M, Return = Self::Return>> {
-        Box::new(self)
-    }
-
-    /// Upcasts this weak message channel into a reference to the generic
-    /// [`MessageChannel`](trait.MessageChannel.html) trait object
-    fn upcast_ref(&self) -> &dyn MessageChannel<M, Return = Self::Return> {
-        self
-    }
-
-    fn clone_channel(&self) -> Box<dyn WeakMessageChannel<M, Return = Self::Return>> {
-        Box::new(self.clone())
+    fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
     }
 }
