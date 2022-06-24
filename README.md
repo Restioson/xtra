@@ -1,3 +1,7 @@
+[![Continuous integration](https://github.com/Restioson/xtra/actions/workflows/ci.yml/badge.svg)](https://github.com/Restioson/xtra/actions/workflows/ci.yml)
+![docs.rs](https://img.shields.io/docsrs/xtra)
+![Matrix](https://img.shields.io/matrix/xtra-community:matrix.org)
+
 # xtra
 A tiny, fast, and safe actor framework. It is modelled around Actix (copyright and license [here](https://github.com/Restioson/xtra/blob/master/LICENSE-ACTIX)).
 
