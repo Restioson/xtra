@@ -845,7 +845,7 @@ fn address_debug() {
 fn message_channel_debug() {
     let (addr1, _ctx) = Context::<Greeter>::new(None);
 
-    let mc = MessageChannel::<Hello, String>::new(&addr1.clone());
+    let mc = MessageChannel::<Hello, String>::new(&addr1);
     let weak_mc = mc.downgrade();
 
     assert_eq!(
