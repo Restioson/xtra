@@ -69,9 +69,10 @@ impl<A: Actor, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
 }
 
 impl<A, M, R> MessageEnvelope for ReturningEnvelope<A, M, R>
-    where A: Handler<M, Return = R>,
-          M: Send + 'static,
-          R: Send + 'static
+where
+    A: Handler<M, Return = R>,
+    M: Send + 'static,
+    R: Send + 'static,
 {
     type Actor = A;
 
