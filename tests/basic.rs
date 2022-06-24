@@ -711,15 +711,15 @@ impl Handler<Hello> for Greeter {
 }
 
 #[derive(Clone)]
-struct BroadcastHello(&'static str);
+struct PrintHello(&'static str);
 
 #[async_trait]
-impl Handler<BroadcastHello> for Greeter {
+impl Handler<PrintHello> for Greeter {
     type Return = ();
 
     async fn handle(
         &mut self,
-        BroadcastHello(name): BroadcastHello,
+        PrintHello(name): PrintHello,
         _: &mut Context<Self>,
     ) -> Self::Return {
         println!("Hello {}", name)
@@ -756,12 +756,12 @@ async fn address_send_exercises_backpressure() {
     // Sink
     let mut sink = address.into_sink();
     let _ = sink
-        .send(BroadcastHello("world"))
+        .send(PrintHello("world"))
         .now_or_never()
         .expect("be able to queue another message because the mailbox is empty again");
 
     assert!(
-        sink.send(BroadcastHello("world")).now_or_never().is_none(),
+        sink.send(PrintHello("world")).now_or_never().is_none(),
         "Fail to queue 2nd message because mailbox is full"
     );
 
@@ -788,7 +788,7 @@ async fn address_send_exercises_backpressure() {
     context.yield_once(&mut Greeter).await; // process one message
 
     let _ = address
-        .send(BroadcastHello("world"))
+        .send(PrintHello("world"))
         .priority(1)
         .split_receiver()
         .now_or_never()
@@ -797,12 +797,12 @@ async fn address_send_exercises_backpressure() {
     // Broadcast
 
     let _ = address
-        .broadcast(BroadcastHello("world"))
+        .broadcast(PrintHello("world"))
         .priority(2)
         .now_or_never()
         .expect("be able to queue 1 broadcast because the mailbox is empty");
     let handler2 = address
-        .broadcast(BroadcastHello("world"))
+        .broadcast(PrintHello("world"))
         .priority(1)
         .now_or_never();
     assert!(
@@ -813,7 +813,7 @@ async fn address_send_exercises_backpressure() {
     context.yield_once(&mut Greeter).await; // process one message
 
     let _ = address
-        .broadcast(BroadcastHello("world"))
+        .broadcast(PrintHello("world"))
         .priority(2)
         .now_or_never()
         .expect("be able to queue another broadcast because the mailbox is empty again");
