@@ -9,11 +9,11 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use event_listener::EventListener;
-use futures_core::{FusedFuture, Stream};
+use futures_core::Stream;
 use futures_sink::Sink;
 use futures_util::{future, FutureExt, StreamExt};
 
-use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
+use crate::envelope::ReturningEnvelope;
 use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
@@ -239,8 +239,12 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
 
     /// Converts this address into a sink that can be used to send messages to the actor. These
     /// messages will have default priority and be handled in send order.
-    pub fn into_sink(self) -> AddressSink<A, Rc> {
-        AddressSink(inbox::SendFuture::empty(self.0))
+    pub fn into_sink<M>(self) -> impl Sink<M, Error = Error>
+    where
+        A: Handler<M, Return = ()>,
+        M: Send + 'static,
+    {
+        futures_util::sink::unfold((), move |(), message| self.send(message))
     }
 }
 
@@ -310,55 +314,5 @@ impl<A, Rc: RefCounter> Hash for Address<A, Rc> {
         state.write_usize(self.0.inner_ptr() as *const _ as usize);
         state.write_u8(self.0.is_strong() as u8);
         state.finish();
-    }
-}
-
-/// A sink which can be used to send messages to an actor. These messages will have default priority
-/// and be handled in send order.
-pub struct AddressSink<A, Rc: RefCounter>(inbox::SendFuture<A, Rc>);
-
-impl<A, Rc: RefCounter> AddressSink<A, Rc> {
-    /// Return a clone of the underlying [`Address`] which this sink sends to.
-    pub fn address(&self) -> Address<A, Rc> {
-        Address(self.0.tx.clone())
-    }
-}
-
-impl<A, M, Rc: RefCounter> Sink<M> for AddressSink<A, Rc>
-where
-    A: Handler<M, Return = ()>,
-    M: Send + 'static,
-{
-    type Error = Error;
-
-    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        if let Poll::Ready(Err(err)) = self.0.poll_unpin(cx) {
-            match err {
-                Error::Disconnected => Poll::Ready(Err(err)),
-                Error::Interrupted => unreachable!(
-                    "AddressSink does not send a oneshot channel,\
-                    so Interrupted should not be possible"
-                ),
-            }
-        } else if self.0.is_terminated() {
-            Poll::Ready(Ok(()))
-        } else {
-            Poll::Pending
-        }
-    }
-
-    fn start_send(mut self: Pin<&mut Self>, msg: M) -> Result<(), Self::Error> {
-        let msg = Box::new(NonReturningEnvelope::new(msg));
-        let msg = SentMessage::ToOneActor(PriorityMessageToOne::new(0, msg));
-        self.0 = self.0.tx.send(msg);
-        Ok(())
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.poll_ready(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.poll_flush(cx)
     }
 }

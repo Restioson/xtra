@@ -180,13 +180,6 @@ impl<A, Rc: TxRefCounter> SendFuture<A, Rc> {
             inner: SendFutureInner::New(msg),
         }
     }
-
-    pub fn empty(tx: Sender<A, Rc>) -> Self {
-        SendFuture {
-            tx,
-            inner: SendFutureInner::Complete,
-        }
-    }
 }
 
 impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
