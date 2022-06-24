@@ -1,4 +1,5 @@
 use std::cmp::Ordering as CmpOrdering;
+use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
@@ -10,7 +11,7 @@ use smol::stream;
 use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::KeepRunning;
+use xtra::{ActorManager, Error, KeepRunning};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
@@ -183,7 +184,7 @@ async fn do_not_handle_drained_messages() {
 
     assert_eq!(fut.await, 5);
 
-    let (addr, mut ctx) = Context::new(None);
+    let (addr, ctx) = Context::new(None);
     let fut1 = ctx.attach(Accumulator(0));
     let fut2 = ctx.run(Accumulator(0));
 
@@ -255,7 +256,7 @@ async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
 
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self() {
-    let (address, mut ctx) = Context::new(None);
+    let (address, ctx) = Context::new(None);
     tokio::spawn(ctx.attach(ActorStopSelf));
     tokio::spawn(ctx.run(ActorStopSelf));
     address.send(StopSelf).await.unwrap();
@@ -270,7 +271,7 @@ async fn two_actors_on_address_with_stop_self() {
 
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self_context_alive() {
-    let (address, mut ctx) = Context::new(None);
+    let (address, ctx) = Context::new(None);
     tokio::spawn(ctx.attach(ActorStopSelf));
     tokio::spawn(ctx.attach(ActorStopSelf)); // Context not dropped here
     address.send(StopSelf).await.unwrap();
@@ -933,7 +934,7 @@ impl Actor for StopInStarted {
 
 #[tokio::test]
 async fn stop_all_stops_immediately() {
-    let (_address, mut ctx) = Context::new(None);
+    let (_address, ctx) = Context::new(None);
 
     let fut1 = ctx.attach(InstantShutdownAll {
         stop_all: true,
@@ -943,7 +944,7 @@ async fn stop_all_stops_immediately() {
         stop_all: false,
         number: 2,
     });
-    let fut3 = ctx.attach(InstantShutdownAll {
+    let fut3 = ctx.run(InstantShutdownAll {
         stop_all: false,
         number: 3,
     });
@@ -971,4 +972,64 @@ impl Actor for InstantShutdownAll {
     async fn stopped(self) {
         println!("Actor {} stopped", self.number);
     }
+}
+
+struct Pending;
+
+#[async_trait]
+impl Handler<Pending> for Greeter {
+    type Return = ();
+
+    async fn handle(&mut self, _: Pending, _ctx: &mut Context<Self>) {
+        futures_util::future::pending().await
+    }
+}
+
+#[tokio::test]
+async fn timeout_returns_interrupted() {
+    let ActorManager {
+        address,
+        mut actor,
+        mut ctx,
+    } = Greeter.create(None);
+
+    tokio::spawn(async move {
+        loop {
+            let msg = ctx.next_message().await;
+
+            let ctrl = ctx
+                .tick(msg, &mut actor)
+                .timeout(Duration::from_secs(1))
+                .await;
+
+            if let Some(ControlFlow::Break(_)) = ctrl {
+                break;
+            }
+        }
+    });
+
+    address
+        .send(Hello("world"))
+        .await
+        .expect("Counter should not be dropped");
+    assert_eq!(
+        address.send(Pending).await,
+        Err(Error::Interrupted),
+        "Timeout should return Interrupted"
+    );
+    address
+        .send(Hello("world"))
+        .await
+        .expect("Counter should not be dropped");
+
+    let weak = address.downgrade();
+    let join = address.join();
+    drop(address);
+
+    join.await;
+    assert_eq!(
+        weak.send(Hello("world")).await,
+        Err(Error::Disconnected),
+        "Interrupt should not be returned after actor stops"
+    );
 }

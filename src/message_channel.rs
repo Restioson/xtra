@@ -11,7 +11,7 @@ use crate::envelope::ReturningEnvelope;
 use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture};
-use crate::{Disconnected, Handler};
+use crate::{Error, Handler};
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`], but associated with the message type rather
@@ -156,7 +156,7 @@ where
     ///
     /// The provided [`Sink`] will process one message at a time completely and thus enforces
     /// back-pressure according to the bounds of the actor's mailbox.
-    pub fn into_sink(self) -> impl Sink<M, Error = Disconnected> {
+    pub fn into_sink(self) -> impl Sink<M, Error = Error> {
         futures_util::sink::unfold((), move |(), message| self.send(message))
     }
 }

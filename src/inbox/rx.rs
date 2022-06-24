@@ -9,6 +9,7 @@ use std::{cmp, mem};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
+use crate::inbox::tx::TxWeak;
 use crate::inbox::*;
 
 pub struct Receiver<A, Rc: RxRefCounter> {
@@ -36,6 +37,13 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
             inner: self.inner.clone(),
             rc: TxStrong::try_new(&self.inner)?,
         })
+    }
+
+    pub fn weak_sender(&self) -> Sender<A, TxWeak> {
+        Sender {
+            inner: self.inner.clone(),
+            rc: TxWeak::new(&self.inner),
+        }
     }
 
     /// Clone this receiver, keeping its broadcast mailbox.
@@ -206,13 +214,7 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
 }
 
 impl<A, Rc: RxRefCounter> ReceiveFuture<A, Rc> {
-    /// Cancel the receiving future, returning a message if it had been fulfilled with one, but had
-    /// not yet been polled after wakeup. Future calls to `Future::poll` will return `Poll::Pending`,
-    /// and `FusedFuture::is_terminated` will return `true`.
-    ///
-    /// This is important to do over `Drop`, as with `Drop` messages may be sent back into the
-    /// channel and could be observed as received out of order, if multiple receives are concurrent
-    /// on one thread.
+    /// See docs on [`crate::context::ReceiveFuture::cancel`] for more
     #[must_use = "If dropped, messages could be lost"]
     pub fn cancel(&mut self) -> Option<ActorMessage<A>> {
         if let ReceiveFutureInner::Waiting { waiting, .. } =
@@ -242,7 +244,8 @@ impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
             // may overflow (probably not enough to cause backpressure issues), but this is better
             // than dropping a message.
             if let Some(WakeReason::MessageToOneActor(msg)) = waiting.lock().cancel() {
-                match inner.try_fulfill_receiver(WakeReason::MessageToOneActor(msg)) {
+                let res = inner.try_fulfill_receiver(WakeReason::MessageToOneActor(msg));
+                match res {
                     Ok(()) => (),
                     Err(WakeReason::MessageToOneActor(msg)) => {
                         if msg.priority == 0 {

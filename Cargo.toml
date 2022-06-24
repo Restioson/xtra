@@ -106,6 +106,9 @@ required-features = ["with-tokio-1", "tokio/full"]
 name = "scoped_actor_task"
 required-features = ["with-tokio-1", "futures-util/default"]
 
+[[example]]
+name = "custom_event_loop"
+
 [[test]]
 name = "basic"
 required-features = ["with-tokio-1"]

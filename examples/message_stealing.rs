@@ -50,7 +50,7 @@ impl Handler<Print> for Printer {
 
 #[smol_potat::main]
 async fn main() {
-    let (addr, mut ctx) = Context::new(Some(32));
+    let (addr, ctx) = Context::new(Some(32));
     for n in 0..4 {
         smol::spawn(ctx.attach(Printer::new(n))).detach();
     }
