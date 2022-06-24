@@ -56,12 +56,12 @@ use crate::{Disconnected, Handler};
 /// fn main() {
 /// # #[cfg(feature = "with-smol-1")]
 /// smol::block_on(async {
-///         let  alice = Alice.create(None).spawn(&mut xtra::spawn::Smol::Global);
-///         let  bob = Bob.create(None).spawn(&mut xtra::spawn::Smol::Global);
+///         let alice = Alice.create(None).spawn(&mut xtra::spawn::Smol::Global);
+///         let bob = Bob.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///
 ///         let channels = [
-///             MessageChannel::new(&alice),
-///             MessageChannel::new(&bob)
+///             MessageChannel::new(alice),
+///             MessageChannel::new(bob)
 ///         ];
 ///         let name = ["Alice", "Bob"];
 ///

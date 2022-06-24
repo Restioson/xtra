@@ -851,14 +851,14 @@ fn message_channel_debug() {
     assert_eq!(
         format!("{:?}", mc),
         "MessageChannel<basic::Hello, alloc::string::String>(\
-            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 2, rc: TxStrong(()) }\
+            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 1, rc: TxStrong(()) }\
         )"
     );
 
     assert_eq!(
         format!("{:?}", weak_mc),
         "MessageChannel<basic::Hello, alloc::string::String>(\
-            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 2, rc: TxWeak(()) }\
+            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 1, rc: TxWeak(()) }\
         )"
     );
 }
