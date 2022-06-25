@@ -9,9 +9,8 @@ pub use self::address::{Address, WeakAddress};
 pub use self::broadcast_future::BroadcastFuture;
 pub use self::context::Context;
 pub use self::manager::ActorManager;
-pub use self::receiver::Receiver;
 pub use self::scoped_task::scoped;
-pub use self::send_future::{ActorErasedSending, NameableSending, SendFuture};
+pub use self::send_future::{ActorErasedSending, NameableSending, SendFuture, Receiver};
 
 pub mod address;
 mod broadcast_future;
@@ -20,7 +19,6 @@ mod envelope;
 mod inbox;
 mod manager;
 pub mod message_channel;
-mod receiver;
 /// This module contains a way to scope a future to the lifetime of an actor, stopping it before it
 /// completes if the actor it is associated with stops too.
 pub mod scoped_task;

@@ -5,9 +5,9 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use futures_core::FusedFuture;
-use futures_util::FutureExt;
+use futures_util::future::MapErr;
+use futures_util::{FutureExt, TryFutureExt};
 
-use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Strong};
 use crate::send_future::private::SetPriority;
 use crate::{inbox, Error};
@@ -53,6 +53,26 @@ impl<R, F> SendFuture<R, F, ResolveToHandlerReturn> {
             inner: self.inner,
             phantom: PhantomData,
         }
+    }
+}
+
+/// A [`Future`] that resolves to the [`Return`](crate::Handler::Return) value of a [`Handler`](crate::Handler).
+///
+/// In case the actor becomes disconnected during the execution of the handler, this future will resolve to [`Error::Disconnected`].
+#[must_use = "Futures do nothing unless polled"]
+pub struct Receiver<R>(MapErr<catty::Receiver<R>, fn(catty::Disconnected) -> Error>);
+
+impl<R> Receiver<R> {
+    pub(crate) fn new(receiver: catty::Receiver<R>) -> Self {
+        Receiver(receiver.map_err(|_| Error::Interrupted))
+    }
+}
+
+impl<R> Future for Receiver<R> {
+    type Output = Result<R, Error>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.0.poll_unpin(cx)
     }
 }
 
