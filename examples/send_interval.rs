@@ -5,7 +5,7 @@ use futures_util::stream::repeat;
 use futures_util::StreamExt;
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
-use xtra::Disconnected;
+use xtra::Error;
 
 #[derive(Default)]
 struct Greeter;
@@ -14,7 +14,7 @@ struct Greeter;
 impl Actor for Greeter {
     type Stop = ();
 
-    async fn stopped(self) -> Self::Stop {}
+    async fn stopped(self) {}
 }
 
 struct Greet;
@@ -34,7 +34,7 @@ async fn main() {
     greeter_stream(500).forward(addr.into_sink()).await.unwrap();
 }
 
-fn greeter_stream(delay: u64) -> impl Stream<Item = Result<Greet, Disconnected>> {
+fn greeter_stream(delay: u64) -> impl Stream<Item = Result<Greet, Error>> {
     repeat(Duration::from_millis(delay))
         .then(tokio::time::sleep)
         .map(|_| Ok(Greet))

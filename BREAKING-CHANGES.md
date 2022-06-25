@@ -14,6 +14,7 @@
 - `MessageChannel` is now a `struct` that can be constructed from an `Address` via `MessageChannel::new` or using
   `From`/`Into`.
 - `AddressSink` was removed in favor of using `impl Trait` for the `Address::into_sink` method.
+- `InstrumentedExt` was removed. All messages are now instrumented automatically when `instrumentation` is enabled.
 
 ## 0.5.0
 

@@ -10,7 +10,7 @@ use futures_util::FutureExt;
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Strong};
 use crate::send_future::private::SetPriority;
-use crate::{inbox, Disconnected};
+use crate::{inbox, Error};
 
 /// A [`Future`] that represents the state of sending a message to an actor.
 ///
@@ -88,7 +88,7 @@ where
 impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
     pub(crate) fn sending_erased<F>(sending: F, rx: catty::Receiver<R>) -> Self
     where
-        F: SendingWithSetPriority<Result<(), Disconnected>>,
+        F: SendingWithSetPriority<Result<(), Error>>,
     {
         Self {
             inner: SendFutureInner::Sending(ActorErasedSending {
@@ -156,7 +156,7 @@ type BoxedSending<T> = Box<dyn SendingWithSetPriority<T>>;
 
 /// "Sending" state of [`SendFuture`] for cases where the actor type is erased.
 pub struct ActorErasedSending<R> {
-    future: BoxedSending<Result<(), Disconnected>>,
+    future: BoxedSending<Result<(), Error>>,
     rx: Option<catty::Receiver<R>>,
 }
 
@@ -186,7 +186,7 @@ impl<R, F> Future for SendFuture<R, F, ResolveToHandlerReturn>
 where
     F: Future<Output = Receiver<R>> + Unpin,
 {
-    type Output = Result<R, Disconnected>;
+    type Output = Result<R, Error>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();

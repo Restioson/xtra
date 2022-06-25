@@ -2,8 +2,7 @@
 //! kind of message that it can receive.
 
 use std::cmp::Ordering;
-use std::error::Error;
-use std::fmt::{self, Debug, Display, Formatter};
+use std::fmt::{self, Debug, Formatter};
 use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::pin::Pin;
@@ -18,19 +17,7 @@ use crate::envelope::ReturningEnvelope;
 use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
-use crate::{inbox, BroadcastFuture, Handler, KeepRunning, NameableSending, SendFuture};
-
-/// The actor is no longer running and disconnected from the sending address.
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Disconnected;
-
-impl Display for Disconnected {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("Actor address disconnected")
-    }
-}
-
-impl Error for Disconnected {}
+use crate::{inbox, BroadcastFuture, Error, Handler, KeepRunning, NameableSending, SendFuture};
 
 /// An [`Address`] is a reference to an actor through which messages can be
 /// sent. It can be cloned to create more addresses to the same actor.
@@ -252,7 +239,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
 
     /// Converts this address into a sink that can be used to send messages to the actor. These
     /// messages will have default priority and be handled in send order.
-    pub fn into_sink<M>(self) -> impl Sink<M, Error = Disconnected>
+    pub fn into_sink<M>(self) -> impl Sink<M, Error = Error>
     where
         A: Handler<M, Return = ()>,
         M: Send + 'static,

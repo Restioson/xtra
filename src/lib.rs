@@ -3,9 +3,11 @@
 #![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
 #![deny(unsafe_code, missing_docs)]
 
-pub use self::address::{Address, Disconnected, WeakAddress};
+use std::fmt;
+
+pub use self::address::{Address, WeakAddress};
 pub use self::broadcast_future::BroadcastFuture;
-pub use self::context::{ActorShutdown, Context};
+pub use self::context::Context;
 pub use self::manager::ActorManager;
 pub use self::receiver::Receiver;
 pub use self::scoped_task::scoped;
@@ -25,9 +27,6 @@ pub mod scoped_task;
 mod send_future;
 /// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
 pub mod spawn;
-#[cfg(feature = "with-tracing-0_1")]
-/// Integration with [`tracing`](https://tracing.rs).
-pub mod tracing;
 
 /// Commonly used types from xtra
 pub mod prelude {
@@ -36,8 +35,6 @@ pub mod prelude {
     pub use crate::address::Address;
     pub use crate::context::Context;
     pub use crate::message_channel::MessageChannel;
-    #[cfg(feature = "with-tracing-0_1")]
-    pub use crate::tracing::InstrumentedExt;
     #[doc(no_inline)]
     pub use crate::{Actor, Handler};
 }
@@ -189,6 +186,31 @@ pub trait Actor: 'static + Send + Sized {
         }
     }
 }
+
+/// An error related to the actor system
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub enum Error {
+    /// The actor is no longer running and disconnected from the sending address.
+    Disconnected,
+    /// The message request operation was interrupted. This happens when the message result sender
+    /// is dropped. Therefore, it should never be returned from send futures split from their
+    /// receivers with [`SendFuture::split_receiver`]. This could be due to the actor's event loop
+    /// being shut down, or due to a custom timeout. Unlike [`Error::Disconnected`], it does not
+    /// necessarily imply that any retries or further attempts to interact with the actor will
+    /// result in an error.
+    Interrupted,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Disconnected => f.write_str("Actor address disconnected"),
+            Error::Interrupted => f.write_str("Message request interrupted"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 /// Whether or not to keep an attached stream forwarding.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
