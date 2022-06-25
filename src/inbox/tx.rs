@@ -12,7 +12,7 @@ use futures_util::FutureExt;
 use super::*;
 use crate::inbox::tx::private::RefCounterInner;
 use crate::send_future::private::SetPriority;
-use crate::Disconnected;
+use crate::Error;
 
 pub struct Sender<A, Rc: TxRefCounter> {
     pub(super) inner: Arc<Chan<A>>,
@@ -47,27 +47,30 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
                 inner.waiting_senders.push_back(Arc::downgrade(&waiting));
                 Err(TrySendFail::Full(waiting))
             }
-            msg => match inner.try_fulfill_receiver(msg.into()) {
-                Ok(()) => Ok(()),
-                Err(WakeReason::MessageToOneActor(m))
-                    if m.priority == 0 && !self.inner.is_full(inner.ordered_queue.len()) =>
-                {
-                    inner.ordered_queue.push_back(m.val);
-                    Ok(())
+            msg => {
+                let res = inner.try_fulfill_receiver(msg.into());
+                match res {
+                    Ok(()) => Ok(()),
+                    Err(WakeReason::MessageToOneActor(m))
+                        if m.priority == 0 && !self.inner.is_full(inner.ordered_queue.len()) =>
+                    {
+                        inner.ordered_queue.push_back(m.val);
+                        Ok(())
+                    }
+                    Err(WakeReason::MessageToOneActor(m))
+                        if m.priority != 0 && !self.inner.is_full(inner.priority_queue.len()) =>
+                    {
+                        inner.priority_queue.push(m);
+                        Ok(())
+                    }
+                    Err(WakeReason::MessageToOneActor(m)) => {
+                        let waiting = WaitingSender::new(m.into());
+                        inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+                        Err(TrySendFail::Full(waiting))
+                    }
+                    _ => unreachable!(),
                 }
-                Err(WakeReason::MessageToOneActor(m))
-                    if m.priority != 0 && !self.inner.is_full(inner.priority_queue.len()) =>
-                {
-                    inner.priority_queue.push(m);
-                    Ok(())
-                }
-                Err(WakeReason::MessageToOneActor(m)) => {
-                    let waiting = WaitingSender::new(m.into());
-                    inner.waiting_senders.push_back(Arc::downgrade(&waiting));
-                    Err(TrySendFail::Full(waiting))
-                }
-                _ => unreachable!(),
-            },
+            }
         }
     }
 
@@ -177,13 +180,6 @@ impl<A, Rc: TxRefCounter> SendFuture<A, Rc> {
             inner: SendFutureInner::New(msg),
         }
     }
-
-    pub fn empty(tx: Sender<A, Rc>) -> Self {
-        SendFuture {
-            tx,
-            inner: SendFutureInner::Complete,
-        }
-    }
 }
 
 impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
@@ -202,13 +198,13 @@ pub enum SendFutureInner<A> {
 }
 
 impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
-    type Output = Result<(), Disconnected>;
+    type Output = Result<(), Error>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Disconnected>> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         match mem::replace(&mut self.inner, SendFutureInner::Complete) {
             SendFutureInner::New(msg) => match self.tx.try_send(msg) {
                 Ok(()) => Poll::Ready(Ok(())),
-                Err(TrySendFail::Disconnected) => Poll::Ready(Err(Disconnected)),
+                Err(TrySendFail::Disconnected) => Poll::Ready(Err(Error::Disconnected)),
                 Err(TrySendFail::Full(waiting)) => {
                     // Start waiting. The waiting sender should be immediately polled, in case a
                     // receive operation happened between `try_send` and here, in which case the
@@ -323,6 +319,12 @@ impl TxStrong {
                 Err(old) => n = old,
             }
         }
+    }
+}
+
+impl TxWeak {
+    pub(crate) fn new<A>(_inner: &Chan<A>) -> TxWeak {
+        TxWeak(())
     }
 }
 

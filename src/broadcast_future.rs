@@ -10,7 +10,7 @@ use futures_util::FutureExt;
 use crate::envelope::BroadcastEnvelopeConcrete;
 use crate::inbox::tx::TxRefCounter;
 use crate::inbox::{SendFuture, SentMessage};
-use crate::{inbox, Disconnected, Handler};
+use crate::{inbox, Error, Handler};
 
 /// A [`Future`] that represents the state of broadcasting a message to all actors connected to an
 /// [`Address`](crate::Address).
@@ -76,7 +76,7 @@ where
     M: Clone + Send + Sync + 'static + Unpin,
     A: Handler<M, Return = ()>,
 {
-    type Output = Result<(), Disconnected>;
+    type Output = Result<(), Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();

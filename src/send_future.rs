@@ -10,7 +10,7 @@ use futures_util::FutureExt;
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Strong};
 use crate::send_future::private::SetPriority;
-use crate::{inbox, Disconnected};
+use crate::{inbox, Error};
 
 /// A [`Future`] that represents the state of sending a message to an actor.
 ///
@@ -88,7 +88,7 @@ where
 impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
     pub(crate) fn sending_erased<F>(sending: F, rx: catty::Receiver<R>) -> Self
     where
-        F: SendingWithSetPriority<Result<(), Disconnected>>,
+        F: SendingWithSetPriority<Result<(), Error>>,
     {
         Self {
             inner: SendFutureInner::Sending(ActorErasedSending {
@@ -128,7 +128,7 @@ impl<A, R, Rc: RefCounter> SetPriority for NameableSending<A, R, Rc> {
 }
 
 impl<A, R, Rc: RefCounter> Future for NameableSending<A, R, Rc> {
-    type Output = Result<Receiver<R>, Disconnected>;
+    type Output = Result<Receiver<R>, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -137,7 +137,7 @@ impl<A, R, Rc: RefCounter> Future for NameableSending<A, R, Rc> {
 
         match result {
             Ok(()) => Poll::Ready(Ok(this.receiver.take().expect("polled after completion"))),
-            Err(_) => Poll::Ready(Err(Disconnected)),
+            Err(_) => Poll::Ready(Err(Error::Disconnected)),
         }
     }
 }
@@ -156,12 +156,12 @@ type BoxedSending<T> = Box<dyn SendingWithSetPriority<T>>;
 
 /// "Sending" state of [`SendFuture`] for cases where the actor type is erased.
 pub struct ActorErasedSending<R> {
-    future: BoxedSending<Result<(), Disconnected>>,
+    future: BoxedSending<Result<(), Error>>,
     rx: Option<catty::Receiver<R>>,
 }
 
 impl<R> Future for ActorErasedSending<R> {
-    type Output = Result<Receiver<R>, Disconnected>;
+    type Output = Result<Receiver<R>, Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.future.poll_unpin(cx) {
@@ -170,7 +170,7 @@ impl<R> Future for ActorErasedSending<R> {
                     .take()
                     .expect("polling after completion not supported"),
             ))),
-            Poll::Ready(Err(_)) => Poll::Ready(Err(Disconnected)),
+            Poll::Ready(Err(_)) => Poll::Ready(Err(Error::Disconnected)),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -184,9 +184,9 @@ impl<R> SetPriority for ActorErasedSending<R> {
 
 impl<R, F> Future for SendFuture<R, F, ResolveToHandlerReturn>
 where
-    F: Future<Output = Result<Receiver<R>, Disconnected>> + Unpin,
+    F: Future<Output = Result<Receiver<R>, Error>> + Unpin,
 {
-    type Output = Result<R, Disconnected>;
+    type Output = Result<R, Error>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -197,7 +197,7 @@ where
                     this.inner = SendFutureInner::Receiving(rx);
                     this.poll_unpin(ctx)
                 }
-                Poll::Ready(Err(Disconnected)) => Poll::Ready(Err(Disconnected)),
+                Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
                 Poll::Pending => {
                     this.inner = SendFutureInner::Sending(send_fut);
                     Poll::Pending
@@ -222,9 +222,9 @@ where
 
 impl<R, F> Future for SendFuture<R, F, ResolveToReceiver>
 where
-    F: Future<Output = Result<Receiver<R>, Disconnected>> + Unpin,
+    F: Future<Output = Result<Receiver<R>, Error>> + Unpin,
 {
-    type Output = Result<Receiver<R>, Disconnected>;
+    type Output = Result<Receiver<R>, Error>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();

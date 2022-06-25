@@ -1,16 +1,17 @@
 use std::cmp::Ordering as CmpOrdering;
+use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
 
 use futures_util::task::noop_waker_ref;
-use futures_util::{FutureExt, SinkExt};
+use futures_util::FutureExt;
 use smol::stream;
 use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::KeepRunning;
+use xtra::{ActorManager, Error, KeepRunning};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
@@ -93,6 +94,7 @@ impl Actor for DropTester {
 }
 
 struct StopAll;
+
 struct StopSelf;
 
 #[async_trait]
@@ -182,7 +184,7 @@ async fn do_not_handle_drained_messages() {
 
     assert_eq!(fut.await, 5);
 
-    let (addr, mut ctx) = Context::new(None);
+    let (addr, ctx) = Context::new(None);
     let fut1 = ctx.attach(Accumulator(0));
     let fut2 = ctx.run(Accumulator(0));
 
@@ -254,7 +256,7 @@ async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
 
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self() {
-    let (address, mut ctx) = Context::new(None);
+    let (address, ctx) = Context::new(None);
     tokio::spawn(ctx.attach(ActorStopSelf));
     tokio::spawn(ctx.run(ActorStopSelf));
     address.send(StopSelf).await.unwrap();
@@ -269,7 +271,7 @@ async fn two_actors_on_address_with_stop_self() {
 
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self_context_alive() {
-    let (address, mut ctx) = Context::new(None);
+    let (address, ctx) = Context::new(None);
     tokio::spawn(ctx.attach(ActorStopSelf));
     tokio::spawn(ctx.attach(ActorStopSelf)); // Context not dropped here
     address.send(StopSelf).await.unwrap();
@@ -336,7 +338,7 @@ async fn receiving_async_on_address_returns_immediately_after_dispatch() {
 #[tokio::test]
 async fn receiving_async_on_message_channel_returns_immediately_after_dispatch() {
     let address = LongRunningHandler.create(None).spawn_global();
-    let channel = StrongMessageChannel::clone_channel(&address);
+    let channel = MessageChannel::new(address);
 
     let send_future = channel.send(Duration::from_secs(3)).split_receiver();
     let handler_future = send_future
@@ -540,7 +542,7 @@ async fn set_priority_msg_channel() {
     let fut = {
         let (addr, fut) = Elephant::default().create(None).run();
 
-        let channel = &addr as &dyn MessageChannel<Message, Return = ()>;
+        let channel = MessageChannel::new(addr);
 
         let _ = channel
             .send(Message::Ordered { ord: 0 })
@@ -568,7 +570,7 @@ async fn set_priority_msg_channel() {
         vec![
             Message::Priority { priority: 2 },
             Message::Priority { priority: 1 },
-            Message::Ordered { ord: 0 }
+            Message::Ordered { ord: 0 },
         ]
     );
 }
@@ -765,18 +767,6 @@ async fn address_send_exercises_backpressure() {
 
     context.yield_once(&mut Greeter).await; // process one message
 
-    // Sink
-    let mut sink = address.into_sink();
-    let _ = sink
-        .send(PrintHello("world"))
-        .now_or_never()
-        .expect("be able to queue another message because the mailbox is empty again");
-
-    assert!(
-        sink.send(PrintHello("world")).now_or_never().is_none(),
-        "Fail to queue 2nd message because mailbox is full"
-    );
-
     // Priority send
 
     let (address, mut context) = Context::new(Some(1));
@@ -856,6 +846,28 @@ fn address_debug() {
 }
 
 #[test]
+fn message_channel_debug() {
+    let (addr1, _ctx) = Context::<Greeter>::new(None);
+
+    let mc = MessageChannel::<Hello, String>::new(addr1);
+    let weak_mc = mc.downgrade();
+
+    assert_eq!(
+        format!("{:?}", mc),
+        "MessageChannel<basic::Hello, alloc::string::String>(\
+            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 1, rc: TxStrong(()) }\
+        )"
+    );
+
+    assert_eq!(
+        format!("{:?}", weak_mc),
+        "MessageChannel<basic::Hello, alloc::string::String>(\
+            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 1, rc: TxWeak(()) }\
+        )"
+    );
+}
+
+#[test]
 fn scoped_task() {
     // Completes when address is connected
     let (addr, ctx) = Context::<Greeter>::new(None);
@@ -899,20 +911,18 @@ fn test_addr_cmp_hash_eq() {
     assert_ne!(addr1, addr2);
     assert_ne!(addr1, addr1.downgrade());
     assert_eq!(addr1, addr1.clone());
-    assert_ne!(addr1, addr2);
     assert!(addr1.same_actor(&addr1));
     assert!(addr1.same_actor(&addr1.downgrade()));
     assert!(!addr1.same_actor(&addr2));
     assert!(addr1 > addr1.downgrade());
 
-    let chan1 = &addr1 as &dyn StrongMessageChannel<Hello, Return = String>;
-    let chan2 = &addr2 as &dyn StrongMessageChannel<Hello, Return = String>;
-    assert!(chan1.eq(chan1.upcast_ref()));
-    assert!(chan1.eq(chan1.upcast_ref()));
-    assert!(!chan1.eq(chan2.upcast_ref()));
-    assert!(chan1.same_actor(chan1.upcast_ref()));
-    assert!(chan1.same_actor(chan1.downgrade().upcast_ref()));
-    assert!(!chan1.same_actor(chan2.upcast_ref()));
+    let chan1 = MessageChannel::<Hello, String>::new(addr1);
+    let chan2 = MessageChannel::<Hello, String>::new(addr2);
+    assert!(chan1.eq(&chan1));
+    assert!(!chan1.eq(&chan2));
+    assert!(chan1.same_actor(&chan1));
+    assert!(chan1.same_actor(&chan1.downgrade()));
+    assert!(!chan1.same_actor(&chan2));
 }
 
 #[tokio::test]
@@ -938,7 +948,7 @@ impl Actor for StopInStarted {
 
 #[tokio::test]
 async fn stop_all_stops_immediately() {
-    let (_address, mut ctx) = Context::new(None);
+    let (_address, ctx) = Context::new(None);
 
     let fut1 = ctx.attach(InstantShutdownAll {
         stop_all: true,
@@ -948,7 +958,7 @@ async fn stop_all_stops_immediately() {
         stop_all: false,
         number: 2,
     });
-    let fut3 = ctx.attach(InstantShutdownAll {
+    let fut3 = ctx.run(InstantShutdownAll {
         stop_all: false,
         number: 3,
     });
@@ -976,4 +986,64 @@ impl Actor for InstantShutdownAll {
     async fn stopped(self) {
         println!("Actor {} stopped", self.number);
     }
+}
+
+struct Pending;
+
+#[async_trait]
+impl Handler<Pending> for Greeter {
+    type Return = ();
+
+    async fn handle(&mut self, _: Pending, _ctx: &mut Context<Self>) {
+        futures_util::future::pending().await
+    }
+}
+
+#[tokio::test]
+async fn timeout_returns_interrupted() {
+    let ActorManager {
+        address,
+        mut actor,
+        mut ctx,
+    } = Greeter.create(None);
+
+    tokio::spawn(async move {
+        loop {
+            let msg = ctx.next_message().await;
+
+            let ctrl = ctx
+                .tick(msg, &mut actor)
+                .timeout(Duration::from_secs(1))
+                .await;
+
+            if let Some(ControlFlow::Break(_)) = ctrl {
+                break;
+            }
+        }
+    });
+
+    address
+        .send(Hello("world"))
+        .await
+        .expect("Counter should not be dropped");
+    assert_eq!(
+        address.send(Pending).await,
+        Err(Error::Interrupted),
+        "Timeout should return Interrupted"
+    );
+    address
+        .send(Hello("world"))
+        .await
+        .expect("Counter should not be dropped");
+
+    let weak = address.downgrade();
+    let join = address.join();
+    drop(address);
+
+    join.await;
+    assert_eq!(
+        weak.send(Hello("world")).await,
+        Err(Error::Disconnected),
+        "Interrupt should not be returned after actor stops"
+    );
 }

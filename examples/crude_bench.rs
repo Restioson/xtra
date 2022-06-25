@@ -126,7 +126,7 @@ async fn do_parallel_address_benchmark<R>(
 ) where
     SendFuture<(), NameableSending<Counter, ()>, R>: Future,
 {
-    let (addr, mut ctx) = Context::new(None);
+    let (addr, ctx) = Context::new(None);
     let start = Instant::now();
     for _ in 0..workers {
         tokio::spawn(ctx.attach(Counter { count: 0 }));
@@ -147,18 +147,18 @@ async fn do_parallel_address_benchmark<R>(
 
 async fn do_channel_benchmark<M, RM>(
     name: &str,
-    f: impl Fn(&dyn MessageChannel<M, Return = ()>) -> SendFuture<(), ActorErasedSending<()>, RM>,
+    f: impl Fn(&MessageChannel<M, ()>) -> SendFuture<(), ActorErasedSending<()>, RM>,
 ) where
     Counter: Handler<M, Return = ()> + Send,
     M: Send + 'static,
     SendFuture<(), ActorErasedSending<()>, RM>: Future,
 {
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
-    let chan = &addr as &dyn MessageChannel<M, Return = ()>;
+    let chan = MessageChannel::new(addr.clone());
 
     let start = Instant::now();
     for _ in 0..COUNT {
-        let _ = f(chan).await;
+        let _ = f(&chan).await;
     }
 
     // awaiting on GetCount will make sure all previous messages are processed first BUT introduces

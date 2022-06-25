@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -48,20 +49,79 @@ pub trait MessageEnvelope: Send {
     ) -> BoxFuture<'a, ()>;
 }
 
+#[derive(Clone)]
+struct Instrumentation {
+    #[cfg(feature = "instrumentation")]
+    parent: tracing::Span,
+    #[cfg(feature = "instrumentation")]
+    _waiting_for_actor: tracing::Span,
+}
+
+impl Instrumentation {
+    fn new<A, M>() -> Self {
+        #[cfg(feature = "instrumentation")]
+        {
+            let parent = tracing::debug_span!(
+                parent: tracing::Span::current(),
+                "xtra_actor_request",
+                actor = std::any::type_name::<A>(),
+                message = std::any::type_name::<M>(),
+            );
+
+            let waiting_for_actor = tracing::debug_span!(
+                parent: &parent,
+                "xtra_message_waiting_for_actor",
+                actor = std::any::type_name::<A>(),
+                message = std::any::type_name::<M>(),
+            );
+
+            Instrumentation {
+                parent,
+                _waiting_for_actor: waiting_for_actor,
+            }
+        }
+
+        #[cfg(not(feature = "instrumentation"))]
+        Instrumentation {}
+    }
+
+    fn apply<A, M, F>(self, fut: F) -> impl Future<Output = F::Output>
+    where
+        F: Future,
+    {
+        #[cfg(feature = "instrumentation")]
+        {
+            let executing = tracing::debug_span!(
+                parent: &self.parent,
+                "xtra_message_handler",
+                actor = std::any::type_name::<A>(),
+                message = std::any::type_name::<M>(),
+            );
+
+            tracing::Instrument::instrument(fut, executing)
+        }
+
+        #[cfg(not(feature = "instrumentation"))]
+        fut
+    }
+}
+
 /// An envelope that returns a result from a message. Constructed by the `AddressExt::do_send` method.
 pub struct ReturningEnvelope<A, M, R> {
     message: M,
     result_sender: Sender<R>,
     phantom: PhantomData<fn() -> A>,
+    instrumentation: Instrumentation,
 }
 
-impl<A: Actor, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
+impl<A, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
     pub fn new(message: M) -> (Self, Receiver<R>) {
         let (tx, rx) = catty::oneshot();
         let envelope = ReturningEnvelope {
             message,
             result_sender: tx,
             phantom: PhantomData,
+            instrumentation: Instrumentation::new::<A, M>(),
         };
 
         (envelope, rx)
@@ -81,40 +141,18 @@ impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnv
         let Self {
             message,
             result_sender,
+            instrumentation,
             ..
         } = *self;
-        Box::pin(act.handle(message, ctx).map(move |r| {
-            // We don't actually care if the receiver is listening
-            let _ = result_sender.send(r);
-        }))
-    }
-}
 
-/// An envelope that does not return a result from a message. Constructed  by the `AddressExt::do_send`
-/// method.
-pub struct NonReturningEnvelope<A, M> {
-    message: M,
-    phantom: PhantomData<fn() -> A>,
-}
-
-impl<A: Actor, M> NonReturningEnvelope<A, M> {
-    pub fn new(message: M) -> Self {
-        NonReturningEnvelope {
-            message,
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<A: Handler<M>, M: Send + 'static> MessageEnvelope for NonReturningEnvelope<A, M> {
-    type Actor = A;
-
-    fn handle<'a>(
-        self: Box<Self>,
-        act: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
-    ) -> BoxFuture<'a, ()> {
-        Box::pin(act.handle(self.message, ctx).map(|_| ()))
+        Box::pin(
+            instrumentation
+                .apply::<A, M, _>(act.handle(message, ctx))
+                .map(move |r| {
+                    // We don't actually care if the receiver is listening
+                    let _ = result_sender.send(r);
+                }),
+        )
     }
 }
 
@@ -133,14 +171,16 @@ pub struct BroadcastEnvelopeConcrete<A, M> {
     message: M,
     priority: u32,
     phantom: PhantomData<fn() -> A>,
+    instrumentation: Instrumentation,
 }
 
-impl<A, M> BroadcastEnvelopeConcrete<A, M> {
+impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
     pub fn new(message: M, priority: u32) -> Self {
         BroadcastEnvelopeConcrete {
             message,
             priority,
             phantom: PhantomData,
+            instrumentation: Instrumentation::new::<A, M>(),
         }
     }
 }
@@ -157,7 +197,9 @@ where
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> BoxFuture<'a, ()> {
-        Box::pin(act.handle(self.message.clone(), ctx))
+        let (msg, instrumentation) = (self.message.clone(), self.instrumentation.clone());
+        drop(self); // Drop ASAP to end the message waiting for actor span
+        Box::pin(instrumentation.apply::<A, M, _>(act.handle(msg, ctx)))
     }
 }
 
