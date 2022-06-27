@@ -110,7 +110,7 @@ impl Instrumentation {
 pub struct ReturningEnvelope<A, M, R> {
     message: M,
     result_sender: Sender<R>,
-    phantom: PhantomData<fn() -> A>,
+    phantom: PhantomData<for<'a> fn(&'a A)>,
     instrumentation: Instrumentation,
 }
 
@@ -128,8 +128,11 @@ impl<A, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
     }
 }
 
-impl<A: Handler<M, Return = R>, M: Send + 'static, R: Send + 'static> MessageEnvelope
-    for ReturningEnvelope<A, M, R>
+impl<A, M, R> MessageEnvelope for ReturningEnvelope<A, M, R>
+where
+    A: Handler<M, Return = R>,
+    M: Send + 'static,
+    R: Send + 'static,
 {
     type Actor = A;
 
@@ -170,7 +173,7 @@ pub trait BroadcastEnvelope: HasPriority + Send + Sync {
 pub struct BroadcastEnvelopeConcrete<A, M> {
     message: M,
     priority: u32,
-    phantom: PhantomData<fn() -> A>,
+    phantom: PhantomData<for<'a> fn(&'a A)>,
     instrumentation: Instrumentation,
 }
 
@@ -185,7 +188,7 @@ impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
     }
 }
 
-impl<A: Handler<M>, M> BroadcastEnvelope for BroadcastEnvelopeConcrete<A, M>
+impl<A, M> BroadcastEnvelope for BroadcastEnvelopeConcrete<A, M>
 where
     A: Handler<M, Return = ()>,
     M: Clone + Send + Sync + 'static,
