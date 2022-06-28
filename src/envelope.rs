@@ -109,7 +109,7 @@ impl Instrumentation {
         }
 
         #[cfg(not(feature = "instrumentation"))]
-        (HandlerSpan(), fut)
+        (fut, HandlerSpan())
     }
 }
 
