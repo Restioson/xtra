@@ -6,8 +6,8 @@ pub mod tx;
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
-use std::sync::atomic::{AtomicBool, AtomicUsize};
-use std::sync::{atomic, Arc, Mutex, Weak};
+use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, Mutex, Weak};
 use std::{cmp, mem};
 
 use event_listener::Event;
@@ -37,7 +37,6 @@ pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxSt
         }),
         capacity,
         on_shutdown: Event::new(),
-        shutdown: AtomicBool::new(false),
         sender_count: AtomicUsize::new(0),
         receiver_count: AtomicUsize::new(0),
     });
@@ -53,7 +52,6 @@ pub struct Chan<A> {
     chan: Mutex<ChanInner<A>>,
     capacity: Option<usize>,
     on_shutdown: Event,
-    shutdown: AtomicBool,
     sender_count: AtomicUsize,
     receiver_count: AtomicUsize,
 }
@@ -63,48 +61,24 @@ impl<A> Chan<A> {
         self.capacity.map_or(false, |cap| len >= cap)
     }
 
-    fn is_shutdown(&self) -> bool {
-        self.shutdown.load(atomic::Ordering::SeqCst)
-    }
-
-    pub fn shutdown(&self) {
-        let waiting_receivers = {
+    pub fn close(&self) {
+        let (waiting_rx, waiting_tx) = {
             let mut inner = match self.chan.lock() {
                 Ok(lock) => lock,
                 Err(_) => return, // Poisoned, ignore
             };
 
-            self.shutdown.store(true, atomic::Ordering::SeqCst);
             self.on_shutdown.notify(usize::MAX);
 
-            mem::take(&mut inner.waiting_receivers)
-        };
-
-        for rx in waiting_receivers.into_iter().flat_map(|w| w.upgrade()) {
-            let _ = rx.lock().fulfill(WakeReason::Shutdown);
-        }
-    }
-
-    pub fn shutdown_and_drain(&self) {
-        let waiting_rx = {
-            let mut inner = self.chan.lock().unwrap();
-
-            self.shutdown.store(true, atomic::Ordering::SeqCst);
-            self.on_shutdown.notify(usize::MAX);
-
-            let iter = inner
-                .broadcast_queues
-                .drain(..)
-                .flat_map(|weak| weak.upgrade());
-            for queue in iter {
-                *queue.lock() = BinaryHeap::new();
-            }
-
-            mem::take(&mut inner.waiting_receivers)
+            (mem::take(&mut inner.waiting_receivers), mem::take(&mut inner.waiting_senders))
         };
 
         for rx in waiting_rx.into_iter().flat_map(|w| w.upgrade()) {
             let _ = rx.lock().fulfill(WakeReason::Shutdown);
+        }
+
+        for tx in waiting_tx.into_iter().flat_map(|w| w.upgrade()) {
+            let _ = tx.lock().fulfill(false);
         }
     }
 }
@@ -229,7 +203,7 @@ impl<A> ChanInner<A> {
             };
 
             if let Some(tx) = self.waiting_senders.remove(pos).unwrap().upgrade() {
-                return Some(tx.lock().fulfill());
+                return Some(tx.lock().fulfill(true));
             }
         }
     }

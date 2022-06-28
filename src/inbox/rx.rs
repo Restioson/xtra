@@ -108,9 +108,8 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
             }
             // Equal, but both are empty, so wait or exit if shutdown
             _ => {
-                // Shutdown is only edited when inner is locked, and we have it locked now, so no
-                // chance of races here
-                if self.inner.is_shutdown() {
+                // on_close is only notified with inner locked, and it's locked here, so no race
+                if self.inner.sender_count.load(atomic::Ordering::SeqCst) == 0 {
                     return Ok(ActorMessage::Shutdown);
                 }
 
@@ -125,7 +124,7 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
 impl<A, Rc: RxRefCounter> Drop for Receiver<A, Rc> {
     fn drop(&mut self) {
         if self.rc.decrement(&self.inner) {
-            self.inner.shutdown();
+            self.inner.close();
         }
     }
 }

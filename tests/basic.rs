@@ -139,6 +139,7 @@ async fn test_stop_and_drop() {
     handle.await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
     assert!(!weak.is_connected());
+    assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
 
     // Send a stop all message
@@ -151,6 +152,7 @@ async fn test_stop_and_drop() {
     handle.await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
     assert!(!weak.is_connected());
+    assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
 
     // Drop address before future has even begun
@@ -173,6 +175,7 @@ async fn test_stop_and_drop() {
     tokio::spawn(fut).await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
     assert!(!weak.is_connected());
+    assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
 }
 

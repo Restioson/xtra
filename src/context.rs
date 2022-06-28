@@ -88,7 +88,7 @@ impl<A: Actor> Context<A> {
     pub fn stop_all(&mut self) {
         // We only need to shut down if there are still any strong senders left
         if let Some(sender) = self.mailbox.sender() {
-            sender.shutdown_and_drain();
+            // TODO(stop_all)
         }
     }
 

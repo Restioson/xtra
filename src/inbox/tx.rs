@@ -32,7 +32,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     fn try_send(&self, message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
         let mut inner = self.inner.chan.lock().unwrap();
 
-        if self.inner.is_shutdown() {
+        if self.is_connected() {
             return Err(TrySendFail::Disconnected);
         }
 
@@ -42,7 +42,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
                 Ok(())
             }
             SentMessage::ToAllActors(m) => {
-                // Is full
+                // on_close is only notified with inner locked, and it's locked here, so no race
                 let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
                 inner.waiting_senders.push_back(Arc::downgrade(&waiting));
                 Err(TrySendFail::Full(waiting))
@@ -100,12 +100,8 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         }
     }
 
-    pub fn shutdown_and_drain(&self) {
-        self.inner.shutdown_and_drain();
-    }
-
     pub fn is_connected(&self) -> bool {
-        !self.inner.is_shutdown()
+        self.inner.receiver_count.load(atomic::Ordering::SeqCst) > 0
     }
 
     pub fn capacity(&self) -> Option<usize> {
@@ -148,7 +144,7 @@ impl<A, Rc: TxRefCounter> Clone for Sender<A, Rc> {
 impl<A, Rc: TxRefCounter> Drop for Sender<A, Rc> {
     fn drop(&mut self) {
         if self.rc.decrement(&self.inner) {
-            self.inner.shutdown();
+            self.inner.close();
         }
     }
 }
@@ -159,7 +155,6 @@ impl<A, Rc: TxRefCounter> Debug for Sender<A, Rc> {
 
         let act = std::any::type_name::<A>();
         f.debug_struct(&format!("Sender<{}>", act))
-            .field("shutdown", &self.inner.shutdown.load(SeqCst))
             .field("rx_count", &self.inner.receiver_count.load(SeqCst))
             .field("tx_count", &self.inner.sender_count.load(SeqCst))
             .field("rc", &self.rc)
@@ -218,8 +213,9 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
                     let mut inner = waiting.lock();
 
                     match inner.message {
-                        Some(_) => inner.waker = Some(cx.waker().clone()), // The message has not yet been taken
-                        None => return Poll::Ready(Ok(())),
+                        WaitingSenderInner::New(_) => inner.waker = Some(cx.waker().clone()), // The message has not yet been taken
+                        WaitingSenderInner::Delivered => return Poll::Ready(Ok(())),
+                        WaitingSenderInner::Closed => return Poll::Ready(Err(Error::Disconnected)),
                     }
                 }
 
@@ -233,32 +229,46 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
 
 pub struct WaitingSender<A> {
     waker: Option<Waker>,
-    message: Option<SentMessage<A>>,
+    message: WaitingSenderInner<A>,
+}
+
+enum WaitingSenderInner<A> {
+    New(SentMessage<A>),
+    Delivered,
+    Closed,
 }
 
 impl<A> WaitingSender<A> {
     pub fn new(message: SentMessage<A>) -> Arc<Spinlock<Self>> {
         let sender = WaitingSender {
             waker: None,
-            message: Some(message),
+            message: WaitingSenderInner::New(message),
         };
         Arc::new(Spinlock::new(sender))
     }
 
     pub fn peek(&self) -> &SentMessage<A> {
-        self.message
-            .as_ref()
-            .expect("WaitingSender should have message")
+        match &self.message {
+            WaitingSenderInner::New(msg) => msg,
+            _ => panic!("WaitingSender should have message"),
+        }
     }
 
-    pub fn fulfill(&mut self) -> SentMessage<A> {
+    pub fn fulfill(&mut self, is_delivered: bool) -> SentMessage<A> {
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }
 
-        self.message
-            .take()
-            .expect("WaitingSender should have message")
+        let new = if is_delivered {
+            WaitingSenderInner::Delivered
+        } else {
+            WaitingSenderInner::Closed
+        };
+
+        match mem::replace(&mut self.message, new) {
+            WaitingSenderInner::New(msg) => msg,
+            _ => panic!("WaitingSender should have message"),
+        }
     }
 }
 
