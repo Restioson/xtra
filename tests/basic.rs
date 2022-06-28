@@ -1154,7 +1154,7 @@ async fn controller_doesnt_prevent_tail_advance() {
         .next_message()
         .now_or_never()
         .expect("Message from fallback queue should be present");
-    assert!(ctx.tick(next, &mut act).await.is_continue());
+    assert!(matches!(ctx.tick(next, &mut act).await, ControlFlow::Continue(())));
 
     assert_eq!(
         addr.broadcast(PrintHello("mars")).now_or_never(),
@@ -1176,7 +1176,7 @@ async fn controller_doesnt_prevent_tail_advance() {
     );
 
     let next = ctx.next_message().now_or_never().unwrap();
-    assert!(ctx.tick(next, &mut act).await.is_continue());
+    assert!(matches!(ctx.tick(next, &mut act).await, ControlFlow::Continue(())));
 
     assert_eq!(
         addr.broadcast(PrintHello("saturn")).now_or_never(),
@@ -1191,7 +1191,7 @@ async fn controller_doesnt_prevent_tail_advance() {
     );
 
     let next = ctx.next_message().now_or_never().unwrap();
-    assert!(ctx.tick(next, &mut act).await.is_continue());
+    assert!(matches!(ctx.tick(next, &mut act).await, ControlFlow::Continue(())));
 
     assert_eq!(
         addr.broadcast(PrintHello("neptune")).now_or_never(),
