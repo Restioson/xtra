@@ -137,7 +137,7 @@ impl<A> ChanInner<A> {
             }
         } else {
             // Fallback queue for when there are ReceiverHalves but no Receivers with mailboxes
-           self.fallback_broadcast_queue.push(m);
+            self.fallback_broadcast_queue.push(m);
         }
 
         self.broadcast_tail += 1;

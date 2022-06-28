@@ -1150,7 +1150,10 @@ async fn controller_doesnt_prevent_tail_advance() {
     );
 
     let mut act = Greeter;
-    let next = ctx.next_message().now_or_never().expect("Message from fallback queue should be present");
+    let next = ctx
+        .next_message()
+        .now_or_never()
+        .expect("Message from fallback queue should be present");
     assert!(ctx.tick(next, &mut act).await.is_continue());
 
     assert_eq!(
