@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 use futures_util::FutureExt;
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
-use xtra::SendFuture;
 use xtra::{ActorErasedSending, NameableSending};
+use xtra::{Controller, SendFuture};
 
 struct Counter {
     count: usize,
@@ -127,10 +127,10 @@ async fn do_parallel_address_benchmark<R>(
 ) where
     SendFuture<(), NameableSending<Counter, ()>, R>: Future,
 {
-    let (addr, ctx) = Context::new(None);
+    let (addr, ctrl) = Controller::new(None);
     let start = Instant::now();
     for _ in 0..workers {
-        tokio::spawn(ctx.attach(Counter { count: 0 }));
+        tokio::spawn(ctrl.attach(Counter { count: 0 }));
     }
 
     for _ in 0..COUNT {

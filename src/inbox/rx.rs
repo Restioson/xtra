@@ -1,5 +1,4 @@
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{atomic, Arc};
@@ -13,62 +12,30 @@ use crate::inbox::tx::TxWeak;
 use crate::inbox::*;
 
 pub struct Receiver<A, Rc: RxRefCounter> {
-    pub(super) inner: Arc<Chan<A>>,
+    pub shared: ReceiverSide<A, Rc>,
     pub(super) broadcast_mailbox: Arc<BroadcastQueue<A>>,
-    pub(super) rc: Rc,
-}
-
-impl<A> Receiver<A, RxStrong> {
-    pub(super) fn new(inner: Arc<Chan<A>>, broadcast_mailbox: Arc<BroadcastQueue<A>>) -> Self {
-        let rc = RxStrong(());
-        rc.increment(&inner);
-
-        Receiver {
-            inner,
-            broadcast_mailbox,
-            rc,
-        }
-    }
 }
 
 impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
     pub fn sender(&self) -> Option<Sender<A, TxStrong>> {
         Some(Sender {
-            inner: self.inner.clone(),
-            rc: TxStrong::try_new(&self.inner)?,
+            inner: self.shared.inner.clone(),
+            rc: TxStrong::try_new(&self.shared.inner)?,
         })
     }
 
     pub fn weak_sender(&self) -> Sender<A, TxWeak> {
         Sender {
-            inner: self.inner.clone(),
-            rc: TxWeak::new(&self.inner),
+            inner: self.shared.inner.clone(),
+            rc: TxWeak::new(&self.shared.inner),
         }
     }
 
     /// Clone this receiver, keeping its broadcast mailbox.
     pub fn cloned_same_broadcast_mailbox(&self) -> Receiver<A, Rc> {
         Receiver {
-            inner: self.inner.clone(),
+            shared: self.shared.clone(),
             broadcast_mailbox: self.broadcast_mailbox.clone(),
-            rc: self.rc.increment(&self.inner),
-        }
-    }
-
-    /// Clone this receiver, giving the clone a new broadcast mailbox.
-    pub fn cloned_new_broadcast_mailbox(&self) -> Receiver<A, Rc> {
-        let new_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
-        self.inner
-            .chan
-            .lock()
-            .unwrap()
-            .broadcast_queues
-            .push(Arc::downgrade(&new_mailbox));
-
-        Receiver {
-            inner: self.inner.clone(),
-            broadcast_mailbox: new_mailbox,
-            rc: self.rc.increment(&self.inner),
         }
     }
 
@@ -81,13 +48,13 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
         let mut broadcast = self.broadcast_mailbox.lock();
         let broadcast_priority = broadcast.peek().map(|it| it.priority());
 
-        let mut inner = self.inner.chan.lock().unwrap();
+        let mut inner = self.shared.inner.chan.lock().unwrap();
 
-        let shared_priority: Option<u32> = inner.priority_queue.peek().map(|it| it.priority());
+        let shared_priority: Option<Priority> = inner.priority_queue.peek().map(|it| it.priority());
 
         // Try take from ordered channel
-        if cmp::max(shared_priority, broadcast_priority) <= Some(0) {
-            if let Some(msg) = inner.pop_ordered(self.inner.capacity) {
+        if cmp::max(shared_priority, broadcast_priority) <= Some(Priority::Valued(0)) {
+            if let Some(msg) = inner.pop_ordered(self.shared.inner.capacity) {
                 return Ok(msg.into());
             }
         }
@@ -95,21 +62,28 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
         // Choose which priority channel to take from
         match shared_priority.cmp(&broadcast_priority) {
             // Shared priority is greater or equal (and it is not empty)
-            Ordering::Greater | Ordering::Equal if shared_priority.is_some() => {
-                Ok(inner.pop_priority(self.inner.capacity).unwrap().into())
-            }
+            Ordering::Greater | Ordering::Equal if shared_priority.is_some() => Ok(inner
+                .pop_priority(self.shared.inner.capacity)
+                .unwrap()
+                .into()),
             // Shared priority is less - take from broadcast
             Ordering::Less => {
                 let msg = broadcast.pop().unwrap().0;
                 drop(broadcast);
-                inner.try_advance_broadcast_tail(self.inner.capacity);
+                inner.try_advance_broadcast_tail(self.shared.inner.capacity);
 
                 Ok(msg.into())
             }
             // Equal, but both are empty, so wait or exit if shutdown
             _ => {
-                // on_close is only notified with inner locked, and it's locked here, so no race
-                if self.inner.sender_count.load(atomic::Ordering::SeqCst) == 0 {
+                // on_shutdown is only notified with inner locked, and it's locked here, so no race
+                if self
+                    .shared
+                    .inner
+                    .sender_count
+                    .load(atomic::Ordering::SeqCst)
+                    == 0
+                {
                     return Ok(ActorMessage::Shutdown);
                 }
 
@@ -121,10 +95,69 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
     }
 }
 
-impl<A, Rc: RxRefCounter> Drop for Receiver<A, Rc> {
+/// A ReceiverHalf is a receiving half of the channel without a broadcast mailbox
+/// TODO better name
+pub struct ReceiverSide<A, Rc: RxRefCounter> {
+    pub(super) inner: Arc<Chan<A>>,
+    pub(super) rc: Rc,
+}
+
+impl<A> ReceiverSide<A, RxStrong> {
+    pub fn new(inner: Arc<Chan<A>>) -> ReceiverSide<A, RxStrong> {
+        let rc = RxStrong(());
+        rc.increment(&inner);
+
+        ReceiverSide { inner, rc }
+    }
+}
+
+impl<A, Rc: RxRefCounter> ReceiverSide<A, Rc> {
+    pub fn new_receiver(&self) -> Receiver<A, Rc> {
+        let mut inner = self.inner.chan.lock().unwrap();
+        let queue = mem::take(&mut inner.fallback_broadcast_queue);
+        let broadcast_mailbox = Arc::new(Spinlock::new(queue));
+        inner
+            .broadcast_queues
+            .push(Arc::downgrade(&broadcast_mailbox));
+
+        Receiver {
+            shared: self.clone(),
+            broadcast_mailbox,
+        }
+    }
+}
+
+impl<A, Rc: RxRefCounter> Clone for ReceiverSide<A, Rc> {
+    fn clone(&self) -> Self {
+        ReceiverSide {
+            inner: self.inner.clone(),
+            rc: self.rc.increment(&self.inner),
+        }
+    }
+}
+
+impl<A, Rc: RxRefCounter> Drop for ReceiverSide<A, Rc> {
     fn drop(&mut self) {
         if self.rc.decrement(&self.inner) {
-            self.inner.close();
+            let waiting_tx = {
+                let mut inner = match self.inner.chan.lock() {
+                    Ok(lock) => lock,
+                    Err(_) => return, // Poisoned, ignore
+                };
+
+                self.inner.on_shutdown.notify(usize::MAX);
+
+                // Let any outstanding messages drop
+                inner.ordered_queue.clear();
+                inner.priority_queue.clear();
+                inner.broadcast_queues.clear();
+
+                mem::take(&mut inner.waiting_senders)
+            };
+
+            for tx in waiting_tx.into_iter().flat_map(|w| w.upgrade()) {
+                let _ = tx.lock().fulfill(false);
+            }
         }
     }
 }
@@ -178,11 +211,14 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                                     let pop = rx.broadcast_mailbox.lock().pop();
                                     match pop {
                                         Some(msg) => {
-                                            rx.inner
+                                            rx.shared
+                                                .inner
                                                 .chan
                                                 .lock()
                                                 .unwrap()
-                                                .try_advance_broadcast_tail(rx.inner.capacity);
+                                                .try_advance_broadcast_tail(
+                                                    rx.shared.inner.capacity,
+                                                );
                                             ActorMessage::ToAllActors(msg.0)
                                         }
                                         None => {
@@ -233,7 +269,7 @@ impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
         if let ReceiveFutureInner::Waiting { waiting, rx } =
             mem::replace(&mut self.0, ReceiveFutureInner::Complete)
         {
-            let mut inner = match rx.inner.chan.lock() {
+            let mut inner = match rx.shared.inner.chan.lock() {
                 Ok(lock) => lock,
                 Err(_) => return, // Poisoned - ignore
             };

@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use xtra::prelude::*;
+use xtra::Controller;
 
 struct Printer {
     times: usize,
@@ -50,15 +51,15 @@ impl Handler<Print> for Printer {
 
 #[smol_potat::main]
 async fn main() {
-    let (addr, ctx) = Context::new(Some(32));
+    let (addr, ctrl) = Controller::new(Some(32));
     for n in 0..4 {
-        smol::spawn(ctx.attach(Printer::new(n))).detach();
+        smol::spawn(ctrl.attach(Printer::new(n))).detach();
     }
 
     // This must be dropped, otherwise it will keep the actors from correctly shutting down. It
     // doesn't affect this example, but it's best practice if not planning to use this behaviour
     // intentionally.
-    drop(ctx);
+    drop(ctrl);
 
     while addr.send(Print("hello".to_string())).await.is_ok() {}
     println!("Stopping to send");

@@ -10,9 +10,74 @@ use futures_util::FutureExt;
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
 
-use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
+use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, ReceiverSide, RxStrong};
 use crate::inbox::ActorMessage;
 use crate::{inbox, Actor, Address, Error, Handler, WeakAddress};
+
+/// A thing which actors can be spawned with, but will not hold up the tail of the broadcast
+/// mailbox.
+///
+
+/// TODO this needs a better name!
+pub struct Controller<A>(ReceiverSide<A, RxStrong>);
+
+impl<A: Actor> Controller<A> {
+    /// TODO doc
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use xtra::Controller;
+    /// use xtra::prelude::*;
+    /// #
+    /// # struct MyActor;
+    /// #
+    /// # impl MyActor {
+    /// #     fn new(_: usize) -> Self {
+    /// #         MyActor
+    /// #     }
+    /// # }
+    /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
+    /// # async { // This does not actually run because there is nothing to assert
+    /// let (addr, mut ctrl) = Controller::new(Some(32));
+    /// for n in 0..3 {
+    ///     smol::spawn(ctrl.attach(MyActor::new(n))).detach();
+    /// }
+    /// ctrl.run(MyActor::new(4)).await;
+    /// # };
+    ///
+    /// ```
+    pub fn new(message_cap: Option<usize>) -> (Address<A>, Self) {
+        let (tx, rx) = inbox::new(message_cap);
+
+        (Address(tx), Controller(rx))
+    }
+
+    /// Returns a context for a new actor on this address.
+    pub fn add_context(&self) -> Context<A> {
+        Context {
+            running: true,
+            mailbox: self.0.new_receiver(),
+        }
+    }
+
+    /// TODO doc
+    pub fn run(self, act: A) -> impl Future<Output = A::Stop> {
+        self.into_context().run(act)
+    }
+
+    /// TODO doc
+    pub fn attach(&self, act: A) -> impl Future<Output = A::Stop> {
+        self.add_context().run(act)
+    }
+
+    /// Returns a context for a new actor on this address, consuming the controller in the process.
+    ///
+    /// TODO doc explain drop/disconnect behaviour w.r.t this
+    pub fn into_context(self) -> Context<A> {
+        self.add_context()
+    }
+}
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
@@ -31,50 +96,18 @@ pub struct Context<A> {
 
 impl<A: Actor> Context<A> {
     /// Creates a new actor context with a given mailbox capacity, returning an address to the actor
-    /// and the context. This can be used as a builder to add more actors to an address before
-    /// any have started.
+    /// and the context.
     ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use xtra::prelude::*;
-    /// #
-    /// # struct MyActor;
-    /// #
-    /// # impl MyActor {
-    /// #     fn new(_: usize) -> Self {
-    /// #         MyActor
-    /// #     }
-    /// # }
-    /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
-    /// # async { // This does not actually run because there is nothing to assert
-    /// let (addr, mut ctx) = Context::new(Some(32));
-    /// for n in 0..3 {
-    ///     smol::spawn(ctx.attach(MyActor::new(n))).detach();
-    /// }
-    /// ctx.run(MyActor::new(4)).await;
-    /// # };
-    ///
-    /// ```
+    /// TODO(example)
     pub fn new(message_cap: Option<usize>) -> (Address<A>, Self) {
         let (tx, rx) = inbox::new(message_cap);
 
         let context = Context {
             running: true,
-            mailbox: rx,
+            mailbox: rx.new_receiver(),
         };
 
         (Address(tx), context)
-    }
-
-    /// Attaches an actor of the same type listening to the same address as this actor is.
-    /// They will operate in a message-stealing fashion, with no message handled by two actors.
-    pub fn attach(&self, actor: A) -> impl Future<Output = A::Stop> {
-        let ctx = Context {
-            running: true,
-            mailbox: self.mailbox.cloned_new_broadcast_mailbox(),
-        };
-        ctx.run(actor)
     }
 
     /// Stop this actor as soon as it has finished processing current message. This means that the
@@ -88,7 +121,7 @@ impl<A: Actor> Context<A> {
     pub fn stop_all(&mut self) {
         // We only need to shut down if there are still any strong senders left
         if let Some(sender) = self.mailbox.sender() {
-            // TODO(stop_all)
+            sender.stop_all_receivers();
         }
     }
 
@@ -103,6 +136,11 @@ impl<A: Actor> Context<A> {
     /// Get a weak address to the current actor.
     pub fn weak_address(&self) -> WeakAddress<A> {
         Address(self.mailbox.weak_sender())
+    }
+
+    /// Get the controller of this actor. It can be used to spawn more actors onto the same address.
+    pub fn controller(&self) -> Controller<A> {
+        Controller(self.mailbox.shared.clone())
     }
 
     /// Run the given actor's main loop, handling incoming messages to its mailbox.

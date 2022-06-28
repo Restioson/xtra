@@ -10,9 +10,10 @@ use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use super::*;
+use crate::envelope::ShutdownAll;
 use crate::inbox::tx::private::RefCounterInner;
 use crate::send_future::private::SetPriority;
-use crate::Error;
+use crate::{Actor, Error};
 
 pub struct Sender<A, Rc: TxRefCounter> {
     pub(super) inner: Arc<Chan<A>>,
@@ -32,7 +33,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     fn try_send(&self, message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
         let mut inner = self.inner.chan.lock().unwrap();
 
-        if self.is_connected() {
+        if !self.is_connected() {
             return Err(TrySendFail::Disconnected);
         }
 
@@ -42,7 +43,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
                 Ok(())
             }
             SentMessage::ToAllActors(m) => {
-                // on_close is only notified with inner locked, and it's locked here, so no race
+                // on_shutdown is only notified with inner locked, and it's locked here, so no race
                 let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
                 inner.waiting_senders.push_back(Arc::downgrade(&waiting));
                 Err(TrySendFail::Full(waiting))
@@ -72,6 +73,17 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
                 }
             }
         }
+    }
+
+    pub fn stop_all_receivers(&self)
+    where
+        A: Actor,
+    {
+        self.inner
+            .chan
+            .lock()
+            .unwrap()
+            .send_broadcast(MessageToAllActors(Arc::new(ShutdownAll::new())));
     }
 
     pub fn send(&self, message: SentMessage<A>) -> SendFuture<A, Rc> {
@@ -144,7 +156,22 @@ impl<A, Rc: TxRefCounter> Clone for Sender<A, Rc> {
 impl<A, Rc: TxRefCounter> Drop for Sender<A, Rc> {
     fn drop(&mut self) {
         if self.rc.decrement(&self.inner) {
-            self.inner.close();
+            let waiting_rx = {
+                let mut inner = match self.inner.chan.lock() {
+                    Ok(lock) => lock,
+                    Err(_) => return, // Poisoned, ignore
+                };
+
+                // We don't need to notify on_shutdown here, as that is only used by senders
+                // Receivers will be woken with the fulfills below, or they will realise there are
+                // no senders when they check the tx refcount
+
+                mem::take(&mut inner.waiting_receivers)
+            };
+
+            for rx in waiting_rx.into_iter().flat_map(|w| w.upgrade()) {
+                let _ = rx.lock().fulfill(WakeReason::Shutdown);
+            }
         }
     }
 }

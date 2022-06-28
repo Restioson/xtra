@@ -15,7 +15,7 @@ pub use rx::Receiver;
 pub use tx::{SendFuture, Sender};
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope};
-use crate::inbox::rx::{RxStrong, WaitingReceiver};
+use crate::inbox::rx::{ReceiverSide, RxStrong, WaitingReceiver};
 use crate::inbox::tx::{TxStrong, WaitingSender};
 
 type Spinlock<T> = spin::Mutex<T>;
@@ -24,15 +24,15 @@ type BroadcastQueue<A> = Spinlock<BinaryHeap<MessageToAllActors<A>>>;
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
-pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
-    let broadcast_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
+pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, ReceiverSide<A, RxStrong>) {
     let inner = Arc::new(Chan {
         chan: Mutex::new(ChanInner {
             ordered_queue: VecDeque::new(),
             waiting_senders: VecDeque::new(),
             waiting_receivers: VecDeque::new(),
             priority_queue: BinaryHeap::new(),
-            broadcast_queues: vec![Arc::downgrade(&broadcast_mailbox)],
+            broadcast_queues: vec![],
+            fallback_broadcast_queue: BinaryHeap::new(),
             broadcast_tail: 0,
         }),
         capacity,
@@ -42,7 +42,7 @@ pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxSt
     });
 
     let tx = Sender::new(inner.clone());
-    let rx = Receiver::new(inner, broadcast_mailbox);
+    let rx = ReceiverSide::new(inner);
 
     (tx, rx)
 }
@@ -60,27 +60,6 @@ impl<A> Chan<A> {
     fn is_full(&self, len: usize) -> bool {
         self.capacity.map_or(false, |cap| len >= cap)
     }
-
-    pub fn close(&self) {
-        let (waiting_rx, waiting_tx) = {
-            let mut inner = match self.chan.lock() {
-                Ok(lock) => lock,
-                Err(_) => return, // Poisoned, ignore
-            };
-
-            self.on_shutdown.notify(usize::MAX);
-
-            (mem::take(&mut inner.waiting_receivers), mem::take(&mut inner.waiting_senders))
-        };
-
-        for rx in waiting_rx.into_iter().flat_map(|w| w.upgrade()) {
-            let _ = rx.lock().fulfill(WakeReason::Shutdown);
-        }
-
-        for tx in waiting_tx.into_iter().flat_map(|w| w.upgrade()) {
-            let _ = tx.lock().fulfill(false);
-        }
-    }
 }
 
 struct ChanInner<A> {
@@ -89,6 +68,7 @@ struct ChanInner<A> {
     waiting_receivers: VecDeque<Weak<Spinlock<WaitingReceiver<A>>>>,
     priority_queue: BinaryHeap<PriorityMessageToOne<A>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
+    fallback_broadcast_queue: BinaryHeap<MessageToAllActors<A>>,
     broadcast_tail: usize,
 }
 
@@ -127,6 +107,10 @@ impl<A> ChanInner<A> {
             }
         }
 
+        longest = cmp::max(longest, self.fallback_broadcast_queue.len());
+
+        self.broadcast_tail = longest;
+
         // If len < cap, try fulfill a waiting sender
         if capacity.map_or(false, |cap| longest < cap) {
             match self.try_fulfill_sender(MessageType::Broadcast) {
@@ -135,8 +119,6 @@ impl<A> ChanInner<A> {
                 None => {}
             }
         }
-
-        self.broadcast_tail = longest;
     }
 
     fn send_broadcast(&mut self, m: MessageToAllActors<A>) {
@@ -148,9 +130,14 @@ impl<A> ChanInner<A> {
             None => false, // The corresponding receiver has been dropped - remove it
         });
 
-        let waiting = mem::take(&mut self.waiting_receivers);
-        for rx in waiting.into_iter().flat_map(|w| w.upgrade()) {
-            let _ = rx.lock().fulfill(WakeReason::MessageToAllActors);
+        if !self.broadcast_queues.is_empty() {
+            let waiting = mem::take(&mut self.waiting_receivers);
+            for rx in waiting.into_iter().flat_map(|w| w.upgrade()) {
+                let _ = rx.lock().fulfill(WakeReason::MessageToAllActors);
+            }
+        } else {
+            // Fallback queue for when there are ReceiverHalves but no Receivers with mailboxes
+           self.fallback_broadcast_queue.push(m);
         }
 
         self.broadcast_tail += 1;
@@ -190,7 +177,7 @@ impl<A> ChanInner<A> {
                             SentMessage::ToOneActor(m)
                                 if for_type == MessageType::Priority && m.priority > 0 =>
                             {
-                                Some(m.priority)
+                                Some(m.priority())
                             }
                             SentMessage::ToAllActors(m) if for_type == MessageType::Broadcast => {
                                 Some(m.priority())
@@ -274,13 +261,19 @@ enum WakeReason<A> {
     Cancelled,
 }
 
+#[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
+pub enum Priority {
+    Valued(u32),
+    Shutdown,
+}
+
 pub trait HasPriority {
-    fn priority(&self) -> u32;
+    fn priority(&self) -> Priority;
 }
 
 impl<A> HasPriority for PriorityMessageToOne<A> {
-    fn priority(&self) -> u32 {
-        self.priority
+    fn priority(&self) -> Priority {
+        Priority::Valued(self.priority)
     }
 }
 
@@ -324,7 +317,7 @@ impl<A> Clone for MessageToAllActors<A> {
 }
 
 impl<A> HasPriority for MessageToAllActors<A> {
-    fn priority(&self) -> u32 {
+    fn priority(&self) -> Priority {
         self.0.priority()
     }
 }
