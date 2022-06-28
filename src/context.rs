@@ -81,7 +81,7 @@ impl<A: Actor> Controller<A> {
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
-/// [`Context::run`] or [`Context::attach`]) exists, **it will prevent the actor's channel from being
+/// [`Context::run`]) exists, **it will prevent the actor's channel from being
 /// closed**, as more actors that could still then be added to the address, so closing early, while
 /// maybe intuitive, would be subtly wrong.
 pub struct Context<A> {
