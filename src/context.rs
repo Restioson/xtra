@@ -133,16 +133,42 @@ impl<A: Actor> Context<A> {
     /// Handle one message and return whether to exit from the manage loop or not.
     pub async fn tick(&mut self, msg: Message<A>, actor: &mut A) -> ControlFlow<()> {
         match msg.0 {
-            ActorMessage::ToOneActor(msg) => msg.handle(actor, self).await,
-            ActorMessage::ToAllActors(msg) => msg.handle(actor, self).await,
-            ActorMessage::Shutdown => self.running = false,
+            ActorMessage::ToOneActor(msg) => msg.handle(actor, self).0.await,
+            ActorMessage::ToAllActors(msg) => msg.handle(actor, self).0.await,
+            ActorMessage::Shutdown => {
+                self.running = false;
+                ControlFlow::Break(())
+            },
         }
+    }
 
-        if !self.running {
-            return ControlFlow::Break(());
+    /// Handle one message, returning the span of the actor message handler. This is very similar
+    /// to [`Context::tick`].
+    ///
+    /// This span is pre-filled with an `interrupted` field which can be `Span::record`ed to in the
+    /// case of the handler being cancelled. This function returns the span and the future to handle
+    /// the message as two parts of a tuple. The span will not be present if the message is a shut
+    /// down message, as there would be no message to handle.
+    #[cfg(feature = "instrumentation")]
+    pub fn tick_instrumented<'a>(
+        &'a mut self,
+        msg: Message<A>,
+        actor: &'a mut A,
+    ) -> (Option<tracing::Span>, impl Future<Output = ControlFlow<()>> + 'a) {
+        match msg.0 {
+            ActorMessage::ToOneActor(msg) => {
+                let (fut, span) = msg.handle(actor, self);
+                (Some(span.0), Either::Left(fut))
+            },
+            ActorMessage::ToAllActors(msg) => {
+                let (fut, span) = msg.handle(actor, self);
+                (Some(span.0), Either::Left(fut))
+            },
+            ActorMessage::Shutdown => {
+                self.running = false;
+                (None, Either::Right(future::ready(ControlFlow::Break(()))))
+            },
         }
-
-        ControlFlow::Continue(())
     }
 
     /// Yields to the manager to handle one message, returning the actor should be shut down or not.
@@ -366,6 +392,14 @@ impl<A: Actor> Context<A> {
         };
 
         Ok(fut)
+    }
+
+    pub(crate) fn flow(&self) -> ControlFlow<()> {
+        if self.running {
+            ControlFlow::Continue(())
+        } else {
+            ControlFlow::Break(())
+        }
     }
 }
 

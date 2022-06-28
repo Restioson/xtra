@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::marker::PhantomData;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use catty::{Receiver, Sender};
@@ -46,7 +47,7 @@ pub trait MessageEnvelope: Send {
         self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> BoxFuture<'a, ()>;
+    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan);
 }
 
 #[derive(Clone)]
@@ -56,6 +57,8 @@ struct Instrumentation {
     #[cfg(feature = "instrumentation")]
     _waiting_for_actor: tracing::Span,
 }
+
+pub struct HandlerSpan(#[cfg(feature = "instrumentation")] pub tracing::Span);
 
 impl Instrumentation {
     fn new<A, M>() -> Self {
@@ -85,7 +88,7 @@ impl Instrumentation {
         Instrumentation {}
     }
 
-    fn apply<A, M, F>(self, fut: F) -> impl Future<Output = F::Output>
+    fn apply<A, M, F>(self, fut: F) -> (impl Future<Output = F::Output>, HandlerSpan)
     where
         F: Future,
     {
@@ -96,13 +99,17 @@ impl Instrumentation {
                 "xtra_message_handler",
                 actor = std::any::type_name::<A>(),
                 message = std::any::type_name::<M>(),
+                interrupted = tracing::field::Empty,
             );
 
-            tracing::Instrument::instrument(fut, executing)
+            (
+                tracing::Instrument::instrument(fut, executing.clone()),
+                HandlerSpan(executing)
+            )
         }
 
         #[cfg(not(feature = "instrumentation"))]
-        fut
+        (HandlerSpan(), fut)
     }
 }
 
@@ -140,7 +147,7 @@ where
         self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> BoxFuture<'a, ()> {
+    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan) {
         let Self {
             message,
             result_sender,
@@ -148,14 +155,19 @@ where
             ..
         } = *self;
 
-        Box::pin(
-            instrumentation
-                .apply::<A, M, _>(act.handle(message, ctx))
-                .map(move |r| {
-                    // We don't actually care if the receiver is listening
-                    let _ = result_sender.send(r);
-                }),
-        )
+        let fut = async move {
+            (act.handle(message, ctx).await, ctx.flow())
+        };
+
+        let (fut, span) = instrumentation.apply::<A, M, _>(fut);
+
+        let fut = Box::pin(fut.map(move |(r, flow)| {
+            // We don't actually care if the receiver is listening
+            let _ = result_sender.send(r);
+            flow
+        }));
+
+        (fut, span)
     }
 }
 
@@ -167,7 +179,7 @@ pub trait BroadcastEnvelope: HasPriority + Send + Sync {
         self: Arc<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> BoxFuture<'a, ()>;
+    ) ->  (BoxFuture<'a, ControlFlow<()>>, HandlerSpan);
 }
 
 pub struct BroadcastEnvelopeConcrete<A, M> {
@@ -199,10 +211,15 @@ where
         self: Arc<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> BoxFuture<'a, ()> {
+    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan) {
         let (msg, instrumentation) = (self.message.clone(), self.instrumentation.clone());
         drop(self); // Drop ASAP to end the message waiting for actor span
-        Box::pin(instrumentation.apply::<A, M, _>(act.handle(msg, ctx)))
+        let fut = async move {
+            act.handle(msg, ctx).await;
+            ctx.flow()
+        };
+        let (fut, span) = instrumentation.apply::<A, M, _>(fut);
+        (Box::pin(fut), span)
     }
 }
 
