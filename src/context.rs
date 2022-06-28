@@ -138,7 +138,7 @@ impl<A: Actor> Context<A> {
             ActorMessage::Shutdown => {
                 self.running = false;
                 ControlFlow::Break(())
-            },
+            }
         }
     }
 
@@ -154,20 +154,23 @@ impl<A: Actor> Context<A> {
         &'a mut self,
         msg: Message<A>,
         actor: &'a mut A,
-    ) -> (Option<tracing::Span>, impl Future<Output = ControlFlow<()>> + 'a) {
+    ) -> (
+        Option<tracing::Span>,
+        impl Future<Output = ControlFlow<()>> + 'a,
+    ) {
         match msg.0 {
             ActorMessage::ToOneActor(msg) => {
                 let (fut, span) = msg.handle(actor, self);
                 (Some(span.0), Either::Left(fut))
-            },
+            }
             ActorMessage::ToAllActors(msg) => {
                 let (fut, span) = msg.handle(actor, self);
                 (Some(span.0), Either::Left(fut))
-            },
+            }
             ActorMessage::Shutdown => {
                 self.running = false;
                 (None, Either::Right(future::ready(ControlFlow::Break(()))))
-            },
+            }
         }
     }
 

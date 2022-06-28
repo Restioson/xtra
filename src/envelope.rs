@@ -104,7 +104,7 @@ impl Instrumentation {
 
             (
                 tracing::Instrument::instrument(fut, executing.clone()),
-                HandlerSpan(executing)
+                HandlerSpan(executing),
             )
         }
 
@@ -155,9 +155,7 @@ where
             ..
         } = *self;
 
-        let fut = async move {
-            (act.handle(message, ctx).await, ctx.flow())
-        };
+        let fut = async move { (act.handle(message, ctx).await, ctx.flow()) };
 
         let (fut, span) = instrumentation.apply::<A, M, _>(fut);
 
@@ -179,7 +177,7 @@ pub trait BroadcastEnvelope: HasPriority + Send + Sync {
         self: Arc<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) ->  (BoxFuture<'a, ControlFlow<()>>, HandlerSpan);
+    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan);
 }
 
 pub struct BroadcastEnvelopeConcrete<A, M> {
