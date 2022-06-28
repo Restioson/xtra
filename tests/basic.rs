@@ -106,6 +106,15 @@ impl Handler<StopSelf> for DropTester {
     }
 }
 
+#[async_trait]
+impl Handler<StopAll> for DropTester {
+    type Return = ();
+
+    async fn handle(&mut self, _: StopAll, ctx: &mut Context<Self>) {
+        ctx.stop_all();
+    }
+}
+
 #[tokio::test]
 async fn test_stop_and_drop() {
     // Drop the address
@@ -120,13 +129,25 @@ async fn test_stop_and_drop() {
     assert!(!weak.is_connected());
     assert!(join.now_or_never().is_some());
 
-    // Send a stop message
+    // Send a stop self message
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
     let handle = tokio::spawn(fut);
     let weak = addr.downgrade();
     let join = weak.join();
     let _ = addr.send(StopSelf).split_receiver().await;
+    handle.await.unwrap();
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert!(!weak.is_connected());
+    assert!(join.now_or_never().is_some());
+
+    // Send a stop all message
+    let drop_count = Arc::new(AtomicUsize::new(0));
+    let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
+    let handle = tokio::spawn(fut);
+    let weak = addr.downgrade();
+    let join = weak.join();
+    let _ = addr.send(StopAll).split_receiver().await;
     handle.await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
     assert!(!weak.is_connected());
