@@ -85,6 +85,9 @@ impl<A: Actor> Context<A> {
 
     /// Stop all actors on this address. This is similar to [`Context::stop_self`] but it will stop
     /// all actors on this address.
+    ///
+    /// Unlike in previous versions of xtra, it does not disconnect the address immediately - it is
+    /// equivalent to running [`Context::stop_self`] on all actors.
     pub fn stop_all(&mut self) {
         // We only need to shut down if there are still any strong senders left
         if let Some(sender) = self.mailbox.sender() {
