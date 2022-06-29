@@ -95,10 +95,9 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
         // Choose which priority channel to take from
         match shared_priority.cmp(&broadcast_priority) {
             // Shared priority is greater or equal (and it is not empty)
-            Ordering::Greater | Ordering::Equal if shared_priority.is_some() => Ok(inner
-                .pop_priority(self.inner.capacity)
-                .unwrap()
-                .into()),
+            Ordering::Greater | Ordering::Equal if shared_priority.is_some() => {
+                Ok(inner.pop_priority(self.inner.capacity).unwrap().into())
+            }
             // Shared priority is less - take from broadcast
             Ordering::Less => {
                 let msg = broadcast.pop().unwrap().0;
@@ -110,12 +109,7 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
             // Equal, but both are empty, so wait or exit if shutdown
             _ => {
                 // on_shutdown is only notified with inner locked, and it's locked here, so no race
-                if self
-                    .inner
-                    .sender_count
-                    .load(atomic::Ordering::SeqCst)
-                    == 0
-                {
+                if self.inner.sender_count.load(atomic::Ordering::SeqCst) == 0 {
                     return Ok(ActorMessage::Shutdown);
                 }
 
