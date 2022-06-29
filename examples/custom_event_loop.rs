@@ -40,11 +40,10 @@ async fn main() {
     let ActorManager {
         address,
         mut actor,
-        ctrl,
+        mut ctx,
     } = Counter::new().create(None);
 
     tokio::spawn(async move {
-        let mut ctx = ctrl.add_context();
         loop {
             let start = Instant::now();
             let msg = ctx.next_message().await;
@@ -56,7 +55,7 @@ async fn main() {
 
             if let ControlFlow::Break(_) = ctrl {
                 println!("Goodbye!");
-                break actor.stopped().await;
+                break;
             }
 
             println!(

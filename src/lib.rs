@@ -7,7 +7,7 @@ use std::fmt;
 
 pub use self::address::{Address, WeakAddress};
 pub use self::broadcast_future::BroadcastFuture;
-pub use self::context::{Context, Controller};
+pub use self::context::Context;
 pub use self::manager::ActorManager;
 pub use self::receiver::Receiver;
 pub use self::scoped_task::scoped;
@@ -178,11 +178,11 @@ pub trait Actor: 'static + Send + Sized {
     /// })
     /// ```
     fn create(self, message_cap: Option<usize>) -> ActorManager<Self> {
-        let (address, ctrl) = Controller::new(message_cap);
+        let (address, ctx) = Context::new(message_cap);
         ActorManager {
             address,
             actor: self,
-            ctrl,
+            ctx,
         }
     }
 }

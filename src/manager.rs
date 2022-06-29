@@ -1,8 +1,9 @@
 use std::future::Future;
 
 use crate::address::Address;
+use crate::context::Context;
 use crate::spawn::Spawner;
-use crate::{Actor, Controller};
+use crate::Actor;
 
 /// A manager for the actor which handles incoming messages and stores the context. Its managing
 /// loop can be started with [`ActorManager::run`].
@@ -11,8 +12,8 @@ pub struct ActorManager<A> {
     pub address: Address<A>,
     /// The actor itself.
     pub actor: A,
-    /// The controller of the actor.
-    pub ctrl: Controller<A>,
+    /// The context of the actor.
+    pub ctx: Context<A>,
 }
 
 impl<A: Actor<Stop = ()>> ActorManager<A> {
@@ -41,6 +42,6 @@ impl<A: Actor> ActorManager<A> {
     /// });
     /// ```
     pub fn run(self) -> (Address<A>, impl Future<Output = A::Stop>) {
-        (self.address, self.ctrl.run(self.actor))
+        (self.address, self.ctx.run(self.actor))
     }
 }
