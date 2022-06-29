@@ -108,7 +108,6 @@ impl<A> ChanInner<A> {
         }
 
         longest = cmp::max(longest, self.fallback_broadcast_queue.len());
-
         self.broadcast_tail = longest;
 
         // If len < cap, try fulfill a waiting sender
