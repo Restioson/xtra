@@ -595,21 +595,53 @@ async fn broadcast_tail_advances_bound_1() {
         msgs: vec![],
     };
 
-    tokio::spawn(ctx.attach(Elephant::default()));
+    let mut indlovu = Box::pin(ctx.attach(Elephant::default()));
 
-    let _ = addr
-        .broadcast(Message::Broadcast { priority: 0 })
+    addr.broadcast(Message::Broadcast { priority: 0 })
         .priority(0)
-        .await;
+        .await
+        .unwrap();
 
+    assert!(
+        addr.broadcast(Message::Broadcast { priority: 0 })
+            .priority(0)
+            .now_or_never()
+            .is_none(),
+        "New broadcast message should not be accepted when tail = len",
+    );
+
+    let mut send = addr
+        .broadcast(Message::Broadcast { priority: 0 })
+        .priority(0);
+
+    assert!(
+        send.poll_unpin(&mut fut_ctx).is_pending(),
+        "New broadcast message should not be accepted when tail = len"
+    );
+    assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
+    ctx.yield_once(&mut ngwevu).await;
+
+    assert!(
+        addr.broadcast(Message::Broadcast { priority: 0 })
+            .priority(0)
+            .now_or_never()
+            .is_none(),
+        "New broadcast message should not be accepted when tail = len and one is already waiting",
+    );
+
+    assert!(
+        send.poll_unpin(&mut fut_ctx).is_ready(),
+        "New broadcast message should be accepted now"
+    );
+
+    assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
     ctx.yield_once(&mut ngwevu).await;
 
     assert_eq!(
         addr.broadcast(Message::Broadcast { priority: 0 })
             .priority(0)
-            .timeout(Duration::from_secs(2))
             .await,
-        Some(Ok(())),
+        Ok(()),
         "New broadcast message should be accepted when queue is empty",
     );
 
@@ -633,7 +665,7 @@ async fn broadcast_tail_advances_bound_1() {
 
     // Will handle the broadcast of priority 0 from earlier
     ctx.yield_once(&mut ngwevu).await;
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
 
     assert!(
         lesser.poll_unpin(&mut fut_ctx).is_pending(),
@@ -646,13 +678,21 @@ async fn broadcast_tail_advances_bound_1() {
 
     // Should handle greater
     ctx.yield_once(&mut ngwevu).await;
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
 
     assert!(
         lesser.poll_unpin(&mut fut_ctx).is_ready(),
         "Low prio should be sent in now"
     );
+
+    assert!(
+        addr.broadcast(Message::Broadcast { priority: 10 })
+            .now_or_never()
+            .is_none(),
+        "Channel should not accept when full",
+    )
 }
+
 
 #[tokio::test]
 async fn broadcast_tail_advances_bound_2() {

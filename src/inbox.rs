@@ -153,6 +153,8 @@ impl<A> ChanInner<A> {
             }
         }
 
+        self.broadcast_tail = longest;
+
         // If len < cap, try fulfill a waiting sender
         if capacity.map_or(false, |cap| longest < cap) {
             match self.try_fulfill_sender(MessageType::Broadcast) {
@@ -161,8 +163,6 @@ impl<A> ChanInner<A> {
                 None => {}
             }
         }
-
-        self.broadcast_tail = longest;
     }
 
     fn send_broadcast(&mut self, m: MessageToAllActors<A>) {
