@@ -9,12 +9,12 @@ use futures_core::FusedFuture;
 use futures_util::future::{self, Either};
 use futures_util::FutureExt;
 #[cfg(feature = "timing")]
-use {futures_timer::Delay, std::time::Duration};
+use {crate::Handler, futures_timer::Delay, std::time::Duration};
 
-use crate::envelope::HandlerSpan;
+use crate::envelope::{HandlerSpan, Shutdown};
 use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
 use crate::inbox::ActorMessage;
-use crate::{inbox, Actor, Address, Error, Handler, WeakAddress};
+use crate::{inbox, Actor, Address, Error, WeakAddress};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
@@ -497,18 +497,10 @@ impl<'a, A> TickState<'a, A> {
         let (fut, span) = match msg.0 {
             ActorMessage::ToOneActor(msg) => msg.handle(actor, ctx),
             ActorMessage::ToAllActors(msg) => msg.handle(actor, ctx),
-            ActorMessage::Shutdown => {
-                return (
-                    Box::pin(async move {
-                        ctx.running = false;
-                        ControlFlow::Break(())
-                    }),
-                    None,
-                )
-            }
+            ActorMessage::Shutdown => Shutdown::handle(ctx),
         };
 
-        (fut, Some(span))
+        (fut, span)
     }
 }
 
