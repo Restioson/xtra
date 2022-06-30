@@ -1,15 +1,17 @@
 use std::future::Future;
 use std::ops::ControlFlow;
 use std::pin::Pin;
-use std::task;
 use std::task::Poll;
+use std::{mem, task};
 
+use futures_core::future::BoxFuture;
 use futures_core::FusedFuture;
 use futures_util::future::{self, Either};
 use futures_util::FutureExt;
 #[cfg(feature = "timing")]
 use {futures_timer::Delay, std::time::Duration};
 
+use crate::envelope::HandlerSpan;
 use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
 use crate::inbox::ActorMessage;
 use crate::{inbox, Actor, Address, Error, Handler, WeakAddress};
@@ -131,47 +133,8 @@ impl<A: Actor> Context<A> {
     }
 
     /// Handle one message and return whether to exit from the manage loop or not.
-    pub async fn tick(&mut self, msg: Message<A>, actor: &mut A) -> ControlFlow<()> {
-        match msg.0 {
-            ActorMessage::ToOneActor(msg) => msg.handle(actor, self).0.await,
-            ActorMessage::ToAllActors(msg) => msg.handle(actor, self).0.await,
-            ActorMessage::Shutdown => {
-                self.running = false;
-                ControlFlow::Break(())
-            }
-        }
-    }
-
-    /// Handle one message, returning the span of the actor message handler. This is very similar
-    /// to [`Context::tick`].
-    ///
-    /// This span is pre-filled with an `interrupted` field which can be `Span::record`ed to in the
-    /// case of the handler being cancelled. This function returns the span and the future to handle
-    /// the message as two parts of a tuple. The span will not be present if the message is a shut
-    /// down message, as there would be no message to handle.
-    #[cfg(feature = "instrumentation")]
-    pub fn tick_instrumented<'a>(
-        &'a mut self,
-        msg: Message<A>,
-        actor: &'a mut A,
-    ) -> (
-        Option<tracing::Span>,
-        impl Future<Output = ControlFlow<()>> + 'a,
-    ) {
-        match msg.0 {
-            ActorMessage::ToOneActor(msg) => {
-                let (fut, span) = msg.handle(actor, self);
-                (Some(span.0), Either::Left(fut))
-            }
-            ActorMessage::ToAllActors(msg) => {
-                let (fut, span) = msg.handle(actor, self);
-                (Some(span.0), Either::Left(fut))
-            }
-            ActorMessage::Shutdown => {
-                self.running = false;
-                (None, Either::Right(future::ready(ControlFlow::Break(()))))
-            }
-        }
+    pub fn tick<'a>(&'a mut self, msg: Message<A>, actor: &'a mut A) -> TickFuture<'a, A> {
+        TickFuture::new(msg, self, actor)
     }
 
     /// Yields to the manager to handle one message, returning the actor should be shut down or not.
@@ -438,5 +401,109 @@ impl<A> Future for ReceiveFuture<A> {
 impl<A> FusedFuture for ReceiveFuture<A> {
     fn is_terminated(&self) -> bool {
         self.0.is_terminated()
+    }
+}
+
+pub struct TickFuture<'a, A> {
+    state: TickState<'a, A>,
+}
+
+#[cfg(feature = "instrumentation")]
+impl<'a, A> TickFuture<'a, A> {
+    /// Return the handler's [`tracing::Span`](https://docs.rs/tracing/latest/tracing/struct.Span.html)
+    /// and the future, if the message is not a shut down. This can be used to log messages into the
+    /// span when required, such as if it is cancelled later due to a timeout.
+    pub fn with_span(self) -> (Option<tracing::Span>, TickFuture<'a, A>) {
+        let (state, span) = match self.state {
+            TickState::New { msg, actor, ctx } => {
+                let (fut, span) = TickState::running(msg, actor, ctx);
+                let state = TickState::Running {
+                    span: span.clone(),
+                    fut,
+                };
+
+                (state, span)
+            }
+            TickState::Running { span, fut } => {
+                let state = TickState::Running {
+                    span: span.clone(),
+                    fut,
+                };
+
+                (state, span)
+            }
+            TickState::Done => (TickState::Done, None),
+        };
+
+        let new = TickFuture { state };
+
+        (span.map(|span| span.0), new)
+    }
+}
+
+enum TickState<'a, A> {
+    New {
+        msg: Message<A>,
+        actor: &'a mut A,
+        ctx: &'a mut Context<A>,
+    },
+    Running {
+        fut: BoxFuture<'a, ControlFlow<()>>,
+        span: Option<HandlerSpan>,
+    },
+    Done,
+}
+
+impl<'a, A> TickState<'a, A> {
+    fn running(
+        msg: Message<A>,
+        actor: &'a mut A,
+        ctx: &'a mut Context<A>,
+    ) -> (BoxFuture<'a, ControlFlow<()>>, Option<HandlerSpan>) {
+        let (fut, span) = match msg.0 {
+            ActorMessage::ToOneActor(msg) => msg.handle(actor, ctx),
+            ActorMessage::ToAllActors(msg) => msg.handle(actor, ctx),
+            ActorMessage::Shutdown => {
+                return (
+                    Box::pin(async move {
+                        ctx.running = false;
+                        ControlFlow::Break(())
+                    }),
+                    None,
+                )
+            }
+        };
+
+        (fut, Some(span))
+    }
+}
+
+impl<'a, A> TickFuture<'a, A> {
+    fn new(msg: Message<A>, ctx: &'a mut Context<A>, actor: &'a mut A) -> Self {
+        TickFuture {
+            state: TickState::New { msg, ctx, actor },
+        }
+    }
+}
+
+impl<'a, A> Future for TickFuture<'a, A> {
+    type Output = ControlFlow<()>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match mem::replace(&mut self.state, TickState::Done) {
+            TickState::New { msg, ctx, actor } => {
+                let (fut, span) = TickState::running(msg, actor, ctx);
+                self.state = TickState::Running { fut, span };
+                self.poll_unpin(cx)
+            }
+            TickState::Running { mut fut, span } => match fut.poll_unpin(cx) {
+                Poll::Ready(flow) => Poll::Ready(flow),
+                Poll::Pending => {
+                    self.state = TickState::Running { fut, span };
+                    Poll::Pending
+                }
+            },
+            TickState::Done => Poll::Pending,
+        }
     }
 }

@@ -58,6 +58,7 @@ struct Instrumentation {
     _waiting_for_actor: tracing::Span,
 }
 
+#[derive(Clone)]
 pub struct HandlerSpan(#[cfg(feature = "instrumentation")] pub tracing::Span);
 
 impl Instrumentation {
