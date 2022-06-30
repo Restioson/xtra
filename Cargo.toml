@@ -18,7 +18,6 @@ catty = "0.1.5"
 futures-core = { version = "0.3.21", default-features = false, features = ["alloc"] }
 futures-sink = { version = "0.3.21", default-features = false }
 futures-util = { version = "0.3.21", default-features = false, features = ["sink", "alloc"] }
-pollster = "0.2"
 pin-project-lite = "0.2.9"
 event-listener = "2.4.0"
 spin = { version = "0.9.3", default-features = false, features = ["spin_mutex"] }
