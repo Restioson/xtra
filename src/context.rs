@@ -413,6 +413,39 @@ impl<'a, A> TickFuture<'a, A> {
     /// Return the handler's [`tracing::Span`](https://docs.rs/tracing/latest/tracing/struct.Span.html)
     /// and the future, if the message is not a shut down. This can be used to log messages into the
     /// span when required, such as if it is cancelled later due to a timeout.
+    ///
+    /// ```rust
+    /// # use std::ops::ControlFlow;
+    /// # use std::time::Duration;
+    /// # use tokio::time::timeout;
+    /// # use xtra::prelude::*;
+    /// #
+    /// # struct MyActor;
+    /// # #[async_trait::async_trait] impl Actor for MyActor { type Stop = (); async fn stopped(self) {} }
+    /// #
+    /// # let mut actor = MyActor;
+    /// # let (addr, mut ctx) = Context::<MyActor>::new(None);
+    /// # drop(addr);
+    /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+    /// # actor.started(&mut ctx).await;
+    /// #
+    /// # loop {
+    /// # let msg = ctx.next_message().await;
+    ///  let (span, fut) = ctx.tick(msg, &mut actor).with_span();
+    ///  match timeout(Duration::from_secs(1), fut).await {
+    ///      Ok(ControlFlow::Continue(())) => (),
+    ///      Ok(ControlFlow::Break(())) => break actor.stopped().await,
+    ///      Err(_elapsed) => {
+    ///          if let Some(span) = span {
+    ///              let _entered = span.enter();
+    ///              span.record("interrupted", &"timed_out");
+    ///              tracing::warn!(timeout_seconds = 1, "Handler execution timed out");
+    ///          }
+    ///      }
+    ///  }
+    /// # } })
+    /// ```
+    ///
     pub fn with_span(self) -> (Option<tracing::Span>, TickFuture<'a, A>) {
         let (state, span) = match self.state {
             TickState::New { msg, actor, ctx } => {
