@@ -83,10 +83,10 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
 
         let mut inner = self.inner.chan.lock().unwrap();
 
-        let shared_priority: Option<u32> = inner.priority_queue.peek().map(|it| it.priority());
+        let shared_priority: Option<Priority> = inner.priority_queue.peek().map(|it| it.priority());
 
         // Try take from ordered channel
-        if cmp::max(shared_priority, broadcast_priority) <= Some(0) {
+        if cmp::max(shared_priority, broadcast_priority) <= Some(Priority::Valued(0)) {
             if let Some(msg) = inner.pop_ordered(self.inner.capacity) {
                 return Ok(msg.into());
             }
@@ -108,9 +108,8 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
             }
             // Equal, but both are empty, so wait or exit if shutdown
             _ => {
-                // Shutdown is only edited when inner is locked, and we have it locked now, so no
-                // chance of races here
-                if self.inner.is_shutdown() {
+                // on_shutdown is only notified with inner locked, and it's locked here, so no race
+                if self.inner.sender_count.load(atomic::Ordering::SeqCst) == 0 {
                     return Ok(ActorMessage::Shutdown);
                 }
 
@@ -125,7 +124,25 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
 impl<A, Rc: RxRefCounter> Drop for Receiver<A, Rc> {
     fn drop(&mut self) {
         if self.rc.decrement(&self.inner) {
-            self.inner.shutdown();
+            let waiting_tx = {
+                let mut inner = match self.inner.chan.lock() {
+                    Ok(lock) => lock,
+                    Err(_) => return, // Poisoned, ignore
+                };
+
+                self.inner.on_shutdown.notify(usize::MAX);
+
+                // Let any outstanding messages drop
+                inner.ordered_queue.clear();
+                inner.priority_queue.clear();
+                inner.broadcast_queues.clear();
+
+                mem::take(&mut inner.waiting_senders)
+            };
+
+            for tx in waiting_tx.into_iter().flat_map(|w| w.upgrade()) {
+                let _ = tx.lock().fulfill(false);
+            }
         }
     }
 }

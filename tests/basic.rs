@@ -139,6 +139,7 @@ async fn test_stop_and_drop() {
     handle.await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
     assert!(!weak.is_connected());
+    assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
 
     // Send a stop all message
@@ -151,6 +152,7 @@ async fn test_stop_and_drop() {
     handle.await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
     assert!(!weak.is_connected());
+    assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
 
     // Drop address before future has even begun
@@ -173,6 +175,7 @@ async fn test_stop_and_drop() {
     tokio::spawn(fut).await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
     assert!(!weak.is_connected());
+    assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
 }
 
@@ -190,7 +193,7 @@ async fn handle_left_messages() {
 }
 
 #[tokio::test]
-async fn do_not_handle_drained_messages() {
+async fn actor_can_be_restarted() {
     let (addr, fut) = Accumulator(0).create(None).run();
 
     for _ in 0..5 {
@@ -216,8 +219,10 @@ async fn do_not_handle_drained_messages() {
     let _ = addr.send(StopAll).split_receiver().await;
 
     assert_eq!(fut1.await, 5);
-    assert!(!addr.is_connected());
+    assert!(addr.is_connected());
 
+    // These should not be handled, as fut2 should get the stop_all in this mailbox and stop the
+    // actor
     for _ in 0..5 {
         let _ = addr.send(Inc).split_receiver().await;
     }
@@ -879,7 +884,7 @@ fn address_debug() {
     assert_eq!(
         format!("{:?}", addr1),
         "Address(Sender<basic::Greeter> { \
-        shutdown: false, rx_count: 1, tx_count: 2, rc: TxStrong(()) })"
+        rx_count: 1, tx_count: 2, rc: TxStrong(()) })"
     );
 
     assert_eq!(format!("{:?}", addr1), format!("{:?}", addr2));
@@ -887,7 +892,7 @@ fn address_debug() {
     assert_eq!(
         format!("{:?}", weak_addr),
         "Address(Sender<basic::Greeter> { \
-        shutdown: false, rx_count: 1, tx_count: 2, rc: TxWeak(()) })"
+        rx_count: 1, tx_count: 2, rc: TxWeak(()) })"
     );
 }
 
@@ -901,14 +906,14 @@ fn message_channel_debug() {
     assert_eq!(
         format!("{:?}", mc),
         "MessageChannel<basic::Hello, alloc::string::String>(\
-            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 1, rc: TxStrong(()) }\
+            Sender<basic::Greeter> { rx_count: 1, tx_count: 1, rc: TxStrong(()) }\
         )"
     );
 
     assert_eq!(
         format!("{:?}", weak_mc),
         "MessageChannel<basic::Hello, alloc::string::String>(\
-            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 1, rc: TxWeak(()) }\
+            Sender<basic::Greeter> { rx_count: 1, tx_count: 1, rc: TxWeak(()) }\
         )"
     );
 }
@@ -1076,16 +1081,28 @@ async fn timeout_returns_interrupted() {
 
     address
         .send(Hello("world"))
+        .split_receiver()
+        .now_or_never()
+        .expect("Boundless message should be sent instantly")
+        .timeout(Duration::from_secs(3))
         .await
+        .expect("Message should not time out")
         .expect("Counter should not be dropped");
+
     assert_eq!(
         address.send(Pending).await,
         Err(Error::Interrupted),
         "Timeout should return Interrupted"
     );
+
     address
         .send(Hello("world"))
+        .split_receiver()
+        .now_or_never()
+        .expect("Boundless message should be sent instantly")
+        .timeout(Duration::from_secs(3))
         .await
+        .expect("Message should not time out")
         .expect("Counter should not be dropped");
 
     let weak = address.downgrade();
@@ -1094,8 +1111,8 @@ async fn timeout_returns_interrupted() {
 
     join.await;
     assert_eq!(
-        weak.send(Hello("world")).await,
-        Err(Error::Disconnected),
+        weak.send(Hello("world")).now_or_never(),
+        Some(Err(Error::Disconnected)),
         "Interrupt should not be returned after actor stops"
     );
 }
