@@ -1,3 +1,4 @@
+use core::panicking::panic;
 use std::future::Future;
 use std::ops::ControlFlow;
 use std::pin::Pin;
@@ -415,6 +416,10 @@ impl<'a, A> TickFuture<'a, A> {
     /// and the future, if the message is not a shut down. This can be used to log messages into the
     /// span when required, such as if it is cancelled later due to a timeout.
     ///
+    /// Note that this will cause the span to be created, so the returned future should be evaluated
+    /// as soon as possible after this is called, otherwise the span may be inaccurate, in that
+    /// it would start much before the handler future actually runs.
+    ///
     /// ```rust
     /// # use std::ops::ControlFlow;
     /// # use std::time::Duration;
@@ -529,7 +534,7 @@ impl<'a, A> Future for TickFuture<'a, A> {
                     Poll::Pending
                 }
             },
-            TickState::Done => Poll::Pending,
+            TickState::Done => panic!("Polled after completion"),
         }
     }
 }
