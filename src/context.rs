@@ -83,7 +83,7 @@ impl<A: Actor> Context<A> {
         self.running = false;
     }
 
-     /// Stop all actors on this address.
+    /// Stop all actors on this address.
     ///
     /// This is equivalent to calling [`Context::stop_self`] on all actors active on this address.
     pub fn stop_all(&mut self) {
