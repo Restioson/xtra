@@ -15,6 +15,7 @@
   `From`/`Into`.
 - `AddressSink` was removed in favor of using `impl Trait` for the `Address::into_sink` method.
 - `InstrumentedExt` was removed. All messages are now instrumented automatically when `instrumentation` is enabled.
+- `stop_all` now does not drain all messages when called, and acts just like `stop_self` on all active actors.
 
 ## 0.5.0
 
