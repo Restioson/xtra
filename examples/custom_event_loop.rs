@@ -44,6 +44,12 @@ async fn main() {
     } = Counter::new().create(None);
 
     tokio::spawn(async move {
+        actor.started(&mut ctx).await;
+
+        if !ctx.running {
+            return actor.stopped().await;
+        }
+
         loop {
             let start = Instant::now();
             let msg = ctx.next_message().await;

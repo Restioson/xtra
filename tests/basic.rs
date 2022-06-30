@@ -693,7 +693,6 @@ async fn broadcast_tail_advances_bound_1() {
     )
 }
 
-
 #[tokio::test]
 async fn broadcast_tail_advances_bound_2() {
     let (addr, mut ctx) = Context::new(Some(2));
@@ -1055,6 +1054,12 @@ async fn timeout_returns_interrupted() {
     } = Greeter.create(None);
 
     tokio::spawn(async move {
+        actor.started(&mut ctx).await;
+
+        if !ctx.running {
+            return actor.stopped().await;
+        }
+
         loop {
             let msg = ctx.next_message().await;
 
