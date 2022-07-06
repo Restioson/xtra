@@ -1,5 +1,5 @@
-use core::panicking::panic;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::task::Poll;
@@ -135,6 +135,9 @@ impl<A: Actor> Context<A> {
     }
 
     /// Handle one message and return whether to exit from the manage loop or not.
+    ///
+    /// Note that this will immediately create the message handler span if the `instrumentation`
+    /// feature is enabled.
     pub fn tick<'a>(&'a mut self, msg: Message<A>, actor: &'a mut A) -> TickFuture<'a, A> {
         TickFuture::new(msg, self, actor)
     }
@@ -408,17 +411,14 @@ impl<A> FusedFuture for ReceiveFuture<A> {
 
 pub struct TickFuture<'a, A> {
     state: TickState<'a, A>,
+    span: HandlerSpan,
 }
 
 #[cfg(feature = "instrumentation")]
 impl<'a, A> TickFuture<'a, A> {
     /// Return the handler's [`tracing::Span`](https://docs.rs/tracing/latest/tracing/struct.Span.html)
-    /// and the future, if the message is not a shut down. This can be used to log messages into the
-    /// span when required, such as if it is cancelled later due to a timeout.
-    ///
-    /// Note that this will cause the span to be created, so the returned future should be evaluated
-    /// as soon as possible after this is called, otherwise the span may be inaccurate, in that
-    /// it would start much before the handler future actually runs.
+    /// This can be used to log messages into the span when required, such as if it is cancelled
+    /// later due to a timeout.
     ///
     /// ```rust
     /// # use std::ops::ControlFlow;
@@ -437,83 +437,54 @@ impl<'a, A> TickFuture<'a, A> {
     /// #
     /// # loop {
     /// # let msg = ctx.next_message().await;
-    ///  let (span, fut) = ctx.tick(msg, &mut actor).with_span();
+    ///  let fut = ctx.tick(msg, &mut actor);
+    ///  let span = fut.span().clone();
     ///  match timeout(Duration::from_secs(1), fut).await {
     ///      Ok(ControlFlow::Continue(())) => (),
     ///      Ok(ControlFlow::Break(())) => break actor.stopped().await,
     ///      Err(_elapsed) => {
-    ///          if let Some(span) = span {
-    ///              let _entered = span.enter();
-    ///              span.record("interrupted", &"timed_out");
-    ///              tracing::warn!(timeout_seconds = 1, "Handler execution timed out");
-    ///          }
+    ///          let _entered = span.enter();
+    ///          span.record("interrupted", &"timed_out");
+    ///          tracing::warn!(timeout_seconds = 1, "Handler execution timed out");
     ///      }
     ///  }
     /// # } })
     /// ```
     ///
-    pub fn with_span(self) -> (Option<tracing::Span>, TickFuture<'a, A>) {
-        let (state, span) = match self.state {
-            TickState::New { msg, actor, ctx } => {
-                let (fut, span) = TickState::running(msg, actor, ctx);
-                let state = TickState::Running {
-                    span: span.clone(),
-                    fut,
-                };
-
-                (state, span)
-            }
-            TickState::Running { span, fut } => {
-                let state = TickState::Running {
-                    span: span.clone(),
-                    fut,
-                };
-
-                (state, span)
-            }
-            TickState::Done => (TickState::Done, None),
-        };
-
-        let new = TickFuture { state };
-
-        (span.map(|span| span.0), new)
+    pub fn span(&self) -> &tracing::Span {
+        &self.span.0
     }
 }
 
 enum TickState<'a, A> {
-    New {
-        msg: Message<A>,
-        actor: &'a mut A,
-        ctx: &'a mut Context<A>,
-    },
     Running {
         fut: BoxFuture<'a, ControlFlow<()>>,
-        span: Option<HandlerSpan>,
+        phantom: PhantomData<fn(&'a A)>,
     },
     Done,
 }
 
 impl<'a, A> TickState<'a, A> {
-    fn running(
-        msg: Message<A>,
-        actor: &'a mut A,
-        ctx: &'a mut Context<A>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, Option<HandlerSpan>) {
+    fn new(msg: Message<A>, actor: &'a mut A, ctx: &'a mut Context<A>) -> (Self, HandlerSpan) {
         let (fut, span) = match msg.0 {
             ActorMessage::ToOneActor(msg) => msg.handle(actor, ctx),
             ActorMessage::ToAllActors(msg) => msg.handle(actor, ctx),
             ActorMessage::Shutdown => Shutdown::handle(ctx),
         };
 
-        (fut, span)
+        let state = TickState::Running {
+            fut,
+            phantom: PhantomData,
+        };
+        (state, span)
     }
 }
 
 impl<'a, A> TickFuture<'a, A> {
     fn new(msg: Message<A>, ctx: &'a mut Context<A>, actor: &'a mut A) -> Self {
-        TickFuture {
-            state: TickState::New { msg, ctx, actor },
-        }
+        let (state, span) = TickState::new(msg, actor, ctx);
+
+        TickFuture { state, span }
     }
 }
 
@@ -522,18 +493,15 @@ impl<'a, A> Future for TickFuture<'a, A> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
         match mem::replace(&mut self.state, TickState::Done) {
-            TickState::New { msg, ctx, actor } => {
-                let (fut, span) = TickState::running(msg, actor, ctx);
-                self.state = TickState::Running { fut, span };
-                self.poll_unpin(cx)
-            }
-            TickState::Running { mut fut, span } => match fut.poll_unpin(cx) {
-                Poll::Ready(flow) => Poll::Ready(flow),
-                Poll::Pending => {
-                    self.state = TickState::Running { fut, span };
-                    Poll::Pending
+            TickState::Running { mut fut, phantom } => {
+                match self.span.0.in_scope(|| fut.poll_unpin(cx)) {
+                    Poll::Ready(flow) => Poll::Ready(flow),
+                    Poll::Pending => {
+                        self.state = TickState::Running { fut, phantom };
+                        Poll::Pending
+                    }
                 }
-            },
+            }
             TickState::Done => panic!("Polled after completion"),
         }
     }

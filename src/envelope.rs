@@ -47,7 +47,7 @@ pub trait MessageEnvelope: Send {
         self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, Option<HandlerSpan>);
+    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan);
 }
 
 #[derive(Clone)]
@@ -60,6 +60,18 @@ struct Instrumentation {
 
 #[derive(Clone)]
 pub struct HandlerSpan(#[cfg(feature = "instrumentation")] pub tracing::Span);
+
+impl HandlerSpan {
+    #[cfg(feature = "instrumentation")]
+    fn disabled() -> HandlerSpan {
+        HandlerSpan(tracing::Span::none())
+    }
+
+    #[cfg(not(feature = "instrumentation"))]
+    fn disabled() -> HandlerSpan {
+        HandlerSpan()
+    }
+}
 
 impl Instrumentation {
     fn new<A, M>() -> Self {
@@ -148,7 +160,7 @@ where
         self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, Option<HandlerSpan>) {
+    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan) {
         let Self {
             message,
             result_sender,
@@ -166,7 +178,7 @@ where
             flow
         }));
 
-        (fut, Some(span))
+        (fut, span)
     }
 }
 
@@ -178,7 +190,7 @@ pub trait BroadcastEnvelope: HasPriority + Send + Sync {
         self: Arc<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, Option<HandlerSpan>);
+    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan);
 }
 
 pub struct BroadcastEnvelopeConcrete<A, M> {
@@ -210,7 +222,7 @@ where
         self: Arc<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, Option<HandlerSpan>) {
+    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan) {
         let (msg, instrumentation) = (self.message.clone(), self.instrumentation.clone());
         drop(self); // Drop ASAP to end the message waiting for actor span
         let fut = async move {
@@ -218,7 +230,7 @@ where
             ctx.flow()
         };
         let (fut, span) = instrumentation.apply::<A, M, _>(fut);
-        (Box::pin(fut), Some(span))
+        (Box::pin(fut), span)
     }
 }
 
@@ -236,13 +248,13 @@ impl<A> Shutdown<A> {
         Shutdown(PhantomData)
     }
 
-    pub fn handle(ctx: &mut Context<A>) -> (BoxFuture<ControlFlow<()>>, Option<HandlerSpan>) {
+    pub fn handle(ctx: &mut Context<A>) -> (BoxFuture<ControlFlow<()>>, HandlerSpan) {
         let fut = Box::pin(async {
             ctx.running = false;
             ControlFlow::Break(())
         });
 
-        (fut, None)
+        (fut, HandlerSpan::disabled())
     }
 }
 
@@ -262,7 +274,7 @@ where
         self: Arc<Self>,
         _act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, Option<HandlerSpan>) {
+    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan) {
         Self::handle(ctx)
     }
 }
