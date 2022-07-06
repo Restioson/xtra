@@ -494,7 +494,7 @@ impl<'a, A> Future for TickFuture<'a, A> {
     fn poll(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
         match mem::replace(&mut self.state, TickState::Done) {
             TickState::Running { mut fut, phantom } => {
-                match self.span.0.in_scope(|| fut.poll_unpin(cx)) {
+                match self.span.in_scope(|| fut.poll_unpin(cx)) {
                     Poll::Ready(flow) => Poll::Ready(flow),
                     Poll::Pending => {
                         self.state = TickState::Running { fut, phantom };

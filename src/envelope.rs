@@ -62,14 +62,24 @@ struct Instrumentation {
 pub struct HandlerSpan(#[cfg(feature = "instrumentation")] pub tracing::Span);
 
 impl HandlerSpan {
-    #[cfg(feature = "instrumentation")]
-    fn disabled() -> HandlerSpan {
-        HandlerSpan(tracing::Span::none())
+    pub fn in_scope<R>(&self, f: impl FnOnce() -> R) -> R {
+        #[cfg(feature = "instrumentation")]
+        let r = self.0.in_scope(f);
+
+        #[cfg(not(feature = "instrumentation"))]
+        let r = f();
+
+        r
     }
 
-    #[cfg(not(feature = "instrumentation"))]
     fn disabled() -> HandlerSpan {
-        HandlerSpan()
+        #[cfg(feature = "instrumentation")]
+        let span = HandlerSpan(tracing::Span::none());
+
+        #[cfg(not(feature = "instrumentation"))]
+        let span = HandlerSpan();
+
+        span
     }
 }
 
