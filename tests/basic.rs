@@ -1116,3 +1116,10 @@ async fn timeout_returns_interrupted() {
         "Interrupt should not be returned after actor stops"
     );
 }
+
+#[test]
+fn no_sender_returns_disconnected() {
+    let (addr, ctx) = Context::<Greeter>::new(None);
+    drop(addr);
+    assert!(!ctx.weak_address().is_connected());
+}
