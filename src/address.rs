@@ -173,7 +173,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         A: Handler<M>,
     {
         let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-        let msg = SentMessage::ToOneActor(PriorityMessageToOne::new(0, Box::new(envelope)));
+        let msg = SentMessage::msg_to_one::<M>(PriorityMessageToOne::new(0, Box::new(envelope)));
         let tx = self.0.send(msg);
         SendFuture::sending_named(tx, rx)
     }

@@ -12,7 +12,7 @@ use futures_util::FutureExt;
 #[cfg(feature = "timing")]
 use {crate::Handler, futures_timer::Delay, std::time::Duration};
 
-use crate::envelope::{HandlerSpan, Shutdown};
+use crate::envelope::{Shutdown, Span};
 use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
 use crate::inbox::ActorMessage;
 use crate::{inbox, Actor, Address, Error, WeakAddress};
@@ -411,7 +411,7 @@ impl<A> FusedFuture for ReceiveFuture<A> {
 
 pub struct TickFuture<'a, A> {
     state: TickState<'a, A>,
-    span: HandlerSpan,
+    span: Span,
 }
 
 impl<'a, A> TickFuture<'a, A> {
@@ -457,7 +457,7 @@ impl<'a, A> TickFuture<'a, A> {
             TickState::New { msg, act, ctx } => TickFuture::running(msg, act, ctx),
             state => TickFuture {
                 state,
-                span: HandlerSpan(span),
+                span: Span(span),
             },
         };
 
@@ -498,7 +498,7 @@ impl<'a, A> TickFuture<'a, A> {
     fn new(msg: ActorMessage<A>, act: &'a mut A, ctx: &'a mut Context<A>) -> Self {
         TickFuture {
             state: TickState::New { msg, act, ctx },
-            span: HandlerSpan(
+            span: Span(
                 #[cfg(feature = "instrumentation")]
                 tracing::Span::none(),
             ),
