@@ -414,7 +414,6 @@ pub struct TickFuture<'a, A> {
     span: HandlerSpan,
 }
 
-#[cfg(feature = "instrumentation")]
 impl<'a, A> TickFuture<'a, A> {
     /// Return the handler's [`tracing::Span`](https://docs.rs/tracing/latest/tracing/struct.Span.html),
     /// creating it if it has not already been created. This can be used to log messages into the
