@@ -455,10 +455,11 @@ impl<'a, A> TickFuture<'a, A> {
     pub fn get_or_create_span(&mut self) -> &tracing::Span {
         let span = mem::replace(&mut self.span.0, tracing::Span::none());
         *self = match mem::replace(&mut self.state, TickState::Done) {
-            TickState::New { msg, act, ctx } => {
-                TickFuture::running(msg, act, ctx)
-            }
-            state => TickFuture { state, span: HandlerSpan(span) },
+            TickState::New { msg, act, ctx } => TickFuture::running(msg, act, ctx),
+            state => TickFuture {
+                state,
+                span: HandlerSpan(span),
+            },
         };
 
         &self.span.0
@@ -476,7 +477,7 @@ impl<'a, A> TickFuture<'a, A> {
                 fut,
                 phantom: PhantomData,
             },
-            span
+            span,
         }
     }
 }
@@ -497,12 +498,11 @@ enum TickState<'a, A> {
 impl<'a, A> TickFuture<'a, A> {
     fn new(msg: ActorMessage<A>, act: &'a mut A, ctx: &'a mut Context<A>) -> Self {
         TickFuture {
-            state: TickState::New {
-                msg,
-                act,
-                ctx,
-            },
-            span: HandlerSpan(#[cfg(feature = "instrumentation")] tracing::Span::none())
+            state: TickState::New { msg, act, ctx },
+            span: HandlerSpan(
+                #[cfg(feature = "instrumentation")]
+                tracing::Span::none(),
+            ),
         }
     }
 }
