@@ -21,47 +21,31 @@ pub trait MessageEnvelope: Send {
     /// The type of actor that this envelope carries a message for
     type Actor;
 
-    /// Handle the message inside of the box by calling the relevant `AsyncHandler::handle` or
-    /// `Handler::handle` method, returning its result over a return channel if applicable. The
-    /// reason that this returns a future is so that we can propagate any `Handler` responder
-    /// futures upwards and `.await` on them in the manager loop. This also takes `Box<Self>` as the
+    /// Starts the instrumentation of this message request. This will create the request span.
+    fn start_span(&mut self, msg_name: &'static str);
+
+    /// Handle the message inside of the box by calling the relevant [`Handler::handle`] method,
+    /// returning its result over a return channel if applicable. This also takes `Box<Self>` as the
     /// `self` parameter because `Envelope`s always appear as `Box<dyn Envelope<Actor = ...>>`,
-    /// and this allows us to consume the envelope, meaning that we don't have to waste *precious
-    /// CPU cycles* on useless option checks.
-    ///
-    /// # Doesn't the return type induce *Unnecessary Boxing* for synchronous handlers?
-    /// To save on boxing for non-asynchronously handled message envelopes, we *could* return some
-    /// enum like:
-    ///
-    /// ```not_a_test
-    /// enum Return<'a> {
-    ///     Fut(BoxFuture<'a, ()>),
-    ///     Noop,
-    /// }
-    /// ```
-    ///
-    /// But this is actually about 10% *slower* for `do_send`. I don't know why. Maybe it's something
-    /// to do with branch (mis)prediction or compiler optimisation. If you think that you can get
-    /// it to be faster, then feel free to open a PR with benchmark results attached to prove it.
+    /// and this allows us to consume the envelope.
     fn handle<'a>(
         self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan);
+    ) -> (BoxFuture<'a, ControlFlow<()>>, Span);
 }
 
+#[cfg_attr(not(feature = "instrumentation"), allow(dead_code))]
 #[derive(Clone)]
 struct Instrumentation {
-    #[cfg(feature = "instrumentation")]
-    parent: tracing::Span,
-    #[cfg(feature = "instrumentation")]
-    _waiting_for_actor: tracing::Span,
+    parent: Span,
+    _waiting_for_actor: Span,
 }
 
 #[derive(Clone)]
-pub struct HandlerSpan(#[cfg(feature = "instrumentation")] pub tracing::Span);
+pub struct Span(#[cfg(feature = "instrumentation")] pub tracing::Span);
 
-impl HandlerSpan {
+impl Span {
     pub fn in_scope<R>(&self, f: impl FnOnce() -> R) -> R {
         #[cfg(feature = "instrumentation")]
         let r = self.0.in_scope(f);
@@ -72,53 +56,63 @@ impl HandlerSpan {
         r
     }
 
-    fn disabled() -> HandlerSpan {
+    fn none() -> Span {
         #[cfg(feature = "instrumentation")]
-        let span = HandlerSpan(tracing::Span::none());
+        let span = Span(tracing::Span::none());
 
         #[cfg(not(feature = "instrumentation"))]
-        let span = HandlerSpan();
+        let span = Span();
 
         span
     }
 }
 
 impl Instrumentation {
-    fn new<A, M>() -> Self {
+    fn empty() -> Self {
+        Instrumentation {
+            parent: Span::none(),
+            _waiting_for_actor: Span::none(),
+        }
+    }
+
+    #[cfg_attr(not(feature = "instrumentation"), allow(unused_variables))]
+    fn new<A>(message: &'static str) -> Self {
         #[cfg(feature = "instrumentation")]
         {
-            let parent = tracing::debug_span!(
+            let parent = Span(tracing::debug_span!(
                 parent: tracing::Span::current(),
                 "xtra_actor_request",
                 actor = std::any::type_name::<A>(),
-                message = std::any::type_name::<M>(),
-            );
+                %message,
+            ));
 
-            let waiting_for_actor = tracing::debug_span!(
-                parent: &parent,
+            let _waiting_for_actor = Span(tracing::debug_span!(
+                parent: &parent.0,
                 "xtra_message_waiting_for_actor",
                 actor = std::any::type_name::<A>(),
-                message = std::any::type_name::<M>(),
-            );
+                %message,
+            ));
 
             Instrumentation {
                 parent,
-                _waiting_for_actor: waiting_for_actor,
+                _waiting_for_actor,
             }
         }
 
         #[cfg(not(feature = "instrumentation"))]
-        Instrumentation {}
+        Instrumentation::empty()
     }
 
-    fn apply<A, M, F>(self, fut: F) -> (impl Future<Output = F::Output>, HandlerSpan)
+    fn apply<A, M, F>(self, fut: F) -> (impl Future<Output = F::Output>, Span)
     where
         F: Future,
     {
         #[cfg(feature = "instrumentation")]
         {
+            assert!(!self.parent.0.is_none(), "expected start_span to be called");
+
             let executing = tracing::debug_span!(
-                parent: &self.parent,
+                parent: &self.parent.0,
                 "xtra_message_handler",
                 actor = std::any::type_name::<A>(),
                 message = std::any::type_name::<M>(),
@@ -127,12 +121,12 @@ impl Instrumentation {
 
             (
                 tracing::Instrument::instrument(fut, executing.clone()),
-                HandlerSpan(executing),
+                Span(executing),
             )
         }
 
         #[cfg(not(feature = "instrumentation"))]
-        (fut, HandlerSpan())
+        (fut, Span())
     }
 }
 
@@ -151,7 +145,7 @@ impl<A, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
             message,
             result_sender: tx,
             phantom: PhantomData,
-            instrumentation: Instrumentation::new::<A, M>(),
+            instrumentation: Instrumentation::empty(),
         };
 
         (envelope, rx)
@@ -166,11 +160,15 @@ where
 {
     type Actor = A;
 
+    fn start_span(&mut self, msg_name: &'static str) {
+        self.instrumentation = Instrumentation::new::<A>(msg_name);
+    }
+
     fn handle<'a>(
         self: Box<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan) {
+    ) -> (BoxFuture<'a, ControlFlow<()>>, Span) {
         let Self {
             message,
             result_sender,
@@ -196,11 +194,15 @@ where
 pub trait BroadcastEnvelope: HasPriority + Send + Sync {
     type Actor;
 
+    /// Starts the instrumentation of this message request, if this arc is unique. This will create
+    /// the request span
+    fn start_span(&mut self, msg_name: &'static str);
+
     fn handle<'a>(
         self: Arc<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan);
+    ) -> (BoxFuture<'a, ControlFlow<()>>, Span);
 }
 
 pub struct BroadcastEnvelopeConcrete<A, M> {
@@ -216,7 +218,7 @@ impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
             message,
             priority,
             phantom: PhantomData,
-            instrumentation: Instrumentation::new::<A, M>(),
+            instrumentation: Instrumentation::empty(),
         }
     }
 }
@@ -228,11 +230,15 @@ where
 {
     type Actor = A;
 
+    fn start_span(&mut self, msg_name: &'static str) {
+        self.instrumentation = Instrumentation::new::<A>(msg_name);
+    }
+
     fn handle<'a>(
         self: Arc<Self>,
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan) {
+    ) -> (BoxFuture<'a, ControlFlow<()>>, Span) {
         let (msg, instrumentation) = (self.message.clone(), self.instrumentation.clone());
         drop(self); // Drop ASAP to end the message waiting for actor span
         let fut = async move {
@@ -258,13 +264,13 @@ impl<A> Shutdown<A> {
         Shutdown(PhantomData)
     }
 
-    pub fn handle(ctx: &mut Context<A>) -> (BoxFuture<ControlFlow<()>>, HandlerSpan) {
+    pub fn handle(ctx: &mut Context<A>) -> (BoxFuture<ControlFlow<()>>, Span) {
         let fut = Box::pin(async {
             ctx.running = false;
             ControlFlow::Break(())
         });
 
-        (fut, HandlerSpan::disabled())
+        (fut, Span::none())
     }
 }
 
@@ -280,11 +286,14 @@ where
 {
     type Actor = A;
 
+    // This message is not instrumented
+    fn start_span(&mut self, _msg_name: &'static str) {}
+
     fn handle<'a>(
         self: Arc<Self>,
         _act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan) {
+    ) -> (BoxFuture<'a, ControlFlow<()>>, Span) {
         Self::handle(ctx)
     }
 }

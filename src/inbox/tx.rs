@@ -30,21 +30,23 @@ impl<A> Sender<A, TxStrong> {
 }
 
 impl<Rc: TxRefCounter, A> Sender<A, Rc> {
-    fn try_send(&self, message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
+    fn try_send(&self, mut message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
+        message.create_span(); // TODO make sure called once only
+
         let mut inner = self.inner.chan.lock().unwrap();
 
         if !self.is_connected() {
             return Err(TrySendFail::Disconnected);
         }
 
-        match message {
-            SentMessage::ToAllActors(m) if !self.inner.is_full(inner.broadcast_tail) => {
+        match message.msg {
+            MessageKind::ToAllActors(m) if !self.inner.is_full(inner.broadcast_tail) => {
                 inner.send_broadcast(MessageToAllActors(m));
                 Ok(())
             }
-            SentMessage::ToAllActors(m) => {
+            MessageKind::ToAllActors(m) => {
                 // on_shutdown is only notified with inner locked, and it's locked here, so no race
-                let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
+                let waiting = WaitingSender::new(MessageKind::ToAllActors(m));
                 inner.waiting_senders.push_back(Arc::downgrade(&waiting));
                 Err(TrySendFail::Full(waiting))
             }
@@ -208,7 +210,10 @@ impl<A, Rc: TxRefCounter> SendFuture<A, Rc> {
 impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
     fn set_priority(&mut self, priority: u32) {
         match &mut self.inner {
-            SendFutureInner::New(SentMessage::ToOneActor(ref mut m)) => m.priority = priority,
+            SendFutureInner::New(SentMessage {
+                msg: MessageKind::ToOneActor(ref mut m),
+                ..
+            }) => m.priority = priority,
             _ => panic!("setting priority after polling is unsupported"),
         }
     }
@@ -261,13 +266,13 @@ pub struct WaitingSender<A> {
 }
 
 enum WaitingSenderInner<A> {
-    New(SentMessage<A>),
+    New(MessageKind<A>),
     Delivered,
     Closed,
 }
 
 impl<A> WaitingSender<A> {
-    pub fn new(message: SentMessage<A>) -> Arc<Spinlock<Self>> {
+    pub fn new(message: MessageKind<A>) -> Arc<Spinlock<Self>> {
         let sender = WaitingSender {
             waker: None,
             message: WaitingSenderInner::New(message),
@@ -275,14 +280,14 @@ impl<A> WaitingSender<A> {
         Arc::new(Spinlock::new(sender))
     }
 
-    pub fn peek(&self) -> &SentMessage<A> {
+    pub fn peek(&self) -> &MessageKind<A> {
         match &self.message {
             WaitingSenderInner::New(msg) => msg,
             _ => panic!("WaitingSender should have message"),
         }
     }
 
-    pub fn fulfill(&mut self, is_delivered: bool) -> SentMessage<A> {
+    pub fn fulfill(&mut self, is_delivered: bool) -> MessageKind<A> {
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }

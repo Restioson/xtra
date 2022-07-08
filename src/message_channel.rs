@@ -298,7 +298,7 @@ where
     ) -> SendFuture<R, ActorErasedSending<Self::Return>, ResolveToHandlerReturn> {
         let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
         let msg = PriorityMessageToOne::new(0, Box::new(envelope));
-        let sending = self.0.send(SentMessage::ToOneActor(msg));
+        let sending = self.0.send(SentMessage::msg_to_one::<M>(msg));
 
         SendFuture::sending_erased(sending, rx)
     }
