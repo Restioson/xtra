@@ -10,7 +10,7 @@ use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use super::*;
-use crate::envelope::ShutdownAll;
+use crate::envelope::Shutdown;
 use crate::inbox::tx::private::RefCounterInner;
 use crate::send_future::private::SetPriority;
 use crate::{Actor, Error};
@@ -83,7 +83,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
             .chan
             .lock()
             .unwrap()
-            .send_broadcast(MessageToAllActors(Arc::new(ShutdownAll::new())));
+            .send_broadcast(MessageToAllActors(Arc::new(Shutdown::new())));
     }
 
     pub fn send(&self, message: SentMessage<A>) -> SendFuture<A, Rc> {
