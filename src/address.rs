@@ -215,8 +215,19 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
                 future::select(&mut stream.next(), &mut stopped).await
             {
                 let res = self.send(m); // Bound to make it Sync
-                if matches!(res.await.map(Into::into), Ok(KeepRunning::Yes)) {
-                    continue;
+
+                #[cfg(feature = "instrumentation")]
+                let (res, span) =  {
+                    let span = tracing::info_span!("attach_stream forward message");
+                    (tracing::Instrument::instrument(res, span.clone()), span)
+                };
+
+                match res.await.map(Into::into) {
+                    Ok(KeepRunning::Yes) | Err(Error::Interrupted) => continue,
+                    reason => {
+                        #[cfg(feature = "instrumentation")]
+                        span.in_scope(|| tracing::info!(?reason, "Stopping forward task"));
+                    }
                 }
             }
             break;
