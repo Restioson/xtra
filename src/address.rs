@@ -217,7 +217,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///
     /// Because [`Sink`]s do not return anything, this function is only available for messages with
     /// a [`Handler`] implementation that sets [`Return`](Handler::Return) to `()`.
-    pub fn into_sink<M>(self) -> impl Sink<M, Error = Error> + Unpin
+    pub fn into_sink<M>(self) -> impl Sink<M, Error = Error>
     where
         A: Handler<M, Return = ()>,
         M: Send + 'static,
