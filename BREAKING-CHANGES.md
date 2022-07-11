@@ -17,9 +17,10 @@
 - `Context::attach_stream` was removed in favor of composing `Stream::forward` and `Address::into_sink`.
 - `KeepRunning` was removed as `Context::attach_stream` was its last usage.
 - `InstrumentedExt` was removed. All messages are now instrumented automatically when `instrumentation` is enabled.
-- `stop_all` now does not drain all messages when called, and acts just like `stop_self` on all active actors.
 - `Context::attach` is removed in favor of implementing `Clone` for `Context`. If you want to run multiple actors on a
   `Context`, simply clone it before calling `run`.
+- Introduce `Address::stop_all` as a convenience function for stopping all actors on an `Address`.
+  This is semantically equivalent to broadcasting a custom `Stop` message.
 
 ## 0.5.0
 
