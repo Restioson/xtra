@@ -6,11 +6,11 @@ use std::task::Poll;
 use std::time::Duration;
 
 use futures_util::task::noop_waker_ref;
-use futures_util::{FutureExt, SinkExt, StreamExt};
-use smol::stream;
+use futures_util::FutureExt;
 use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
+use xtra::{ActorManager, Error};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);

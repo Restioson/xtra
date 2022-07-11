@@ -9,7 +9,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use event_listener::EventListener;
-use futures_core::{FusedFuture, Stream};
 use futures_sink::Sink;
 use futures_util::FutureExt;
 
@@ -219,15 +218,14 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// Because [`Sink`]s do not return anything, this function is only available for messages with
     /// a [`Handler`] implementation that sets [`Return`](Handler::Return) to `()`.
     pub fn into_sink<M>(self) -> impl Sink<M, Error = Error> + Unpin
-        where
-            A: Handler<M, Return = ()>,
-            M: Send + 'static,
+    where
+        A: Handler<M, Return = ()>,
+        M: Send + 'static,
     {
         use futures_util::*;
 
         sink::unfold((), move |(), message| self.send(message))
     }
-
 }
 
 /// A future which will complete when the corresponding actor stops and its address becomes
