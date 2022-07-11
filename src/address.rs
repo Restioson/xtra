@@ -217,7 +217,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     }
 
     /// Converts this address into a sink that can be used to send messages to the actor. These
-    /// messages will have default priority and be handled in send order.
+    /// messages will have default priority and will be handled in send order.
     ///
     /// When converting an [`Address`] into a [`Sink`], it is important to think about the address'
     /// reference counts. By default [`Address`]es are [`Strong`]. An [`AddressSink`] will inherit
@@ -228,6 +228,9 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// [`Strong`] [`AddressSink`] will keep the actor alive for as long as that
     /// [`Stream`](futures_util::stream::Stream) is being polled. Depending on your usecase, you
     /// may want to use a [`WeakAddress`] instead.
+    ///
+    /// Because [`Sink`]s do not return anything, this function is only available for messages with
+    /// a [`Handler`] implementation that sets [`Return`](Handler::Return) to `()`.
     pub fn into_sink<M>(self) -> impl Sink<M, Error = Disconnected> + Unpin
     where
         A: Handler<M, Return = ()>,
@@ -235,17 +238,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     {
         use futures_util::*;
 
-        sink::unfold((), move |(), item| {
-            let send_future = self.send(item);
-            let join_handle = self.join();
-
-            Box::pin(async move {
-                match future::select(join_handle, send_future).await {
-                    future::Either::Right((send_result, _join_handle)) => send_result,
-                    future::Either::Left(((), _pending_send_result)) => Err(Disconnected),
-                }
-            })
-        })
+        sink::unfold((), move |(), item| self.send(item))
     }
 }
 
