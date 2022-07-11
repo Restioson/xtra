@@ -367,11 +367,12 @@ impl<A: Actor> Context<A> {
     }
 }
 
+// Need this manual impl to avoid `A: Clone` bound.
 impl<A> Clone for Context<A> {
     fn clone(&self) -> Self {
         Self {
             running: self.running,
-            mailbox: self.mailbox.cloned_new_broadcast_mailbox(),
+            mailbox: self.mailbox.clone(),
         }
     }
 }
