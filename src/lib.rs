@@ -125,7 +125,7 @@ pub trait Handler<M>: Actor {
 ///
 ///     async fn handle(&mut self, _: Goodbye, ctx: &mut Context<Self>) {
 ///         println!("Goodbye!");
-///         ctx.stop_all();
+///         ctx.weak_address().stop_all();
 ///     }
 /// }
 ///

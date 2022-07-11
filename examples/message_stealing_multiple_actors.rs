@@ -43,7 +43,7 @@ impl Handler<Print> for Printer {
 
         if self.times == 10 {
             println!("Actor {} stopping!", self.id);
-            ctx.stop_all();
+            ctx.weak_address().stop_all();
         }
     }
 }

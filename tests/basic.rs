@@ -51,7 +51,7 @@ impl Handler<StopAll> for Accumulator {
     type Return = ();
 
     async fn handle(&mut self, _: StopAll, ctx: &mut Context<Self>) -> Self::Return {
-        ctx.stop_all();
+        ctx.weak_address().stop_all();
     }
 }
 
@@ -110,7 +110,7 @@ impl Handler<StopAll> for DropTester {
     type Return = ();
 
     async fn handle(&mut self, _: StopAll, ctx: &mut Context<Self>) {
-        ctx.stop_all();
+        ctx.weak_address().stop_all();
     }
 }
 
@@ -989,7 +989,7 @@ impl Actor for InstantShutdownAll {
 
     async fn started(&mut self, ctx: &mut Context<Self>) {
         if self.stop_all {
-            ctx.stop_all();
+            ctx.weak_address().stop_all();
         }
     }
 

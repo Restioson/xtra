@@ -16,7 +16,7 @@ use crate::envelope::ReturningEnvelope;
 use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
-use crate::{inbox, BroadcastFuture, Error, Handler, NameableSending, SendFuture};
+use crate::{inbox, Actor, BroadcastFuture, Error, Handler, NameableSending, SendFuture};
 
 /// An [`Address`] is a reference to an actor through which messages can be
 /// sent. It can be cloned to create more addresses to the same actor.
@@ -112,7 +112,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///     type Return = ();
     ///
     ///     async fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
-    ///         ctx.stop_all();
+    ///         ctx.weak_address().stop_all();
     ///     }
     /// }
     ///
@@ -149,6 +149,16 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// Convert this address into a generic address which can be weak or strong.
     pub fn as_either(&self) -> Address<A, Either> {
         Address(self.0.clone().into_either_rc())
+    }
+
+    /// Stop all actors on this [`Address`].
+    ///
+    /// This is a convenience method over broadcasting a [`Stop`] message to each actor.
+    pub fn stop_all(&self)
+    where
+        A: Actor,
+    {
+        self.0.stop_all_receivers()
     }
 
     /// Send a message to the actor. The message will, by default, have a priority of 0 and be sent
