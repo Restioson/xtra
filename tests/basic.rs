@@ -221,27 +221,6 @@ impl Handler<StreamCancelMessage> for StreamCancelTester {
 }
 
 #[tokio::test]
-async fn test_stream_cancel_join() {
-    let addr = StreamCancelTester {}.create(None).spawn_global();
-    let jh = addr.join();
-    let addr2 = addr.downgrade();
-    // attach a stream that blocks forever
-    let handle = tokio::spawn(async move {
-        stream::pending::<StreamCancelMessage>()
-            .map(Ok)
-            .forward(addr2.into_sink())
-            .await
-    });
-    drop(addr); // stop the actor
-
-    // Attach stream should return immediately
-    assert!(handle.timeout(Duration::from_secs(2)).await.is_some()); // None == timeout
-
-    // Join should also return right away
-    assert!(jh.timeout(Duration::from_secs(2)).await.is_some());
-}
-
-#[tokio::test]
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
     let (address, fut) = ActorStopSelf.create(None).run();
     let _ = address.send(StopSelf).split_receiver().await;
