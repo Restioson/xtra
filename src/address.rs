@@ -206,10 +206,10 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// messages will have default priority and will be handled in send order.
     ///
     /// When converting an [`Address`] into a [`Sink`], it is important to think about the address'
-    /// reference counts. By default [`Address`]es are [`Strong`]. An [`AddressSink`] will inherit
-    /// the reference count type from the [`Address`] it was created from.
+    /// reference counts. By default [`Address`]es are [`Strong`]. The [`Sink`] wraps the [`Address`]
+    /// for its entire lifetime and will thus inherit the reference count type.
     ///
-    /// If you are going to use [`into_sink`] in combination with things like
+    /// If you are going to use [`Address::into_sink`] in combination with things like
     /// [`Stream::forward`](futures_util::stream::StreamExt::forward), bear in mind that a
     /// strong [`Address`] will keep the actor alive for as long as that
     /// [`Stream`](futures_util::stream::Stream) is being polled. Depending on your usecase, you
