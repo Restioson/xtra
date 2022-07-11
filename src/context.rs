@@ -34,28 +34,31 @@ pub struct Context<A> {
 
 impl<A: Actor> Context<A> {
     /// Creates a new actor context with a given mailbox capacity, returning an address to the actor
-    /// and the context. This can be used as a builder to add more actors to an address before
-    /// any have started.
+    /// and the context.
+    ///
+    /// This can be used to e.g. construct actors with cyclic dependencies.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use xtra::prelude::*;
     /// #
-    /// # struct MyActor;
-    /// #
-    /// # impl MyActor {
-    /// #     fn new(_: usize) -> Self {
-    /// #         MyActor
-    /// #     }
-    /// # }
-    /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
-    /// # async { // This does not actually run because there is nothing to assert
-    /// let (addr, mut ctx) = Context::new(Some(32));
-    /// for n in 0..3 {
-    ///     smol::spawn(ctx.attach(MyActor::new(n))).detach();
+    /// struct ActorA {
+    ///     address: Address<ActorB>
     /// }
-    /// ctx.run(MyActor::new(4)).await;
+    ///
+    /// struct ActorB {
+    ///     address: Address<ActorA>
+    /// }
+    ///
+    /// # #[async_trait] impl Actor for ActorA {type Stop = (); async fn stopped(self) -> Self::Stop {} }
+    /// # #[async_trait] impl Actor for ActorB {type Stop = (); async fn stopped(self) -> Self::Stop {} }
+    /// # async { // This does not actually run because there is nothing to assert
+    /// let (addr_a, ctx_a) = Context::<ActorA>::new(Some(5));
+    /// let (addr_b, ctx_b) = Context::<ActorB>::new(Some(5));
+    ///
+    /// smol::spawn(ctx_a.run(ActorA { address: addr_b })).detach();
+    /// smol::spawn(ctx_b.run(ActorB { address: addr_a })).detach();
     /// # };
     ///
     /// ```
@@ -68,12 +71,6 @@ impl<A: Actor> Context<A> {
         };
 
         (Address(tx), context)
-    }
-
-    /// Attaches an actor of the same type listening to the same address as this actor is.
-    /// They will operate in a message-stealing fashion, with no message handled by two actors.
-    pub fn attach(&self, actor: A) -> impl Future<Output = A::Stop> {
-        self.clone().run(actor)
     }
 
     /// Stop this actor as soon as it has finished processing current message. This means that the
