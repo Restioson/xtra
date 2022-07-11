@@ -153,7 +153,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
 
     /// Stop all actors on this [`Address`].
     ///
-    /// This is a convenience method over broadcasting a [`Stop`] message to each actor.
+    /// This is a convenience method over broadcasting a `Stop` message to each actor.
     pub fn stop_all(&self)
     where
         A: Actor,

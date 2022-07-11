@@ -154,7 +154,7 @@ pub trait Actor: 'static + Send + Sized {
     /// An actor's event loop can stop for several reasons:
     ///
     /// - The actor called [`Context::stop_self`].
-    /// - An actor called [`Context::stop_all`].
+    /// - Someone called [`Address::stop_all`].
     /// - The last [`Address`] with a [`Strong`](crate::refcount::Strong) reference count was dropped.
     async fn stopped(self) -> Self::Stop;
 

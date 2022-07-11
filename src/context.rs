@@ -25,8 +25,7 @@ use crate::{inbox, Actor, Address, Error, WeakAddress};
 pub struct Context<A> {
     /// Whether this actor is running. If set to `false`, [`Context::tick`] will return
     /// `ControlFlow::Break` and [`Context::run`] will shut down the actor. This will not result
-    /// in other actors on the same address stopping, though - [`Context::stop_all`] must be used
-    /// to achieve this.
+    /// in other actors on the same address stopping.
     pub running: bool,
     /// The actor's mailbox.
     mailbox: inbox::Receiver<A, RxStrong>,
