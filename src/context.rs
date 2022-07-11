@@ -19,9 +19,9 @@ use crate::{inbox, Actor, Address, Error, WeakAddress};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
-/// [`Context::run`] or [`Context::attach`]) exists, **it will prevent the actor's channel from being
-/// closed**, as more actors that could still then be added to the address, so closing early, while
-/// maybe intuitive, would be subtly wrong.
+/// [`Context::run`] exists, **it will prevent the actor's channel from being closed**, as more
+/// actors that could still then be added to the address, so closing early, while maybe intuitive,
+/// would be subtly wrong.
 pub struct Context<A> {
     /// Whether this actor is running. If set to `false`, [`Context::tick`] will return
     /// `ControlFlow::Break` and [`Context::run`] will shut down the actor. This will not result
