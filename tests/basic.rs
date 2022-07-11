@@ -230,24 +230,6 @@ async fn actor_can_be_restarted() {
     assert!(!addr.is_connected());
 }
 
-struct StreamCancelMessage;
-
-struct StreamCancelTester;
-
-#[async_trait]
-impl Actor for StreamCancelTester {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
-}
-
-#[async_trait]
-impl Handler<StreamCancelMessage> for StreamCancelTester {
-    type Return = ();
-
-    async fn handle(&mut self, _: StreamCancelMessage, _: &mut Context<Self>) {}
-}
-
 #[tokio::test]
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
     let (address, fut) = ActorStopSelf.create(None).run();
