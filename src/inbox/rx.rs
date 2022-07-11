@@ -13,9 +13,9 @@ use crate::inbox::tx::TxWeak;
 use crate::inbox::*;
 
 pub struct Receiver<A, Rc: RxRefCounter> {
-    pub(super) inner: Arc<Chan<A>>,
-    pub(super) broadcast_mailbox: Arc<BroadcastQueue<A>>,
-    pub(super) rc: Rc,
+    inner: Arc<Chan<A>>,
+    broadcast_mailbox: Arc<BroadcastQueue<A>>,
+    rc: Rc,
 }
 
 impl<A> Receiver<A, RxStrong> {
