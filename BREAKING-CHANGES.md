@@ -14,6 +14,8 @@
 - `MessageChannel` is now a `struct` that can be constructed from an `Address` via `MessageChannel::new` or using
   `From`/`Into`.
 - `AddressSink` was removed in favor of using `impl Trait` for the `Address::into_sink` method.
+- `Context::attach_stream` was removed in favor of composing `Stream::forward` and `Address::into_sink`.
+- `KeepRunning` was removed as `Context::attach_stream` was its last usage.
 - `InstrumentedExt` was removed. All messages are now instrumented automatically when `instrumentation` is enabled.
 - `stop_all` now does not drain all messages when called, and acts just like `stop_self` on all active actors.
 
