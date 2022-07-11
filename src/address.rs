@@ -209,9 +209,9 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// reference counts. By default [`Address`]es are [`Strong`]. An [`AddressSink`] will inherit
     /// the reference count type from the [`Address`] it was created from.
     ///
-    /// If you are going to use [`AddressSink`] in combination with things like
+    /// If you are going to use [`into_sink`] in combination with things like
     /// [`Stream::forward`](futures_util::stream::StreamExt::forward), bear in mind that a
-    /// [`Strong`] [`AddressSink`] will keep the actor alive for as long as that
+    /// strong [`Address`] will keep the actor alive for as long as that
     /// [`Stream`](futures_util::stream::Stream) is being polled. Depending on your usecase, you
     /// may want to use a [`WeakAddress`] instead.
     ///
