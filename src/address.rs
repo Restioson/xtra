@@ -222,9 +222,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         A: Handler<M, Return = ()>,
         M: Send + 'static,
     {
-        use futures_util::*;
-
-        sink::unfold((), move |(), message| self.send(message))
+        futures_util::sink::unfold((), move |(), message| self.send(message))
     }
 }
 
