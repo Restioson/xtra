@@ -78,7 +78,7 @@ name = "interleaved_messages"
 required-features = ["with-smol-1"]
 
 [[example]]
-name = "message_stealing"
+name = "message_stealing_multiple_actors"
 required-features = ["with-smol-1"]
 
 [[example]]
