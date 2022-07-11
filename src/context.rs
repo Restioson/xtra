@@ -73,11 +73,7 @@ impl<A: Actor> Context<A> {
     /// Attaches an actor of the same type listening to the same address as this actor is.
     /// They will operate in a message-stealing fashion, with no message handled by two actors.
     pub fn attach(&self, actor: A) -> impl Future<Output = A::Stop> {
-        let ctx = Context {
-            running: true,
-            mailbox: self.mailbox.cloned_new_broadcast_mailbox(),
-        };
-        ctx.run(actor)
+        self.clone().run(actor)
     }
 
     /// Stop this actor as soon as it has finished processing current message. This means that the
@@ -370,6 +366,15 @@ impl<A: Actor> Context<A> {
             ControlFlow::Continue(())
         } else {
             ControlFlow::Break(())
+        }
+    }
+}
+
+impl<A> Clone for Context<A> {
+    fn clone(&self) -> Self {
+        Self {
+            running: self.running,
+            mailbox: self.mailbox.cloned_new_broadcast_mailbox(),
         }
     }
 }
