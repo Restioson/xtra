@@ -1,14 +1,21 @@
-use std::fmt;
-use std::fmt::{Display, Formatter};
 use std::future::Future;
+use std::marker::PhantomData;
 use std::ops::ControlFlow;
+use std::pin::Pin;
+use std::task::Poll;
+use std::{mem, task};
 
+use futures_core::future::BoxFuture;
+use futures_core::FusedFuture;
 use futures_util::future::{self, Either};
+use futures_util::FutureExt;
 #[cfg(feature = "timing")]
-use {futures_timer::Delay, std::time::Duration};
+use {crate::Handler, futures_timer::Delay, std::time::Duration};
 
-use crate::inbox::{rx::RxStrong, ActorMessage};
-use crate::{inbox, Actor, Address, Handler};
+use crate::envelope::{HandlerSpan, Shutdown};
+use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
+use crate::inbox::ActorMessage;
+use crate::{inbox, Actor, Address, Error, WeakAddress};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
@@ -16,10 +23,13 @@ use crate::{inbox, Actor, Address, Handler};
 /// closed**, as more actors that could still then be added to the address, so closing early, while
 /// maybe intuitive, would be subtly wrong.
 pub struct Context<A> {
-    /// Whether the actor is running. It is changed by the `stop` method as a flag to the `ActorManager`
-    /// for it to call the `stopping` method on the actor
-    running: bool,
-    receiver: inbox::Receiver<A, RxStrong>,
+    /// Whether this actor is running. If set to `false`, [`Context::tick`] will return
+    /// `ControlFlow::Break` and [`Context::run`] will shut down the actor. This will not result
+    /// in other actors on the same address stopping, though - [`Context::stop_all`] must be used
+    /// to achieve this.
+    pub running: bool,
+    /// The actor's mailbox.
+    mailbox: inbox::Receiver<A, RxStrong>,
 }
 
 impl<A: Actor> Context<A> {
@@ -54,7 +64,7 @@ impl<A: Actor> Context<A> {
 
         let context = Context {
             running: true,
-            receiver: rx,
+            mailbox: rx,
         };
 
         (Address(tx), context)
@@ -62,32 +72,41 @@ impl<A: Actor> Context<A> {
 
     /// Attaches an actor of the same type listening to the same address as this actor is.
     /// They will operate in a message-stealing fashion, with no message handled by two actors.
-    pub fn attach(&mut self, actor: A) -> impl Future<Output = A::Stop> {
+    pub fn attach(&self, actor: A) -> impl Future<Output = A::Stop> {
         let ctx = Context {
             running: true,
-            receiver: self.receiver.cloned_new_broadcast_mailbox(),
+            mailbox: self.mailbox.cloned_new_broadcast_mailbox(),
         };
         ctx.run(actor)
     }
 
     /// Stop this actor as soon as it has finished processing current message. This means that the
-    /// [`Actor::stopped`] method will be called.
+    /// [`Actor::stopped`] method will be called. This will not stop all actors on the address.
     pub fn stop_self(&mut self) {
         self.running = false;
     }
 
-    /// Stop all actors on this address. This is similar to [`Context::stop_self`] but it will stop
-    /// all actors on this address.
+    /// Stop all actors on this address.
+    ///
+    /// This is equivalent to calling [`Context::stop_self`] on all actors active on this address.
     pub fn stop_all(&mut self) {
         // We only need to shut down if there are still any strong senders left
-        if let Some(sender) = self.receiver.sender() {
-            sender.shutdown_and_drain();
+        if let Some(sender) = self.mailbox.sender() {
+            sender.stop_all_receivers();
         }
     }
 
     /// Get an address to the current actor if there are still external addresses to the actor.
-    pub fn address(&self) -> Result<Address<A>, ActorShutdown> {
-        self.receiver.sender().ok_or(ActorShutdown).map(Address)
+    pub fn address(&self) -> Result<Address<A>, Error> {
+        self.mailbox
+            .sender()
+            .ok_or(Error::Disconnected)
+            .map(Address)
+    }
+
+    /// Get a weak address to the current actor.
+    pub fn weak_address(&self) -> WeakAddress<A> {
+        Address(self.mailbox.weak_sender())
     }
 
     /// Run the given actor's main loop, handling incoming messages to its mailbox.
@@ -101,7 +120,7 @@ impl<A: Actor> Context<A> {
         }
 
         loop {
-            match self.tick(self.receiver.receive().await, &mut actor).await {
+            match self.yield_once(&mut actor).await {
                 ControlFlow::Continue(()) => {}
                 ControlFlow::Break(()) => {
                     return actor.stopped().await;
@@ -110,24 +129,22 @@ impl<A: Actor> Context<A> {
         }
     }
 
-    /// Handle one message and return whether to exit from the manage loop or not.
-    async fn tick(&mut self, msg: ActorMessage<A>, actor: &mut A) -> ControlFlow<()> {
-        match msg {
-            ActorMessage::ToOneActor(msg) => msg.handle(actor, self).await,
-            ActorMessage::ToAllActors(msg) => msg.handle(actor, self).await,
-            ActorMessage::Shutdown => self.running = false,
-        }
-
-        if !self.running {
-            return ControlFlow::Break(());
-        }
-
-        ControlFlow::Continue(())
+    /// Get for the next message from the actor's mailbox.
+    pub fn next_message(&self) -> ReceiveFuture<A> {
+        ReceiveFuture(self.mailbox.receive())
     }
 
-    /// Yields to the manager to handle one message.
-    pub async fn yield_once(&mut self, act: &mut A) {
-        self.tick(self.receiver.receive().await, act).await;
+    /// Handle one message and return whether to exit from the manage loop or not.
+    ///
+    /// Note that this will immediately create the message handler span if the `instrumentation`
+    /// feature is enabled.
+    pub fn tick<'a>(&'a mut self, msg: Message<A>, actor: &'a mut A) -> TickFuture<'a, A> {
+        TickFuture::new(msg.0, actor, self)
+    }
+
+    /// Yields to the manager to handle one message, returning the actor should be shut down or not.
+    pub async fn yield_once(&mut self, act: &mut A) -> ControlFlow<()> {
+        self.tick(self.next_message().await, act).await
     }
 
     /// Joins on a future by handling all incoming messages whilst polling it. The future will
@@ -255,7 +272,7 @@ impl<A: Actor> Context<A> {
     {
         while self.running {
             let (msg, unfinished) = {
-                let mut next_msg = self.receiver.receive();
+                let mut next_msg = self.next_message();
                 match future::select(fut, &mut next_msg).await {
                     Either::Left((future_res, _)) => {
                         if let Some(msg) = next_msg.cancel() {
@@ -286,7 +303,7 @@ impl<A: Actor> Context<A> {
         &mut self,
         duration: Duration,
         constructor: F,
-    ) -> Result<impl Future<Output = ()>, ActorShutdown>
+    ) -> Result<impl Future<Output = ()>, Error>
     where
         F: Send + 'static + Fn() -> M,
         M: Send + 'static,
@@ -325,7 +342,7 @@ impl<A: Actor> Context<A> {
         &mut self,
         duration: Duration,
         notification: M,
-    ) -> Result<impl Future<Output = ()>, ActorShutdown>
+    ) -> Result<impl Future<Output = ()>, Error>
     where
         M: Send + 'static,
         A: Handler<M>,
@@ -347,14 +364,167 @@ impl<A: Actor> Context<A> {
 
         Ok(fut)
     }
+
+    pub(crate) fn flow(&self) -> ControlFlow<()> {
+        if self.running {
+            ControlFlow::Continue(())
+        } else {
+            ControlFlow::Break(())
+        }
+    }
 }
 
-/// The operation failed because the actor is being shut down
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct ActorShutdown;
+/// A message sent to a given actor, or a notification that it should shut down.
+pub struct Message<A>(pub(crate) ActorMessage<A>);
 
-impl Display for ActorShutdown {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("Actor is shutting down")
+/// A future which will resolve to the next message to be handled by the actor.
+#[must_use = "Futures do nothing unless polled"]
+pub struct ReceiveFuture<A>(InboxReceiveFuture<A, RxStrong>);
+
+impl<A> ReceiveFuture<A> {
+    /// Cancel the receiving future, returning a message if it had been fulfilled with one, but had
+    /// not yet been polled after wakeup. Future calls to `Future::poll` will return `Poll::Pending`,
+    /// and `FusedFuture::is_terminated` will return `true`.
+    ///
+    /// This is important to do over `Drop`, as with `Drop` messages may be sent back into the
+    /// channel and could be observed as received out of order, if multiple receives are concurrent
+    /// on one thread.
+    #[must_use = "If dropped, messages could be lost"]
+    pub fn cancel(&mut self) -> Option<Message<A>> {
+        self.0.cancel().map(Message)
+    }
+}
+
+impl<A> Future for ReceiveFuture<A> {
+    type Output = Message<A>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.0.poll_unpin(cx).map(Message)
+    }
+}
+
+impl<A> FusedFuture for ReceiveFuture<A> {
+    fn is_terminated(&self) -> bool {
+        self.0.is_terminated()
+    }
+}
+
+pub struct TickFuture<'a, A> {
+    state: TickState<'a, A>,
+    span: HandlerSpan,
+}
+
+impl<'a, A> TickFuture<'a, A> {
+    /// Return the handler's [`tracing::Span`](https://docs.rs/tracing/latest/tracing/struct.Span.html),
+    /// creating it if it has not already been created. This can be used to log messages into the
+    /// span when required, such as if it is cancelled later due to a timeout.
+    ///
+    /// ```rust
+    /// # use std::ops::ControlFlow;
+    /// # use std::time::Duration;
+    /// # use tokio::time::timeout;
+    /// # use xtra::prelude::*;
+    /// #
+    /// # struct MyActor;
+    /// # #[async_trait::async_trait] impl Actor for MyActor { type Stop = (); async fn stopped(self) {} }
+    /// #
+    /// # let mut actor = MyActor;
+    /// # let (addr, mut ctx) = Context::<MyActor>::new(None);
+    /// # drop(addr);
+    /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+    /// # actor.started(&mut ctx).await;
+    /// #
+    /// # loop {
+    /// # let msg = ctx.next_message().await;
+    ///  let mut fut = ctx.tick(msg, &mut actor);
+    ///  let span = fut.get_or_create_span().clone();
+    ///  match timeout(Duration::from_secs(1), fut).await {
+    ///      Ok(ControlFlow::Continue(())) => (),
+    ///      Ok(ControlFlow::Break(())) => break actor.stopped().await,
+    ///      Err(_elapsed) => {
+    ///          let _entered = span.enter();
+    ///          span.record("interrupted", &"timed_out");
+    ///          tracing::warn!(timeout_seconds = 1, "Handler execution timed out");
+    ///      }
+    ///  }
+    /// # } })
+    /// ```
+    ///
+    #[cfg(feature = "instrumentation")]
+    pub fn get_or_create_span(&mut self) -> &tracing::Span {
+        let span = mem::replace(&mut self.span.0, tracing::Span::none());
+        *self = match mem::replace(&mut self.state, TickState::Done) {
+            TickState::New { msg, act, ctx } => TickFuture::running(msg, act, ctx),
+            state => TickFuture {
+                state,
+                span: HandlerSpan(span),
+            },
+        };
+
+        &self.span.0
+    }
+
+    fn running(msg: ActorMessage<A>, act: &'a mut A, ctx: &'a mut Context<A>) -> TickFuture<'a, A> {
+        let (fut, span) = match msg {
+            ActorMessage::ToOneActor(msg) => msg.handle(act, ctx),
+            ActorMessage::ToAllActors(msg) => msg.handle(act, ctx),
+            ActorMessage::Shutdown => Shutdown::handle(ctx),
+        };
+
+        TickFuture {
+            state: TickState::Running {
+                fut,
+                phantom: PhantomData,
+            },
+            span,
+        }
+    }
+}
+
+enum TickState<'a, A> {
+    New {
+        msg: ActorMessage<A>,
+        act: &'a mut A,
+        ctx: &'a mut Context<A>,
+    },
+    Running {
+        fut: BoxFuture<'a, ControlFlow<()>>,
+        phantom: PhantomData<fn(&'a A)>,
+    },
+    Done,
+}
+
+impl<'a, A> TickFuture<'a, A> {
+    fn new(msg: ActorMessage<A>, act: &'a mut A, ctx: &'a mut Context<A>) -> Self {
+        TickFuture {
+            state: TickState::New { msg, act, ctx },
+            span: HandlerSpan(
+                #[cfg(feature = "instrumentation")]
+                tracing::Span::none(),
+            ),
+        }
+    }
+}
+
+impl<'a, A> Future for TickFuture<'a, A> {
+    type Output = ControlFlow<()>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match mem::replace(&mut self.state, TickState::Done) {
+            TickState::New { msg, act, ctx } => {
+                *self = TickFuture::running(msg, act, ctx);
+                self.poll(cx)
+            }
+            TickState::Running { mut fut, phantom } => {
+                match self.span.in_scope(|| fut.poll_unpin(cx)) {
+                    Poll::Ready(flow) => Poll::Ready(flow),
+                    Poll::Pending => {
+                        self.state = TickState::Running { fut, phantom };
+                        Poll::Pending
+                    }
+                }
+            }
+            TickState::Done => panic!("Polled after completion"),
+        }
     }
 }

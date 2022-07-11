@@ -6,8 +6,8 @@ pub mod tx;
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
-use std::sync::atomic::{AtomicBool, AtomicUsize};
-use std::sync::{atomic, Arc, Mutex, Weak};
+use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, Mutex, Weak};
 use std::{cmp, mem};
 
 use event_listener::Event;
@@ -37,7 +37,6 @@ pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxSt
         }),
         capacity,
         on_shutdown: Event::new(),
-        shutdown: AtomicBool::new(false),
         sender_count: AtomicUsize::new(0),
         receiver_count: AtomicUsize::new(0),
     });
@@ -53,7 +52,6 @@ pub struct Chan<A> {
     chan: Mutex<ChanInner<A>>,
     capacity: Option<usize>,
     on_shutdown: Event,
-    shutdown: AtomicBool,
     sender_count: AtomicUsize,
     receiver_count: AtomicUsize,
 }
@@ -61,51 +59,6 @@ pub struct Chan<A> {
 impl<A> Chan<A> {
     fn is_full(&self, len: usize) -> bool {
         self.capacity.map_or(false, |cap| len >= cap)
-    }
-
-    fn is_shutdown(&self) -> bool {
-        self.shutdown.load(atomic::Ordering::SeqCst)
-    }
-
-    pub fn shutdown(&self) {
-        let waiting_receivers = {
-            let mut inner = match self.chan.lock() {
-                Ok(lock) => lock,
-                Err(_) => return, // Poisoned, ignore
-            };
-
-            self.shutdown.store(true, atomic::Ordering::SeqCst);
-            self.on_shutdown.notify(usize::MAX);
-
-            mem::take(&mut inner.waiting_receivers)
-        };
-
-        for rx in waiting_receivers.into_iter().flat_map(|w| w.upgrade()) {
-            let _ = rx.lock().fulfill(WakeReason::Shutdown);
-        }
-    }
-
-    pub fn shutdown_and_drain(&self) {
-        let waiting_rx = {
-            let mut inner = self.chan.lock().unwrap();
-
-            self.shutdown.store(true, atomic::Ordering::SeqCst);
-            self.on_shutdown.notify(usize::MAX);
-
-            for queue in inner
-                .broadcast_queues
-                .drain(..)
-                .flat_map(|weak| weak.upgrade())
-            {
-                *queue.lock() = BinaryHeap::new();
-            }
-
-            mem::take(&mut inner.waiting_receivers)
-        };
-
-        for rx in waiting_rx.into_iter().flat_map(|w| w.upgrade()) {
-            let _ = rx.lock().fulfill(WakeReason::Shutdown);
-        }
     }
 }
 
@@ -153,6 +106,8 @@ impl<A> ChanInner<A> {
             }
         }
 
+        self.broadcast_tail = longest;
+
         // If len < cap, try fulfill a waiting sender
         if capacity.map_or(false, |cap| longest < cap) {
             match self.try_fulfill_sender(MessageType::Broadcast) {
@@ -161,8 +116,6 @@ impl<A> ChanInner<A> {
                 None => {}
             }
         }
-
-        self.broadcast_tail = longest;
     }
 
     fn send_broadcast(&mut self, m: MessageToAllActors<A>) {
@@ -216,7 +169,7 @@ impl<A> ChanInner<A> {
                             SentMessage::ToOneActor(m)
                                 if for_type == MessageType::Priority && m.priority > 0 =>
                             {
-                                Some(m.priority)
+                                Some(m.priority())
                             }
                             SentMessage::ToAllActors(m) if for_type == MessageType::Broadcast => {
                                 Some(m.priority())
@@ -229,7 +182,7 @@ impl<A> ChanInner<A> {
             };
 
             if let Some(tx) = self.waiting_senders.remove(pos).unwrap().upgrade() {
-                return Some(tx.lock().fulfill());
+                return Some(tx.lock().fulfill(true));
             }
         }
     }
@@ -300,13 +253,19 @@ enum WakeReason<A> {
     Cancelled,
 }
 
+#[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
+pub enum Priority {
+    Valued(u32),
+    Shutdown,
+}
+
 pub trait HasPriority {
-    fn priority(&self) -> u32;
+    fn priority(&self) -> Priority;
 }
 
 impl<A> HasPriority for PriorityMessageToOne<A> {
-    fn priority(&self) -> u32 {
-        self.priority
+    fn priority(&self) -> Priority {
+        Priority::Valued(self.priority)
     }
 }
 
@@ -350,7 +309,7 @@ impl<A> Clone for MessageToAllActors<A> {
 }
 
 impl<A> HasPriority for MessageToAllActors<A> {
-    fn priority(&self) -> u32 {
+    fn priority(&self) -> Priority {
         self.0.priority()
     }
 }

@@ -9,6 +9,7 @@ use std::{cmp, mem};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
+use crate::inbox::tx::TxWeak;
 use crate::inbox::*;
 
 pub struct Receiver<A, Rc: RxRefCounter> {
@@ -36,6 +37,13 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
             inner: self.inner.clone(),
             rc: TxStrong::try_new(&self.inner)?,
         })
+    }
+
+    pub fn weak_sender(&self) -> Sender<A, TxWeak> {
+        Sender {
+            inner: self.inner.clone(),
+            rc: TxWeak::new(&self.inner),
+        }
     }
 
     /// Clone this receiver, keeping its broadcast mailbox.
@@ -75,10 +83,10 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
 
         let mut inner = self.inner.chan.lock().unwrap();
 
-        let shared_priority: Option<u32> = inner.priority_queue.peek().map(|it| it.priority());
+        let shared_priority: Option<Priority> = inner.priority_queue.peek().map(|it| it.priority());
 
         // Try take from ordered channel
-        if cmp::max(shared_priority, broadcast_priority) <= Some(0) {
+        if cmp::max(shared_priority, broadcast_priority) <= Some(Priority::Valued(0)) {
             if let Some(msg) = inner.pop_ordered(self.inner.capacity) {
                 return Ok(msg.into());
             }
@@ -100,9 +108,8 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
             }
             // Equal, but both are empty, so wait or exit if shutdown
             _ => {
-                // Shutdown is only edited when inner is locked, and we have it locked now, so no
-                // chance of races here
-                if self.inner.is_shutdown() {
+                // on_shutdown is only notified with inner locked, and it's locked here, so no race
+                if self.inner.sender_count.load(atomic::Ordering::SeqCst) == 0 {
                     return Ok(ActorMessage::Shutdown);
                 }
 
@@ -117,7 +124,25 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
 impl<A, Rc: RxRefCounter> Drop for Receiver<A, Rc> {
     fn drop(&mut self) {
         if self.rc.decrement(&self.inner) {
-            self.inner.shutdown();
+            let waiting_tx = {
+                let mut inner = match self.inner.chan.lock() {
+                    Ok(lock) => lock,
+                    Err(_) => return, // Poisoned, ignore
+                };
+
+                self.inner.on_shutdown.notify(usize::MAX);
+
+                // Let any outstanding messages drop
+                inner.ordered_queue.clear();
+                inner.priority_queue.clear();
+                inner.broadcast_queues.clear();
+
+                mem::take(&mut inner.waiting_senders)
+            };
+
+            for tx in waiting_tx.into_iter().flat_map(|w| w.upgrade()) {
+                let _ = tx.lock().fulfill(false);
+            }
         }
     }
 }
@@ -206,13 +231,7 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
 }
 
 impl<A, Rc: RxRefCounter> ReceiveFuture<A, Rc> {
-    /// Cancel the receiving future, returning a message if it had been fulfilled with one, but had
-    /// not yet been polled after wakeup. Future calls to `Future::poll` will return `Poll::Pending`,
-    /// and `FusedFuture::is_terminated` will return `true`.
-    ///
-    /// This is important to do over `Drop`, as with `Drop` messages may be sent back into the
-    /// channel and could be observed as received out of order, if multiple receives are concurrent
-    /// on one thread.
+    /// See docs on [`crate::context::ReceiveFuture::cancel`] for more
     #[must_use = "If dropped, messages could be lost"]
     pub fn cancel(&mut self) -> Option<ActorMessage<A>> {
         if let ReceiveFutureInner::Waiting { waiting, .. } =
@@ -242,7 +261,8 @@ impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
             // may overflow (probably not enough to cause backpressure issues), but this is better
             // than dropping a message.
             if let Some(WakeReason::MessageToOneActor(msg)) = waiting.lock().cancel() {
-                match inner.try_fulfill_receiver(WakeReason::MessageToOneActor(msg)) {
+                let res = inner.try_fulfill_receiver(WakeReason::MessageToOneActor(msg));
+                match res {
                     Ok(()) => (),
                     Err(WakeReason::MessageToOneActor(msg)) => {
                         if msg.priority == 0 {

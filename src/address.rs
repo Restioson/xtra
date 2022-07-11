@@ -2,35 +2,22 @@
 //! kind of message that it can receive.
 
 use std::cmp::Ordering;
-use std::error::Error;
-use std::fmt::{self, Debug, Display, Formatter};
+use std::fmt::{self, Debug, Formatter};
 use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use event_listener::EventListener;
-use futures_core::FusedFuture;
+use futures_core::{FusedFuture, Stream};
 use futures_sink::Sink;
 use futures_util::FutureExt;
 
-use crate::envelope::{NonReturningEnvelope, ReturningEnvelope};
+use crate::envelope::ReturningEnvelope;
 use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
-use crate::{inbox, BroadcastFuture, Handler, NameableSending, SendFuture};
-
-/// The actor is no longer running and disconnected from the sending address.
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Disconnected;
-
-impl Display for Disconnected {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("Actor address disconnected")
-    }
-}
-
-impl Error for Disconnected {}
+use crate::{inbox, BroadcastFuture, Error, Handler, NameableSending, SendFuture};
 
 /// An [`Address`] is a reference to an actor through which messages can be
 /// sent. It can be cloned to create more addresses to the same actor.
@@ -78,7 +65,7 @@ impl Error for Disconnected {}
 /// of their priority. All actors must handle a message for it to be removed from the mailbox and
 /// the length to decrease. This means that the backpressure provided by [`Address::broadcast`] will
 /// wait for the slowest actor.
-pub struct Address<A: 'static, Rc: RefCounter = Strong>(pub(crate) inbox::Sender<A, Rc>);
+pub struct Address<A, Rc: RefCounter = Strong>(pub(crate) inbox::Sender<A, Rc>);
 
 impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -231,15 +218,16 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///
     /// Because [`Sink`]s do not return anything, this function is only available for messages with
     /// a [`Handler`] implementation that sets [`Return`](Handler::Return) to `()`.
-    pub fn into_sink<M>(self) -> impl Sink<M, Error = Disconnected> + Unpin
-    where
-        A: Handler<M, Return = ()>,
-        M: Send + 'static,
+    pub fn into_sink<M>(self) -> impl Sink<M, Error = Error> + Unpin
+        where
+            A: Handler<M, Return = ()>,
+            M: Send + 'static,
     {
         use futures_util::*;
 
-        sink::unfold((), move |(), item| self.send(item))
+        sink::unfold((), move |(), message| self.send(message))
     }
+
 }
 
 /// A future which will complete when the corresponding actor stops and its address becomes
@@ -308,49 +296,5 @@ impl<A, Rc: RefCounter> Hash for Address<A, Rc> {
         state.write_usize(self.0.inner_ptr() as *const _ as usize);
         state.write_u8(self.0.is_strong() as u8);
         state.finish();
-    }
-}
-
-/// A sink which can be used to send messages to an actor. These messages will have default priority
-/// and be handled in send order.
-pub struct AddressSink<A, Rc: RefCounter>(inbox::SendFuture<A, Rc>);
-
-impl<A, Rc: RefCounter> AddressSink<A, Rc> {
-    /// Return a clone of the underlying [`Address`] which this sink sends to.
-    pub fn address(&self) -> Address<A, Rc> {
-        Address(self.0.tx.clone())
-    }
-}
-
-impl<A, M, Rc: RefCounter> Sink<M> for AddressSink<A, Rc>
-where
-    A: Handler<M, Return = ()>,
-    M: Send + 'static,
-{
-    type Error = Disconnected;
-
-    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        if let Poll::Ready(Err(Disconnected)) = self.0.poll_unpin(cx) {
-            Poll::Ready(Err(Disconnected))
-        } else if self.0.is_terminated() {
-            Poll::Ready(Ok(()))
-        } else {
-            Poll::Pending
-        }
-    }
-
-    fn start_send(mut self: Pin<&mut Self>, msg: M) -> Result<(), Self::Error> {
-        let msg = Box::new(NonReturningEnvelope::new(msg));
-        let msg = SentMessage::ToOneActor(PriorityMessageToOne::new(0, msg));
-        self.0 = self.0.tx.send(msg);
-        Ok(())
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.poll_ready(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.poll_flush(cx)
     }
 }

@@ -1,4 +1,5 @@
 use std::cmp::Ordering as CmpOrdering;
+use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
@@ -92,6 +93,7 @@ impl Actor for DropTester {
 }
 
 struct StopAll;
+
 struct StopSelf;
 
 #[async_trait]
@@ -100,6 +102,15 @@ impl Handler<StopSelf> for DropTester {
 
     async fn handle(&mut self, _: StopSelf, ctx: &mut Context<Self>) {
         ctx.stop_self();
+    }
+}
+
+#[async_trait]
+impl Handler<StopAll> for DropTester {
+    type Return = ();
+
+    async fn handle(&mut self, _: StopAll, ctx: &mut Context<Self>) {
+        ctx.stop_all();
     }
 }
 
@@ -117,7 +128,7 @@ async fn test_stop_and_drop() {
     assert!(!weak.is_connected());
     assert!(join.now_or_never().is_some());
 
-    // Send a stop message
+    // Send a stop self message
     let drop_count = Arc::new(AtomicUsize::new(0));
     let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
     let handle = tokio::spawn(fut);
@@ -127,6 +138,20 @@ async fn test_stop_and_drop() {
     handle.await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
     assert!(!weak.is_connected());
+    assert!(!addr.is_connected());
+    assert!(join.now_or_never().is_some());
+
+    // Send a stop all message
+    let drop_count = Arc::new(AtomicUsize::new(0));
+    let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
+    let handle = tokio::spawn(fut);
+    let weak = addr.downgrade();
+    let join = weak.join();
+    let _ = addr.send(StopAll).split_receiver().await;
+    handle.await.unwrap();
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert!(!weak.is_connected());
+    assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
 
     // Drop address before future has even begun
@@ -149,6 +174,7 @@ async fn test_stop_and_drop() {
     tokio::spawn(fut).await.unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
     assert!(!weak.is_connected());
+    assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
 }
 
@@ -166,7 +192,7 @@ async fn handle_left_messages() {
 }
 
 #[tokio::test]
-async fn do_not_handle_drained_messages() {
+async fn actor_can_be_restarted() {
     let (addr, fut) = Accumulator(0).create(None).run();
 
     for _ in 0..5 {
@@ -181,7 +207,7 @@ async fn do_not_handle_drained_messages() {
 
     assert_eq!(fut.await, 5);
 
-    let (addr, mut ctx) = Context::new(None);
+    let (addr, ctx) = Context::new(None);
     let fut1 = ctx.attach(Accumulator(0));
     let fut2 = ctx.run(Accumulator(0));
 
@@ -192,8 +218,10 @@ async fn do_not_handle_drained_messages() {
     let _ = addr.send(StopAll).split_receiver().await;
 
     assert_eq!(fut1.await, 5);
-    assert!(!addr.is_connected());
+    assert!(addr.is_connected());
 
+    // These should not be handled, as fut2 should get the stop_all in this mailbox and stop the
+    // actor
     for _ in 0..5 {
         let _ = addr.send(Inc).split_receiver().await;
     }
@@ -231,7 +259,7 @@ async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
 
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self() {
-    let (address, mut ctx) = Context::new(None);
+    let (address, ctx) = Context::new(None);
     tokio::spawn(ctx.attach(ActorStopSelf));
     tokio::spawn(ctx.run(ActorStopSelf));
     address.send(StopSelf).await.unwrap();
@@ -246,7 +274,7 @@ async fn two_actors_on_address_with_stop_self() {
 
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self_context_alive() {
-    let (address, mut ctx) = Context::new(None);
+    let (address, ctx) = Context::new(None);
     tokio::spawn(ctx.attach(ActorStopSelf));
     tokio::spawn(ctx.attach(ActorStopSelf)); // Context not dropped here
     address.send(StopSelf).await.unwrap();
@@ -535,7 +563,7 @@ async fn set_priority_msg_channel() {
         vec![
             Message::Priority { priority: 2 },
             Message::Priority { priority: 1 },
-            Message::Ordered { ord: 0 }
+            Message::Ordered { ord: 0 },
         ]
     );
 }
@@ -549,21 +577,53 @@ async fn broadcast_tail_advances_bound_1() {
         msgs: vec![],
     };
 
-    tokio::spawn(ctx.attach(Elephant::default()));
+    let mut indlovu = Box::pin(ctx.attach(Elephant::default()));
 
-    let _ = addr
-        .broadcast(Message::Broadcast { priority: 0 })
+    addr.broadcast(Message::Broadcast { priority: 0 })
         .priority(0)
-        .await;
+        .await
+        .unwrap();
 
+    assert!(
+        addr.broadcast(Message::Broadcast { priority: 0 })
+            .priority(0)
+            .now_or_never()
+            .is_none(),
+        "New broadcast message should not be accepted when tail = len",
+    );
+
+    let mut send = addr
+        .broadcast(Message::Broadcast { priority: 0 })
+        .priority(0);
+
+    assert!(
+        send.poll_unpin(&mut fut_ctx).is_pending(),
+        "New broadcast message should not be accepted when tail = len"
+    );
+    assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
+    ctx.yield_once(&mut ngwevu).await;
+
+    assert!(
+        addr.broadcast(Message::Broadcast { priority: 0 })
+            .priority(0)
+            .now_or_never()
+            .is_none(),
+        "New broadcast message should not be accepted when tail = len and one is already waiting",
+    );
+
+    assert!(
+        send.poll_unpin(&mut fut_ctx).is_ready(),
+        "New broadcast message should be accepted now"
+    );
+
+    assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
     ctx.yield_once(&mut ngwevu).await;
 
     assert_eq!(
         addr.broadcast(Message::Broadcast { priority: 0 })
             .priority(0)
-            .timeout(Duration::from_secs(2))
             .await,
-        Some(Ok(())),
+        Ok(()),
         "New broadcast message should be accepted when queue is empty",
     );
 
@@ -587,7 +647,7 @@ async fn broadcast_tail_advances_bound_1() {
 
     // Will handle the broadcast of priority 0 from earlier
     ctx.yield_once(&mut ngwevu).await;
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
 
     assert!(
         lesser.poll_unpin(&mut fut_ctx).is_pending(),
@@ -600,12 +660,19 @@ async fn broadcast_tail_advances_bound_1() {
 
     // Should handle greater
     ctx.yield_once(&mut ngwevu).await;
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
 
     assert!(
         lesser.poll_unpin(&mut fut_ctx).is_ready(),
         "Low prio should be sent in now"
     );
+
+    assert!(
+        addr.broadcast(Message::Broadcast { priority: 10 })
+            .now_or_never()
+            .is_none(),
+        "Channel should not accept when full",
+    )
 }
 
 #[tokio::test]
@@ -730,18 +797,6 @@ async fn address_send_exercises_backpressure() {
 
     context.yield_once(&mut Greeter).await; // process one message
 
-    // Sink
-    let mut sink = address.into_sink();
-    let _ = sink
-        .send(PrintHello("world"))
-        .now_or_never()
-        .expect("be able to queue another message because the mailbox is empty again");
-
-    assert!(
-        sink.send(PrintHello("world")).now_or_never().is_none(),
-        "Fail to queue 2nd message because mailbox is full"
-    );
-
     // Priority send
 
     let (address, mut context) = Context::new(Some(1));
@@ -806,7 +861,7 @@ fn address_debug() {
     assert_eq!(
         format!("{:?}", addr1),
         "Address(Sender<basic::Greeter> { \
-        shutdown: false, rx_count: 1, tx_count: 2, rc: TxStrong(()) })"
+        rx_count: 1, tx_count: 2, rc: TxStrong(()) })"
     );
 
     assert_eq!(format!("{:?}", addr1), format!("{:?}", addr2));
@@ -814,7 +869,7 @@ fn address_debug() {
     assert_eq!(
         format!("{:?}", weak_addr),
         "Address(Sender<basic::Greeter> { \
-        shutdown: false, rx_count: 1, tx_count: 2, rc: TxWeak(()) })"
+        rx_count: 1, tx_count: 2, rc: TxWeak(()) })"
     );
 }
 
@@ -828,14 +883,14 @@ fn message_channel_debug() {
     assert_eq!(
         format!("{:?}", mc),
         "MessageChannel<basic::Hello, alloc::string::String>(\
-            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 1, rc: TxStrong(()) }\
+            Sender<basic::Greeter> { rx_count: 1, tx_count: 1, rc: TxStrong(()) }\
         )"
     );
 
     assert_eq!(
         format!("{:?}", weak_mc),
         "MessageChannel<basic::Hello, alloc::string::String>(\
-            Sender<basic::Greeter> { shutdown: false, rx_count: 1, tx_count: 1, rc: TxWeak(()) }\
+            Sender<basic::Greeter> { rx_count: 1, tx_count: 1, rc: TxWeak(()) }\
         )"
     );
 }
@@ -921,7 +976,7 @@ impl Actor for StopInStarted {
 
 #[tokio::test]
 async fn stop_all_stops_immediately() {
-    let (_address, mut ctx) = Context::new(None);
+    let (_address, ctx) = Context::new(None);
 
     let fut1 = ctx.attach(InstantShutdownAll {
         stop_all: true,
@@ -931,7 +986,7 @@ async fn stop_all_stops_immediately() {
         stop_all: false,
         number: 2,
     });
-    let fut3 = ctx.attach(InstantShutdownAll {
+    let fut3 = ctx.run(InstantShutdownAll {
         stop_all: false,
         number: 3,
     });
@@ -959,4 +1014,89 @@ impl Actor for InstantShutdownAll {
     async fn stopped(self) {
         println!("Actor {} stopped", self.number);
     }
+}
+
+struct Pending;
+
+#[async_trait]
+impl Handler<Pending> for Greeter {
+    type Return = ();
+
+    async fn handle(&mut self, _: Pending, _ctx: &mut Context<Self>) {
+        futures_util::future::pending().await
+    }
+}
+
+#[tokio::test]
+async fn timeout_returns_interrupted() {
+    let ActorManager {
+        address,
+        mut actor,
+        mut ctx,
+    } = Greeter.create(None);
+
+    tokio::spawn(async move {
+        actor.started(&mut ctx).await;
+
+        if !ctx.running {
+            return actor.stopped().await;
+        }
+
+        loop {
+            let msg = ctx.next_message().await;
+
+            let ctrl = ctx
+                .tick(msg, &mut actor)
+                .timeout(Duration::from_secs(1))
+                .await;
+
+            if let Some(ControlFlow::Break(_)) = ctrl {
+                break;
+            }
+        }
+    });
+
+    address
+        .send(Hello("world"))
+        .split_receiver()
+        .now_or_never()
+        .expect("Boundless message should be sent instantly")
+        .timeout(Duration::from_secs(3))
+        .await
+        .expect("Message should not time out")
+        .expect("Counter should not be dropped");
+
+    assert_eq!(
+        address.send(Pending).await,
+        Err(Error::Interrupted),
+        "Timeout should return Interrupted"
+    );
+
+    address
+        .send(Hello("world"))
+        .split_receiver()
+        .now_or_never()
+        .expect("Boundless message should be sent instantly")
+        .timeout(Duration::from_secs(3))
+        .await
+        .expect("Message should not time out")
+        .expect("Counter should not be dropped");
+
+    let weak = address.downgrade();
+    let join = address.join();
+    drop(address);
+
+    join.await;
+    assert_eq!(
+        weak.send(Hello("world")).now_or_never(),
+        Some(Err(Error::Disconnected)),
+        "Interrupt should not be returned after actor stops"
+    );
+}
+
+#[test]
+fn no_sender_returns_disconnected() {
+    let (addr, ctx) = Context::<Greeter>::new(None);
+    drop(addr);
+    assert!(!ctx.weak_address().is_connected());
 }

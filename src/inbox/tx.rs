@@ -10,9 +10,10 @@ use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use super::*;
+use crate::envelope::Shutdown;
 use crate::inbox::tx::private::RefCounterInner;
 use crate::send_future::private::SetPriority;
-use crate::Disconnected;
+use crate::{Actor, Error};
 
 pub struct Sender<A, Rc: TxRefCounter> {
     pub(super) inner: Arc<Chan<A>>,
@@ -32,7 +33,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     fn try_send(&self, message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
         let mut inner = self.inner.chan.lock().unwrap();
 
-        if self.inner.is_shutdown() {
+        if !self.is_connected() {
             return Err(TrySendFail::Disconnected);
         }
 
@@ -42,33 +43,47 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
                 Ok(())
             }
             SentMessage::ToAllActors(m) => {
-                // Is full
+                // on_shutdown is only notified with inner locked, and it's locked here, so no race
                 let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
                 inner.waiting_senders.push_back(Arc::downgrade(&waiting));
                 Err(TrySendFail::Full(waiting))
             }
-            msg => match inner.try_fulfill_receiver(msg.into()) {
-                Ok(()) => Ok(()),
-                Err(WakeReason::MessageToOneActor(m))
-                    if m.priority == 0 && !self.inner.is_full(inner.ordered_queue.len()) =>
-                {
-                    inner.ordered_queue.push_back(m.val);
-                    Ok(())
+            msg => {
+                let res = inner.try_fulfill_receiver(msg.into());
+                match res {
+                    Ok(()) => Ok(()),
+                    Err(WakeReason::MessageToOneActor(m))
+                        if m.priority == 0 && !self.inner.is_full(inner.ordered_queue.len()) =>
+                    {
+                        inner.ordered_queue.push_back(m.val);
+                        Ok(())
+                    }
+                    Err(WakeReason::MessageToOneActor(m))
+                        if m.priority != 0 && !self.inner.is_full(inner.priority_queue.len()) =>
+                    {
+                        inner.priority_queue.push(m);
+                        Ok(())
+                    }
+                    Err(WakeReason::MessageToOneActor(m)) => {
+                        let waiting = WaitingSender::new(m.into());
+                        inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+                        Err(TrySendFail::Full(waiting))
+                    }
+                    _ => unreachable!(),
                 }
-                Err(WakeReason::MessageToOneActor(m))
-                    if m.priority != 0 && !self.inner.is_full(inner.priority_queue.len()) =>
-                {
-                    inner.priority_queue.push(m);
-                    Ok(())
-                }
-                Err(WakeReason::MessageToOneActor(m)) => {
-                    let waiting = WaitingSender::new(m.into());
-                    inner.waiting_senders.push_back(Arc::downgrade(&waiting));
-                    Err(TrySendFail::Full(waiting))
-                }
-                _ => unreachable!(),
-            },
+            }
         }
+    }
+
+    pub fn stop_all_receivers(&self)
+    where
+        A: Actor,
+    {
+        self.inner
+            .chan
+            .lock()
+            .unwrap()
+            .send_broadcast(MessageToAllActors(Arc::new(Shutdown::new())));
     }
 
     pub fn send(&self, message: SentMessage<A>) -> SendFuture<A, Rc> {
@@ -97,12 +112,9 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
         }
     }
 
-    pub fn shutdown_and_drain(&self) {
-        self.inner.shutdown_and_drain();
-    }
-
     pub fn is_connected(&self) -> bool {
-        !self.inner.is_shutdown()
+        self.inner.receiver_count.load(atomic::Ordering::SeqCst) > 0
+            && self.inner.sender_count.load(atomic::Ordering::SeqCst) > 0
     }
 
     pub fn capacity(&self) -> Option<usize> {
@@ -145,7 +157,22 @@ impl<A, Rc: TxRefCounter> Clone for Sender<A, Rc> {
 impl<A, Rc: TxRefCounter> Drop for Sender<A, Rc> {
     fn drop(&mut self) {
         if self.rc.decrement(&self.inner) {
-            self.inner.shutdown();
+            let waiting_rx = {
+                let mut inner = match self.inner.chan.lock() {
+                    Ok(lock) => lock,
+                    Err(_) => return, // Poisoned, ignore
+                };
+
+                // We don't need to notify on_shutdown here, as that is only used by senders
+                // Receivers will be woken with the fulfills below, or they will realise there are
+                // no senders when they check the tx refcount
+
+                mem::take(&mut inner.waiting_receivers)
+            };
+
+            for rx in waiting_rx.into_iter().flat_map(|w| w.upgrade()) {
+                let _ = rx.lock().fulfill(WakeReason::Shutdown);
+            }
         }
     }
 }
@@ -156,7 +183,6 @@ impl<A, Rc: TxRefCounter> Debug for Sender<A, Rc> {
 
         let act = std::any::type_name::<A>();
         f.debug_struct(&format!("Sender<{}>", act))
-            .field("shutdown", &self.inner.shutdown.load(SeqCst))
             .field("rx_count", &self.inner.receiver_count.load(SeqCst))
             .field("tx_count", &self.inner.sender_count.load(SeqCst))
             .field("rc", &self.rc)
@@ -177,13 +203,6 @@ impl<A, Rc: TxRefCounter> SendFuture<A, Rc> {
             inner: SendFutureInner::New(msg),
         }
     }
-
-    pub fn empty(tx: Sender<A, Rc>) -> Self {
-        SendFuture {
-            tx,
-            inner: SendFutureInner::Complete,
-        }
-    }
 }
 
 impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
@@ -202,13 +221,13 @@ pub enum SendFutureInner<A> {
 }
 
 impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
-    type Output = Result<(), Disconnected>;
+    type Output = Result<(), Error>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Disconnected>> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         match mem::replace(&mut self.inner, SendFutureInner::Complete) {
             SendFutureInner::New(msg) => match self.tx.try_send(msg) {
                 Ok(()) => Poll::Ready(Ok(())),
-                Err(TrySendFail::Disconnected) => Poll::Ready(Err(Disconnected)),
+                Err(TrySendFail::Disconnected) => Poll::Ready(Err(Error::Disconnected)),
                 Err(TrySendFail::Full(waiting)) => {
                     // Start waiting. The waiting sender should be immediately polled, in case a
                     // receive operation happened between `try_send` and here, in which case the
@@ -222,8 +241,9 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
                     let mut inner = waiting.lock();
 
                     match inner.message {
-                        Some(_) => inner.waker = Some(cx.waker().clone()), // The message has not yet been taken
-                        None => return Poll::Ready(Ok(())),
+                        WaitingSenderInner::New(_) => inner.waker = Some(cx.waker().clone()), // The message has not yet been taken
+                        WaitingSenderInner::Delivered => return Poll::Ready(Ok(())),
+                        WaitingSenderInner::Closed => return Poll::Ready(Err(Error::Disconnected)),
                     }
                 }
 
@@ -237,32 +257,46 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
 
 pub struct WaitingSender<A> {
     waker: Option<Waker>,
-    message: Option<SentMessage<A>>,
+    message: WaitingSenderInner<A>,
+}
+
+enum WaitingSenderInner<A> {
+    New(SentMessage<A>),
+    Delivered,
+    Closed,
 }
 
 impl<A> WaitingSender<A> {
     pub fn new(message: SentMessage<A>) -> Arc<Spinlock<Self>> {
         let sender = WaitingSender {
             waker: None,
-            message: Some(message),
+            message: WaitingSenderInner::New(message),
         };
         Arc::new(Spinlock::new(sender))
     }
 
     pub fn peek(&self) -> &SentMessage<A> {
-        self.message
-            .as_ref()
-            .expect("WaitingSender should have message")
+        match &self.message {
+            WaitingSenderInner::New(msg) => msg,
+            _ => panic!("WaitingSender should have message"),
+        }
     }
 
-    pub fn fulfill(&mut self) -> SentMessage<A> {
+    pub fn fulfill(&mut self, is_delivered: bool) -> SentMessage<A> {
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }
 
-        self.message
-            .take()
-            .expect("WaitingSender should have message")
+        let new = if is_delivered {
+            WaitingSenderInner::Delivered
+        } else {
+            WaitingSenderInner::Closed
+        };
+
+        match mem::replace(&mut self.message, new) {
+            WaitingSenderInner::New(msg) => msg,
+            _ => panic!("WaitingSender should have message"),
+        }
     }
 }
 
@@ -323,6 +357,12 @@ impl TxStrong {
                 Err(old) => n = old,
             }
         }
+    }
+}
+
+impl TxWeak {
+    pub(crate) fn new<A>(_inner: &Chan<A>) -> TxWeak {
+        TxWeak(())
     }
 }
 
