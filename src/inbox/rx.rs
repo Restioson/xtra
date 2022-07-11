@@ -46,15 +46,6 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
         }
     }
 
-    /// Clone this receiver, keeping its broadcast mailbox.
-    pub fn cloned_same_broadcast_mailbox(&self) -> Receiver<A, Rc> {
-        Receiver {
-            inner: self.inner.clone(),
-            broadcast_mailbox: self.broadcast_mailbox.clone(),
-            rc: self.rc.increment(&self.inner),
-        }
-    }
-
     /// Clone this receiver, giving the clone a new broadcast mailbox.
     pub fn cloned_new_broadcast_mailbox(&self) -> Receiver<A, Rc> {
         let new_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
@@ -73,7 +64,13 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
     }
 
     pub fn receive(&self) -> ReceiveFuture<A, Rc> {
-        ReceiveFuture::new(self.cloned_same_broadcast_mailbox())
+        let receiver_with_same_broadcast_mailbox = Receiver {
+            inner: self.inner.clone(),
+            broadcast_mailbox: self.broadcast_mailbox.clone(),
+            rc: self.rc.increment(&self.inner),
+        };
+
+        ReceiveFuture::new(receiver_with_same_broadcast_mailbox)
     }
 
     fn try_recv(&self) -> Result<ActorMessage<A>, Arc<Spinlock<WaitingReceiver<A>>>> {
