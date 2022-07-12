@@ -103,6 +103,11 @@ impl<A> Chan<A> {
             && self.sender_count.load(atomic::Ordering::SeqCst) > 0
     }
 
+    fn len(&self) -> usize {
+        let inner = self.chan.lock().unwrap();
+        inner.broadcast_tail + inner.ordered_queue.len() + inner.priority_queue.len()
+    }
+
     fn is_full(&self, len: usize) -> bool {
         self.capacity.map_or(false, |cap| len >= cap)
     }

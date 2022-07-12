@@ -80,8 +80,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     }
 
     pub fn len(&self) -> usize {
-        let inner = self.inner.chan.lock().unwrap();
-        inner.broadcast_tail + inner.ordered_queue.len() + inner.priority_queue.len()
+        self.inner.len()
     }
 
     pub fn disconnect_notice(&self) -> Option<EventListener> {
