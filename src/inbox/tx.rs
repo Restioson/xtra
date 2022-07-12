@@ -90,21 +90,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     }
 
     pub fn disconnect_notice(&self) -> Option<EventListener> {
-        // Listener is created before checking connectivity to avoid the following race scenario:
-        //
-        // 1. is_connected returns true
-        // 2. on_shutdown is notified
-        // 3. listener is registered
-        //
-        // The listener would never be woken in this scenario, as the notification preceded its
-        // creation.
-        let listener = self.inner.on_shutdown.listen();
-
-        if self.is_connected() {
-            Some(listener)
-        } else {
-            None
-        }
+        self.inner.disconnect_listener()
     }
 }
 

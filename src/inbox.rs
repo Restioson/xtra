@@ -10,7 +10,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::{atomic, Arc, Mutex, Weak};
 use std::{cmp, mem};
 
-use event_listener::Event;
+use event_listener::{Event, EventListener};
 pub use rx::Receiver;
 pub use tx::{SendFuture, Sender};
 
@@ -204,6 +204,24 @@ impl<A> Chan<A> {
 
         for tx in waiting_tx.into_iter().flat_map(|w| w.upgrade()) {
             tx.lock().set_closed();
+        }
+    }
+
+    fn disconnect_listener(&self) -> Option<EventListener> {
+        // Listener is created before checking connectivity to avoid the following race scenario:
+        //
+        // 1. is_connected returns true
+        // 2. on_shutdown is notified
+        // 3. listener is registered
+        //
+        // The listener would never be woken in this scenario, as the notification preceded its
+        // creation.
+        let listener = self.on_shutdown.listen();
+
+        if self.is_connected() {
+            Some(listener)
+        } else {
+            None
         }
     }
 }
