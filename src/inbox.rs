@@ -390,7 +390,7 @@ impl<A> From<Arc<dyn BroadcastEnvelope<Actor = A>>> for ActorMessage<A> {
     }
 }
 
-enum WakeReason<A> {
+pub enum WakeReason<A> {
     MessageToOneActor(PriorityMessageToOne<A>),
     // should be fetched from own receiver
     MessageToAllActors,
