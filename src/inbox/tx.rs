@@ -270,7 +270,7 @@ impl<A> WaitingSender<A> {
         }
     }
 
-    pub fn fulfill_as_delivered(&mut self) -> SentMessage<A> {
+    pub fn fulfill(&mut self) -> SentMessage<A> {
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }
@@ -281,7 +281,10 @@ impl<A> WaitingSender<A> {
         }
     }
 
-    pub fn fulfill_as_closed(&mut self) {
+    /// Mark this [`WaitingSender`] as closed.
+    ///
+    /// Should be called when the last [`Receiver`](crate::inbox::Receiver) goes away.
+    pub fn set_closed(&mut self) {
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }

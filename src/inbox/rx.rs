@@ -139,7 +139,7 @@ impl<A, Rc: RxRefCounter> Drop for Receiver<A, Rc> {
             };
 
             for tx in waiting_tx.into_iter().flat_map(|w| w.upgrade()) {
-                tx.lock().fulfill_as_closed();
+                tx.lock().set_closed();
             }
         }
     }
