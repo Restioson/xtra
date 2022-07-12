@@ -72,8 +72,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     }
 
     pub fn is_connected(&self) -> bool {
-        self.inner.receiver_count.load(atomic::Ordering::SeqCst) > 0
-            && self.inner.sender_count.load(atomic::Ordering::SeqCst) > 0
+        self.inner.is_connected()
     }
 
     pub fn capacity(&self) -> Option<usize> {

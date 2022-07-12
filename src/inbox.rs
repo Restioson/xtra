@@ -7,7 +7,7 @@ pub mod tx;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
 use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{atomic, Arc, Mutex, Weak};
 use std::{cmp, mem};
 
 use event_listener::Event;
@@ -96,6 +96,11 @@ impl<A> Chan<A> {
                 }
             }
         }
+    }
+
+    fn is_connected(&self) -> bool {
+        self.receiver_count.load(atomic::Ordering::SeqCst) > 0
+            && self.sender_count.load(atomic::Ordering::SeqCst) > 0
     }
 
     fn is_full(&self, len: usize) -> bool {
