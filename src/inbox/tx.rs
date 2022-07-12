@@ -86,10 +86,6 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
             .send_broadcast(MessageToAllActors(Arc::new(Shutdown::new())));
     }
 
-    pub fn send(&self, message: SentMessage<A>) -> SendFuture<A, Rc> {
-        SendFuture::new(message, self.clone())
-    }
-
     pub fn downgrade(&self) -> Sender<A, TxWeak> {
         Sender {
             inner: self.inner.clone(),
@@ -197,7 +193,7 @@ pub struct SendFuture<A, Rc: TxRefCounter> {
 }
 
 impl<A, Rc: TxRefCounter> SendFuture<A, Rc> {
-    fn new(msg: SentMessage<A>, tx: Sender<A, Rc>) -> Self {
+    pub fn new(msg: SentMessage<A>, tx: Sender<A, Rc>) -> Self {
         SendFuture {
             tx,
             inner: SendFutureInner::New(msg),

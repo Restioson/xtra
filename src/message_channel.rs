@@ -8,7 +8,7 @@ use futures_sink::Sink;
 
 use crate::address::{ActorJoinHandle, Address};
 use crate::envelope::ReturningEnvelope;
-use crate::inbox::{PriorityMessageToOne, SentMessage};
+use crate::inbox::{tx, PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture};
 use crate::{Error, Handler};
@@ -298,7 +298,7 @@ where
     ) -> SendFuture<R, ActorErasedSending<Self::Return>, ResolveToHandlerReturn> {
         let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
         let msg = PriorityMessageToOne::new(0, Box::new(envelope));
-        let sending = self.0.send(SentMessage::ToOneActor(msg));
+        let sending = tx::SendFuture::new(SentMessage::ToOneActor(msg), self.0.clone());
 
         SendFuture::sending_erased(sending, rx)
     }
