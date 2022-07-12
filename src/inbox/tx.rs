@@ -31,11 +31,11 @@ impl<A> Sender<A, TxStrong> {
 
 impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     fn try_send(&self, message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
-        let mut inner = self.inner.chan.lock().unwrap();
-
         if !self.is_connected() {
             return Err(TrySendFail::Disconnected);
         }
+
+        let mut inner = self.inner.chan.lock().unwrap();
 
         match message {
             SentMessage::ToAllActors(m) if !self.inner.is_full(inner.broadcast_tail) => {
