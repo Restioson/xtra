@@ -182,7 +182,7 @@ impl<A> ChanInner<A> {
             };
 
             if let Some(tx) = self.waiting_senders.remove(pos).unwrap().upgrade() {
-                return Some(tx.lock().fulfill(true));
+                return Some(tx.lock().fulfill_as_delivered());
             }
         }
     }
