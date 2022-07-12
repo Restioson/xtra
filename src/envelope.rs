@@ -76,7 +76,7 @@ impl Instrumentation {
     }
 
     #[cfg_attr(not(feature = "instrumentation"), allow(unused_variables))]
-    fn new<A>(message: &'static str) -> Self {
+    fn started<A>(message: &'static str) -> Self {
         #[cfg(feature = "instrumentation")]
         {
             let parent = Span(tracing::debug_span!(
@@ -159,7 +159,8 @@ where
     type Actor = A;
 
     fn start_span(&mut self, msg_name: &'static str) {
-        self.instrumentation = Instrumentation::new::<A>(msg_name);
+        assert!(self.instrumentation.parent.0.is_none());
+        self.instrumentation = Instrumentation::started::<A>(msg_name);
     }
 
     fn handle<'a>(
@@ -229,7 +230,8 @@ where
     type Actor = A;
 
     fn start_span(&mut self, msg_name: &'static str) {
-        self.instrumentation = Instrumentation::new::<A>(msg_name);
+        assert!(self.instrumentation.parent.0.is_none());
+        self.instrumentation = Instrumentation::started::<A>(msg_name);
     }
 
     fn handle<'a>(

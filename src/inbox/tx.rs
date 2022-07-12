@@ -31,7 +31,7 @@ impl<A> Sender<A, TxStrong> {
 
 impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     fn try_send(&self, mut message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
-        message.create_span(); // TODO make sure called once only
+        message.start_span();
 
         let mut inner = self.inner.chan.lock().unwrap();
 

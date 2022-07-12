@@ -223,7 +223,7 @@ impl<A> SentMessage<A> {
         }
     }
 
-    pub fn create_span(&mut self) {
+    pub fn start_span(&mut self) {
         #[cfg(feature = "instrumentation")]
         match &mut self.msg {
             MessageKind::ToOneActor(m) => {
