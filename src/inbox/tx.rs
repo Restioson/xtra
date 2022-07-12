@@ -7,6 +7,7 @@ use std::task::{Context, Poll, Waker};
 
 use event_listener::EventListener;
 use futures_core::FusedFuture;
+use futures_util::FutureExt;
 
 use super::*;
 use crate::envelope::Shutdown;
@@ -226,20 +227,15 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
                     }
                 },
                 SendFuture::WaitingToSend(waiting) => {
-                    {
-                        let mut inner = waiting.lock();
+                    let poll = { waiting.lock().poll_unpin(cx) }; // Scoped separately to drop mutex guard asap.
 
-                        match inner.message {
-                            WaitingSenderInner::New(_) => inner.waker = Some(cx.waker().clone()), // The message has not yet been taken
-                            WaitingSenderInner::Delivered => return Poll::Ready(Ok(())),
-                            WaitingSenderInner::Closed => {
-                                return Poll::Ready(Err(Error::Disconnected))
-                            }
+                    return match poll {
+                        Poll::Ready(result) => Poll::Ready(result),
+                        Poll::Pending => {
+                            *this = SendFuture::WaitingToSend(waiting);
+                            Poll::Pending
                         }
-                    }
-
-                    *this = SendFuture::WaitingToSend(waiting);
-                    return Poll::Pending;
+                    };
                 }
                 SendFuture::Complete => return Poll::Pending,
             }
@@ -288,6 +284,23 @@ impl<A> WaitingSender<A> {
         match mem::replace(&mut self.message, new) {
             WaitingSenderInner::New(msg) => msg,
             _ => panic!("WaitingSender should have message"),
+        }
+    }
+}
+
+impl<A> Future for WaitingSender<A> {
+    type Output = Result<(), Error>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        match this.message {
+            WaitingSenderInner::New(_) => {
+                this.waker = Some(cx.waker().clone());
+                Poll::Pending
+            }
+            WaitingSenderInner::Delivered => Poll::Ready(Ok(())),
+            WaitingSenderInner::Closed => Poll::Ready(Err(Error::Disconnected)),
         }
     }
 }
