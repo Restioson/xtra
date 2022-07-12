@@ -48,6 +48,21 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
 
         ReceiveFuture::new(receiver_with_same_broadcast_mailbox)
     }
+
+    fn pop_broadcast_message(&self) -> Option<MessageToAllActors<A>> {
+        let message = self.broadcast_mailbox.lock().pop();
+
+        // Advance the broadcast tail if we successfully took a message.
+        if message.is_some() {
+            self.inner
+                .chan
+                .lock()
+                .unwrap()
+                .try_advance_broadcast_tail(self.inner.capacity);
+        }
+
+        message
+    }
 }
 
 impl<A, Rc: RxRefCounter> Clone for Receiver<A, Rc> {
@@ -123,22 +138,10 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                             unreachable!("Waiting receive future cannot be interrupted")
                         }
                         Poll::Ready(WakeReason::MessageToAllActors) => {
-                            // The broadcast message could have been taken by another
-                            // receive future from the same receiver (or from another
-                            // receiver sharing the same broadcast mailbox)
-                            let pop = rx.broadcast_mailbox.lock().pop();
-                            match pop {
-                                Some(msg) => {
-                                    rx.inner
-                                        .chan
-                                        .lock()
-                                        .unwrap()
-                                        .try_advance_broadcast_tail(rx.inner.capacity);
-
-                                    ActorMessage::ToAllActors(msg.0)
-                                }
+                            match rx.pop_broadcast_message() {
+                                Some(msg) => ActorMessage::ToAllActors(msg.0),
                                 None => {
-                                    // If it was taken, try receive again
+                                    // We got woken but failed to pop a message, try receiving again.
                                     this.0 = ReceiveFutureInner::New(rx);
                                     continue;
                                 }
