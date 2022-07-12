@@ -117,15 +117,14 @@ impl<A, R, Rc: RefCounter> SendFuture<R, NameableSending<A, R, Rc>, ResolveToHan
         M: Send + 'static,
         R: Send + 'static,
     {
-        let (envelope, receiver) =
-            ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-        let msg = SentMessage::ToOneActor(PriorityMessageToOne::new(0, Box::new(envelope)));
-        let send_fut = inbox::SendFuture::new(msg, sender);
+        let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
+        let msg = PriorityMessageToOne::new(0, Box::new(envelope));
+        let send_fut = inbox::SendFuture::new(SentMessage::ToOneActor(msg), sender);
 
         Self {
             inner: SendFutureInner::Sending(NameableSending {
                 inner: send_fut,
-                receiver: Some(Receiver::new(receiver)),
+                receiver: Some(Receiver::new(rx)),
             }),
             phantom: PhantomData,
         }
