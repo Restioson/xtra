@@ -281,15 +281,12 @@ impl<A> WaitingSender<A> {
         }
     }
 
-    pub fn fulfill_as_closed(&mut self) -> SentMessage<A> {
+    pub fn fulfill_as_closed(&mut self) {
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }
 
-        match mem::replace(&mut self.message, WaitingSenderInner::Closed) {
-            WaitingSenderInner::New(msg) => msg,
-            _ => panic!("WaitingSender should have message"),
-        }
+        self.message = WaitingSenderInner::Closed;
     }
 }
 
