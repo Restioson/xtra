@@ -13,9 +13,9 @@ use crate::inbox::tx::TxWeak;
 use crate::inbox::*;
 
 pub struct Receiver<A, Rc: RxRefCounter> {
-    pub(super) inner: Arc<Chan<A>>,
-    pub(super) broadcast_mailbox: Arc<BroadcastQueue<A>>,
-    pub(super) rc: Rc,
+    inner: Arc<Chan<A>>,
+    broadcast_mailbox: Arc<BroadcastQueue<A>>,
+    rc: Rc,
 }
 
 impl<A> Receiver<A, RxStrong> {
@@ -46,34 +46,14 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
         }
     }
 
-    /// Clone this receiver, keeping its broadcast mailbox.
-    pub fn cloned_same_broadcast_mailbox(&self) -> Receiver<A, Rc> {
-        Receiver {
+    pub fn receive(&self) -> ReceiveFuture<A, Rc> {
+        let receiver_with_same_broadcast_mailbox = Receiver {
             inner: self.inner.clone(),
             broadcast_mailbox: self.broadcast_mailbox.clone(),
             rc: self.rc.increment(&self.inner),
-        }
-    }
+        };
 
-    /// Clone this receiver, giving the clone a new broadcast mailbox.
-    pub fn cloned_new_broadcast_mailbox(&self) -> Receiver<A, Rc> {
-        let new_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
-        self.inner
-            .chan
-            .lock()
-            .unwrap()
-            .broadcast_queues
-            .push(Arc::downgrade(&new_mailbox));
-
-        Receiver {
-            inner: self.inner.clone(),
-            broadcast_mailbox: new_mailbox,
-            rc: self.rc.increment(&self.inner),
-        }
-    }
-
-    pub fn receive(&self) -> ReceiveFuture<A, Rc> {
-        ReceiveFuture::new(self.cloned_same_broadcast_mailbox())
+        ReceiveFuture::new(receiver_with_same_broadcast_mailbox)
     }
 
     fn try_recv(&self) -> Result<ActorMessage<A>, Arc<Spinlock<WaitingReceiver<A>>>> {
@@ -117,6 +97,24 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
                 inner.waiting_receivers.push_back(Arc::downgrade(&waiting));
                 Err(waiting)
             }
+        }
+    }
+}
+
+impl<A, Rc: RxRefCounter> Clone for Receiver<A, Rc> {
+    fn clone(&self) -> Self {
+        let new_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
+        self.inner
+            .chan
+            .lock()
+            .unwrap()
+            .broadcast_queues
+            .push(Arc::downgrade(&new_mailbox));
+
+        Receiver {
+            inner: self.inner.clone(),
+            broadcast_mailbox: new_mailbox,
+            rc: self.rc.increment(&self.inner),
         }
     }
 }
