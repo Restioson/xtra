@@ -16,8 +16,8 @@ use crate::send_future::private::SetPriority;
 use crate::{Actor, Error};
 
 pub struct Sender<A, Rc: TxRefCounter> {
-    pub(super) inner: Arc<Chan<A>>,
-    pub(super) rc: Rc,
+    inner: Arc<Chan<A>>,
+    rc: Rc,
 }
 
 impl<A> Sender<A, TxStrong> {
