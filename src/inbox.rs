@@ -115,6 +115,49 @@ impl<A> Chan<A> {
     fn is_full(&self, len: usize) -> bool {
         self.capacity.map_or(false, |cap| len >= cap)
     }
+
+    /// Shutdown all [`WaitingReceiver`](crate::inbox::rx::WaitingReceiver)s in this channel.
+    fn shutdown_waiting_receivers(&self) {
+        let waiting_rx = {
+            let mut inner = match self.chan.lock() {
+                Ok(lock) => lock,
+                Err(_) => return, // Poisoned, ignore
+            };
+
+            // We don't need to notify on_shutdown here, as that is only used by senders
+            // Receivers will be woken with the fulfills below, or they will realise there are
+            // no senders when they check the tx refcount
+
+            mem::take(&mut inner.waiting_receivers)
+        };
+
+        for rx in waiting_rx.into_iter().flat_map(|w| w.upgrade()) {
+            let _ = rx.lock().fulfill(WakeReason::Shutdown);
+        }
+    }
+
+    /// Shutdown all [`WaitingSender`](crate::inbox::tx::WaitingSender)s in this channel.
+    fn shutdown_waiting_senders(&self) {
+        let waiting_tx = {
+            let mut inner = match self.chan.lock() {
+                Ok(lock) => lock,
+                Err(_) => return, // Poisoned, ignore
+            };
+
+            self.on_shutdown.notify(usize::MAX);
+
+            // Let any outstanding messages drop
+            inner.ordered_queue.clear();
+            inner.priority_queue.clear();
+            inner.broadcast_queues.clear();
+
+            mem::take(&mut inner.waiting_senders)
+        };
+
+        for tx in waiting_tx.into_iter().flat_map(|w| w.upgrade()) {
+            tx.lock().set_closed();
+        }
+    }
 }
 
 struct ChanInner<A> {

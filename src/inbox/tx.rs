@@ -124,22 +124,7 @@ impl<A, Rc: TxRefCounter> Clone for Sender<A, Rc> {
 impl<A, Rc: TxRefCounter> Drop for Sender<A, Rc> {
     fn drop(&mut self) {
         if self.rc.decrement(&self.inner) {
-            let waiting_rx = {
-                let mut inner = match self.inner.chan.lock() {
-                    Ok(lock) => lock,
-                    Err(_) => return, // Poisoned, ignore
-                };
-
-                // We don't need to notify on_shutdown here, as that is only used by senders
-                // Receivers will be woken with the fulfills below, or they will realise there are
-                // no senders when they check the tx refcount
-
-                mem::take(&mut inner.waiting_receivers)
-            };
-
-            for rx in waiting_rx.into_iter().flat_map(|w| w.upgrade()) {
-                let _ = rx.lock().fulfill(WakeReason::Shutdown);
-            }
+            self.inner.shutdown_waiting_receivers()
         }
     }
 }

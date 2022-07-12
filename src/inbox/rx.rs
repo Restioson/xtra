@@ -116,25 +116,7 @@ impl<A, Rc: RxRefCounter> Clone for Receiver<A, Rc> {
 impl<A, Rc: RxRefCounter> Drop for Receiver<A, Rc> {
     fn drop(&mut self) {
         if self.rc.decrement(&self.inner) {
-            let waiting_tx = {
-                let mut inner = match self.inner.chan.lock() {
-                    Ok(lock) => lock,
-                    Err(_) => return, // Poisoned, ignore
-                };
-
-                self.inner.on_shutdown.notify(usize::MAX);
-
-                // Let any outstanding messages drop
-                inner.ordered_queue.clear();
-                inner.priority_queue.clear();
-                inner.broadcast_queues.clear();
-
-                mem::take(&mut inner.waiting_senders)
-            };
-
-            for tx in waiting_tx.into_iter().flat_map(|w| w.upgrade()) {
-                tx.lock().set_closed();
-            }
+            self.inner.shutdown_waiting_senders()
         }
     }
 }
