@@ -58,6 +58,10 @@ pub struct Chan<A> {
 
 impl<A> Chan<A> {
     fn try_send(&self, message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
+        if !self.is_connected() {
+            return Err(TrySendFail::Disconnected);
+        }
+
         let mut inner = self.chan.lock().unwrap();
 
         match message {

@@ -31,10 +31,6 @@ impl<A> Sender<A, TxStrong> {
 
 impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     fn try_send(&self, message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
-        if !self.is_connected() {
-            return Err(TrySendFail::Disconnected);
-        }
-
         self.inner.try_send(message)
     }
 
