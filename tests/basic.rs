@@ -7,11 +7,10 @@ use std::time::Duration;
 
 use futures_util::task::noop_waker_ref;
 use futures_util::FutureExt;
-use smol::stream;
 use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::{ActorManager, Error, KeepRunning};
+use xtra::{ActorManager, Error};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
@@ -229,46 +228,6 @@ async fn actor_can_be_restarted() {
 
     assert_eq!(fut2.await, 0);
     assert!(!addr.is_connected());
-}
-
-struct StreamCancelMessage;
-
-struct StreamCancelTester;
-
-#[async_trait]
-impl Actor for StreamCancelTester {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
-}
-
-#[async_trait]
-impl Handler<StreamCancelMessage> for StreamCancelTester {
-    type Return = KeepRunning;
-
-    async fn handle(&mut self, _: StreamCancelMessage, _: &mut Context<Self>) -> KeepRunning {
-        KeepRunning::Yes
-    }
-}
-
-#[tokio::test]
-async fn test_stream_cancel_join() {
-    let addr = StreamCancelTester {}.create(None).spawn_global();
-    let jh = addr.join();
-    let addr2 = addr.clone().downgrade();
-    // attach a stream that blocks forever
-    let handle = tokio::spawn(async move {
-        addr2
-            .attach_stream(stream::pending::<StreamCancelMessage>())
-            .await
-    });
-    drop(addr); // stop the actor
-
-    // Attach stream should return immediately
-    assert!(handle.timeout(Duration::from_secs(2)).await.is_some()); // None == timeout
-
-    // Join should also return right away
-    assert!(jh.timeout(Duration::from_secs(2)).await.is_some());
 }
 
 #[tokio::test]
