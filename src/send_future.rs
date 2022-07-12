@@ -111,6 +111,9 @@ impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
 }
 
 impl<A, R, Rc: RefCounter> SendFuture<R, NameableSending<A, R, Rc>, ResolveToHandlerReturn> {
+    /// Construct a [`SendFuture`] that contains the actor's name in its type.
+    ///
+    /// Compared to [`SendFuture::sending_erased`], this function avoids one allocation.
     pub(crate) fn sending_named<M>(message: M, sender: inbox::Sender<A, Rc>) -> Self
     where
         A: Handler<M, Return = R>,
