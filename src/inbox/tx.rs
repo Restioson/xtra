@@ -220,33 +220,36 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
     type Output = Result<(), Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        match mem::replace(&mut self.inner, SendFutureInner::Complete) {
-            SendFutureInner::New(msg) => match self.tx.try_send(msg) {
-                Ok(()) => Poll::Ready(Ok(())),
-                Err(TrySendFail::Disconnected) => Poll::Ready(Err(Error::Disconnected)),
-                Err(TrySendFail::Full(waiting)) => {
-                    // Start waiting. The waiting sender should be immediately polled, in case a
-                    // receive operation happened between `try_send` and here, in which case the
-                    // WaitingSender would be fulfilled, but not properly woken.
-                    self.inner = SendFutureInner::WaitingToSend(waiting);
-                    self.poll_unpin(cx)
-                }
-            },
-            SendFutureInner::WaitingToSend(waiting) => {
-                {
-                    let mut inner = waiting.lock();
-
-                    match inner.message {
-                        WaitingSenderInner::New(_) => inner.waker = Some(cx.waker().clone()), // The message has not yet been taken
-                        WaitingSenderInner::Delivered => return Poll::Ready(Ok(())),
-                        WaitingSenderInner::Closed => return Poll::Ready(Err(Error::Disconnected)),
+        loop {
+            match mem::replace(&mut self.inner, SendFutureInner::Complete) {
+                SendFutureInner::New(msg) => match self.tx.try_send(msg) {
+                    Ok(()) => Poll::Ready(Ok(())),
+                    Err(TrySendFail::Disconnected) => Poll::Ready(Err(Error::Disconnected)),
+                    Err(TrySendFail::Full(waiting)) => {
+                        // Start waiting. The waiting sender should be immediately polled, in case a
+                        // receive operation happened between `try_send` and here, in which case the
+                        // WaitingSender would be fulfilled, but not properly woken.
+                        self.inner = SendFutureInner::WaitingToSend(waiting);
                     }
-                }
+                },
+                SendFutureInner::WaitingToSend(waiting) => {
+                    {
+                        let mut inner = waiting.lock();
 
-                self.inner = SendFutureInner::WaitingToSend(waiting);
-                Poll::Pending
+                        match inner.message {
+                            WaitingSenderInner::New(_) => inner.waker = Some(cx.waker().clone()), // The message has not yet been taken
+                            WaitingSenderInner::Delivered => return Poll::Ready(Ok(())),
+                            WaitingSenderInner::Closed => {
+                                return Poll::Ready(Err(Error::Disconnected))
+                            }
+                        }
+                    }
+
+                    self.inner = SendFutureInner::WaitingToSend(waiting);
+                    return Poll::Pending;
+                }
+                SendFutureInner::Complete => return Poll::Pending,
             }
-            SendFutureInner::Complete => Poll::Pending,
         }
     }
 }
