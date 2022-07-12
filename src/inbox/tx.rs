@@ -7,7 +7,6 @@ use std::task::{Context, Poll, Waker};
 
 use event_listener::EventListener;
 use futures_core::FusedFuture;
-use futures_util::FutureExt;
 
 use super::*;
 use crate::envelope::Shutdown;
@@ -186,32 +185,24 @@ impl<A, Rc: TxRefCounter> Debug for Sender<A, Rc> {
     }
 }
 
-#[must_use = "Futures do nothing unless polled"]
-pub struct SendFuture<A, Rc: TxRefCounter> {
-    tx: Sender<A, Rc>,
-    inner: SendFutureInner<A>,
-}
-
-impl<A, Rc: TxRefCounter> SendFuture<A, Rc> {
-    pub fn new(msg: SentMessage<A>, tx: Sender<A, Rc>) -> Self {
-        SendFuture {
-            tx,
-            inner: SendFutureInner::New(msg),
-        }
-    }
-}
-
 impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
     fn set_priority(&mut self, priority: u32) {
-        match &mut self.inner {
-            SendFutureInner::New(SentMessage::ToOneActor(ref mut m)) => m.priority = priority,
+        match self {
+            SendFuture::New {
+                msg: SentMessage::ToOneActor(ref mut m),
+                ..
+            } => m.priority = priority,
             _ => panic!("setting priority after polling is unsupported"),
         }
     }
 }
 
-pub enum SendFutureInner<A> {
-    New(SentMessage<A>),
+#[must_use = "Futures do nothing unless polled"]
+pub enum SendFuture<A, Rc: TxRefCounter> {
+    New {
+        msg: SentMessage<A>,
+        tx: Sender<A, Rc>,
+    },
     WaitingToSend(Arc<Spinlock<WaitingSender<A>>>),
     Complete,
 }
@@ -219,20 +210,22 @@ pub enum SendFutureInner<A> {
 impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
     type Output = Result<(), Error>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        let this = self.get_mut();
+
         loop {
-            match mem::replace(&mut self.inner, SendFutureInner::Complete) {
-                SendFutureInner::New(msg) => match self.tx.try_send(msg) {
-                    Ok(()) => Poll::Ready(Ok(())),
-                    Err(TrySendFail::Disconnected) => Poll::Ready(Err(Error::Disconnected)),
+            match mem::replace(this, SendFuture::Complete) {
+                SendFuture::New { msg, tx } => match tx.try_send(msg) {
+                    Ok(()) => return Poll::Ready(Ok(())),
+                    Err(TrySendFail::Disconnected) => return Poll::Ready(Err(Error::Disconnected)),
                     Err(TrySendFail::Full(waiting)) => {
                         // Start waiting. The waiting sender should be immediately polled, in case a
                         // receive operation happened between `try_send` and here, in which case the
                         // WaitingSender would be fulfilled, but not properly woken.
-                        self.inner = SendFutureInner::WaitingToSend(waiting);
+                        *this = SendFuture::WaitingToSend(waiting);
                     }
                 },
-                SendFutureInner::WaitingToSend(waiting) => {
+                SendFuture::WaitingToSend(waiting) => {
                     {
                         let mut inner = waiting.lock();
 
@@ -245,10 +238,10 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
                         }
                     }
 
-                    self.inner = SendFutureInner::WaitingToSend(waiting);
+                    *this = SendFuture::WaitingToSend(waiting);
                     return Poll::Pending;
                 }
-                SendFutureInner::Complete => return Poll::Pending,
+                SendFuture::Complete => return Poll::Pending,
             }
         }
     }
@@ -301,7 +294,7 @@ impl<A> WaitingSender<A> {
 
 impl<A, Rc: TxRefCounter> FusedFuture for SendFuture<A, Rc> {
     fn is_terminated(&self) -> bool {
-        matches!(self.inner, SendFutureInner::Complete)
+        matches!(self, SendFuture::Complete)
     }
 }
 

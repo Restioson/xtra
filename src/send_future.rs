@@ -98,7 +98,10 @@ impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
     {
         let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
         let msg = PriorityMessageToOne::new(0, Box::new(envelope));
-        let sending = inbox::SendFuture::new(SentMessage::ToOneActor(msg), sender);
+        let sending = inbox::SendFuture::New {
+            msg: SentMessage::ToOneActor(msg),
+            tx: sender,
+        };
 
         Self {
             inner: SendFutureInner::Sending(ActorErasedSending {
@@ -122,7 +125,10 @@ impl<A, R, Rc: RefCounter> SendFuture<R, NameableSending<A, R, Rc>, ResolveToHan
     {
         let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
         let msg = PriorityMessageToOne::new(0, Box::new(envelope));
-        let send_fut = inbox::SendFuture::new(SentMessage::ToOneActor(msg), sender);
+        let send_fut = inbox::SendFuture::New {
+            msg: SentMessage::ToOneActor(msg),
+            tx: sender,
+        };
 
         Self {
             inner: SendFutureInner::Sending(NameableSending {

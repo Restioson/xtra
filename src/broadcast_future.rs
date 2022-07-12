@@ -89,10 +89,10 @@ where
             } => {
                 let envelope =
                     BroadcastEnvelopeConcrete::<A, M>::new(message, priority.unwrap_or(0));
-                this.inner = Inner::Sending(SendFuture::new(
-                    SentMessage::ToAllActors(Arc::new(envelope)),
-                    sender.clone(),
-                ));
+                this.inner = Inner::Sending(SendFuture::New {
+                    msg: SentMessage::ToAllActors(Arc::new(envelope)),
+                    tx: sender,
+                });
                 this.poll_unpin(cx)
             }
             Inner::Sending(mut send_fut) => match send_fut.poll_unpin(cx) {
