@@ -243,41 +243,43 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
     }
 }
 
-pub struct WaitingSender<A> {
-    waker: Option<Waker>,
-    message: WaitingSenderInner<A>,
-}
-
-enum WaitingSenderInner<A> {
-    New(SentMessage<A>),
+pub enum WaitingSender<A> {
+    Active {
+        waker: Option<Waker>,
+        message: SentMessage<A>,
+    },
     Delivered,
     Closed,
 }
 
 impl<A> WaitingSender<A> {
     pub fn new(message: SentMessage<A>) -> Arc<Spinlock<Self>> {
-        let sender = WaitingSender {
+        let sender = WaitingSender::Active {
             waker: None,
-            message: WaitingSenderInner::New(message),
+            message,
         };
         Arc::new(Spinlock::new(sender))
     }
 
     pub fn peek(&self) -> &SentMessage<A> {
-        match &self.message {
-            WaitingSenderInner::New(msg) => msg,
+        match self {
+            WaitingSender::Active { message, .. } => message,
             _ => panic!("WaitingSender should have message"),
         }
     }
 
     pub fn fulfill(&mut self) -> SentMessage<A> {
-        if let Some(waker) = self.waker.take() {
-            waker.wake();
-        }
+        match mem::replace(self, Self::Delivered) {
+            WaitingSender::Active { mut waker, message } => {
+                if let Some(waker) = waker.take() {
+                    waker.wake();
+                }
 
-        match mem::replace(&mut self.message, WaitingSenderInner::Delivered) {
-            WaitingSenderInner::New(msg) => msg,
-            _ => panic!("WaitingSender should have message"),
+                message
+            }
+            WaitingSender::Delivered | WaitingSender::Closed => {
+                panic!("WaitingSender is already fulfilled or closed")
+            }
         }
     }
 
@@ -285,11 +287,12 @@ impl<A> WaitingSender<A> {
     ///
     /// Should be called when the last [`Receiver`](crate::inbox::Receiver) goes away.
     pub fn set_closed(&mut self) {
-        if let Some(waker) = self.waker.take() {
+        if let WaitingSender::Active {
+            waker: Some(waker), ..
+        } = mem::replace(self, Self::Closed)
+        {
             waker.wake();
         }
-
-        self.message = WaitingSenderInner::Closed;
     }
 }
 
@@ -299,13 +302,13 @@ impl<A> Future for WaitingSender<A> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
 
-        match this.message {
-            WaitingSenderInner::New(_) => {
-                this.waker = Some(cx.waker().clone());
+        match this {
+            WaitingSender::Active { waker, .. } => {
+                *waker = Some(cx.waker().clone());
                 Poll::Pending
             }
-            WaitingSenderInner::Delivered => Poll::Ready(Ok(())),
-            WaitingSenderInner::Closed => Poll::Ready(Err(Error::Disconnected)),
+            WaitingSender::Delivered => Poll::Ready(Ok(())),
+            WaitingSender::Closed => Poll::Ready(Err(Error::Disconnected)),
         }
     }
 }
