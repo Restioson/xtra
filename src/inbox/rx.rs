@@ -6,7 +6,6 @@ use std::sync::{atomic, Arc};
 use std::task::{Context, Poll, Waker};
 
 use futures_core::FusedFuture;
-use futures_util::FutureExt;
 
 use crate::inbox::tx::TxWeak;
 use crate::inbox::*;
@@ -97,66 +96,68 @@ enum ReceiveFutureInner<A, Rc: RxRefCounter> {
 impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
     type Output = ActorMessage<A>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<ActorMessage<A>> {
-        match mem::replace(&mut self.0, ReceiveFutureInner::Complete) {
-            ReceiveFutureInner::New(rx) => {
-                match rx.inner.try_recv(rx.broadcast_mailbox.as_ref()) {
-                    Ok(message) => Poll::Ready(message),
-                    Err(waiting) => {
-                        // Start waiting. The waiting receiver should be immediately polled, in case a
-                        // send operation happened between `try_recv` and here, in which case the
-                        // WaitingReceiver would be fulfilled, but not properly woken.
-                        self.0 = ReceiveFutureInner::Waiting { rx, waiting };
-                        self.poll_unpin(cx)
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<ActorMessage<A>> {
+        let this = self.get_mut();
+
+        loop {
+            match mem::replace(&mut this.0, ReceiveFutureInner::Complete) {
+                ReceiveFutureInner::New(rx) => {
+                    match rx.inner.try_recv(rx.broadcast_mailbox.as_ref()) {
+                        Ok(message) => return Poll::Ready(message),
+                        Err(waiting) => {
+                            // Start waiting. The waiting receiver should be immediately polled, in case a
+                            // send operation happened between `try_recv` and here, in which case the
+                            // WaitingReceiver would be fulfilled, but not properly woken.
+                            this.0 = ReceiveFutureInner::Waiting { rx, waiting };
+                        }
                     }
                 }
-            }
-            ReceiveFutureInner::Waiting { rx, waiting } => {
-                {
-                    let mut inner = waiting.lock();
+                ReceiveFutureInner::Waiting { rx, waiting } => {
+                    {
+                        let mut inner = waiting.lock();
 
-                    match inner.wake_reason.take() {
-                        // Message has been delivered
-                        Some(reason) => {
-                            return Poll::Ready(match reason {
-                                WakeReason::MessageToOneActor(msg) => msg.into(),
-                                WakeReason::MessageToAllActors => {
-                                    // The broadcast message could have been taken by another
-                                    // receive future from the same receiver (or from another
-                                    // receiver sharing the same broadcast mailbox)
-                                    let pop = rx.broadcast_mailbox.lock().pop();
-                                    match pop {
-                                        Some(msg) => {
-                                            rx.inner
-                                                .chan
-                                                .lock()
-                                                .unwrap()
-                                                .try_advance_broadcast_tail(rx.inner.capacity);
-                                            ActorMessage::ToAllActors(msg.0)
-                                        }
-                                        None => {
-                                            // If it was taken, try receive again
-                                            self.0 = ReceiveFutureInner::New(rx);
-                                            drop(inner);
-                                            return self.poll_unpin(cx);
+                        match inner.wake_reason.take() {
+                            // Message has been delivered
+                            Some(reason) => {
+                                return Poll::Ready(match reason {
+                                    WakeReason::MessageToOneActor(msg) => msg.into(),
+                                    WakeReason::MessageToAllActors => {
+                                        // The broadcast message could have been taken by another
+                                        // receive future from the same receiver (or from another
+                                        // receiver sharing the same broadcast mailbox)
+                                        let pop = rx.broadcast_mailbox.lock().pop();
+                                        match pop {
+                                            Some(msg) => {
+                                                rx.inner
+                                                    .chan
+                                                    .lock()
+                                                    .unwrap()
+                                                    .try_advance_broadcast_tail(rx.inner.capacity);
+                                                ActorMessage::ToAllActors(msg.0)
+                                            }
+                                            None => {
+                                                // If it was taken, try receive again
+                                                this.0 = ReceiveFutureInner::New(rx);
+                                                continue;
+                                            }
                                         }
                                     }
-                                }
-                                WakeReason::Shutdown => ActorMessage::Shutdown,
-                                WakeReason::Cancelled => {
-                                    unreachable!("Waiting receive future cannot be interrupted")
-                                }
-                            });
+                                    WakeReason::Shutdown => ActorMessage::Shutdown,
+                                    WakeReason::Cancelled => {
+                                        unreachable!("Waiting receive future cannot be interrupted")
+                                    }
+                                });
+                            }
+                            // Message has not been delivered - continue waiting
+                            None => inner.waker = Some(cx.waker().clone()),
                         }
-                        // Message has not been delivered - continue waiting
-                        None => inner.waker = Some(cx.waker().clone()),
                     }
-                }
 
-                self.0 = ReceiveFutureInner::Waiting { rx, waiting };
-                Poll::Pending
+                    this.0 = ReceiveFutureInner::Waiting { rx, waiting };
+                    return Poll::Pending;
+                }
+                ReceiveFutureInner::Complete => return Poll::Pending,
             }
-            ReceiveFutureInner::Complete => Poll::Pending,
         }
     }
 }
