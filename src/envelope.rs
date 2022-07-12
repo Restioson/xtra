@@ -109,6 +109,8 @@ impl Instrumentation {
     {
         #[cfg(feature = "instrumentation")]
         {
+            assert!(!self.parent.0.is_none(), "expected start_span to be called");
+
             let executing = tracing::debug_span!(
                 parent: &self.parent.0,
                 "xtra_message_handler",
