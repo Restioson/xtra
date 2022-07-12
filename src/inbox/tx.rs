@@ -188,7 +188,7 @@ impl<A, Rc: TxRefCounter> Debug for Sender<A, Rc> {
 
 #[must_use = "Futures do nothing unless polled"]
 pub struct SendFuture<A, Rc: TxRefCounter> {
-    pub tx: Sender<A, Rc>,
+    tx: Sender<A, Rc>,
     inner: SendFutureInner<A>,
 }
 
