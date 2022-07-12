@@ -57,6 +57,47 @@ pub struct Chan<A> {
 }
 
 impl<A> Chan<A> {
+    fn try_send(&self, message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
+        let mut inner = self.chan.lock().unwrap();
+
+        match message {
+            SentMessage::ToAllActors(m) if !self.is_full(inner.broadcast_tail) => {
+                inner.send_broadcast(MessageToAllActors(m));
+                Ok(())
+            }
+            SentMessage::ToAllActors(m) => {
+                // on_shutdown is only notified with inner locked, and it's locked here, so no race
+                let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
+                inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+                Err(TrySendFail::Full(waiting))
+            }
+            msg => {
+                let res = inner.try_fulfill_receiver(msg.into());
+                match res {
+                    Ok(()) => Ok(()),
+                    Err(WakeReason::MessageToOneActor(m))
+                        if m.priority == 0 && !self.is_full(inner.ordered_queue.len()) =>
+                    {
+                        inner.ordered_queue.push_back(m.val);
+                        Ok(())
+                    }
+                    Err(WakeReason::MessageToOneActor(m))
+                        if m.priority != 0 && !self.is_full(inner.priority_queue.len()) =>
+                    {
+                        inner.priority_queue.push(m);
+                        Ok(())
+                    }
+                    Err(WakeReason::MessageToOneActor(m)) => {
+                        let waiting = WaitingSender::new(m.into());
+                        inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+                        Err(TrySendFail::Full(waiting))
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+
     fn is_full(&self, len: usize) -> bool {
         self.capacity.map_or(false, |cap| len >= cap)
     }
