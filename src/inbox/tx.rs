@@ -27,6 +27,20 @@ impl<A> Sender<A, TxStrong> {
 
         Sender { inner, rc }
     }
+
+    pub fn try_new_strong(inner: Arc<Chan<A>>) -> Option<Self> {
+        let rc = TxStrong::try_new(&inner)?;
+
+        Some(Self { inner, rc })
+    }
+}
+
+impl<A> Sender<A, TxWeak> {
+    pub fn new_weak(inner: Arc<Chan<A>>) -> Self {
+        let rc = TxWeak::new(&inner);
+
+        Sender { inner, rc }
+    }
 }
 
 impl<Rc: TxRefCounter, A> Sender<A, Rc> {
