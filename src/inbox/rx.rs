@@ -1,10 +1,9 @@
-use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::future::Future;
+use std::mem;
 use std::pin::Pin;
 use std::sync::{atomic, Arc};
 use std::task::{Context, Poll, Waker};
-use std::{cmp, mem};
 
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
@@ -48,50 +47,6 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
         };
 
         ReceiveFuture::new(receiver_with_same_broadcast_mailbox)
-    }
-
-    fn try_recv(&self) -> Result<ActorMessage<A>, Arc<Spinlock<WaitingReceiver<A>>>> {
-        // Peek priorities in order to figure out which channel should be taken from
-        let mut broadcast = self.broadcast_mailbox.lock();
-        let broadcast_priority = broadcast.peek().map(|it| it.priority());
-
-        let mut inner = self.inner.chan.lock().unwrap();
-
-        let shared_priority: Option<Priority> = inner.priority_queue.peek().map(|it| it.priority());
-
-        // Try take from ordered channel
-        if cmp::max(shared_priority, broadcast_priority) <= Some(Priority::Valued(0)) {
-            if let Some(msg) = inner.pop_ordered(self.inner.capacity) {
-                return Ok(msg.into());
-            }
-        }
-
-        // Choose which priority channel to take from
-        match shared_priority.cmp(&broadcast_priority) {
-            // Shared priority is greater or equal (and it is not empty)
-            Ordering::Greater | Ordering::Equal if shared_priority.is_some() => {
-                Ok(inner.pop_priority(self.inner.capacity).unwrap().into())
-            }
-            // Shared priority is less - take from broadcast
-            Ordering::Less => {
-                let msg = broadcast.pop().unwrap().0;
-                drop(broadcast);
-                inner.try_advance_broadcast_tail(self.inner.capacity);
-
-                Ok(msg.into())
-            }
-            // Equal, but both are empty, so wait or exit if shutdown
-            _ => {
-                // on_shutdown is only notified with inner locked, and it's locked here, so no race
-                if self.inner.sender_count.load(atomic::Ordering::SeqCst) == 0 {
-                    return Ok(ActorMessage::Shutdown);
-                }
-
-                let waiting = Arc::new(Spinlock::new(WaitingReceiver::default()));
-                inner.waiting_receivers.push_back(Arc::downgrade(&waiting));
-                Err(waiting)
-            }
-        }
     }
 }
 
@@ -144,16 +99,18 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<ActorMessage<A>> {
         match mem::replace(&mut self.0, ReceiveFutureInner::Complete) {
-            ReceiveFutureInner::New(rx) => match rx.try_recv() {
-                Ok(message) => Poll::Ready(message),
-                Err(waiting) => {
-                    // Start waiting. The waiting receiver should be immediately polled, in case a
-                    // send operation happened between `try_recv` and here, in which case the
-                    // WaitingReceiver would be fulfilled, but not properly woken.
-                    self.0 = ReceiveFutureInner::Waiting { rx, waiting };
-                    self.poll_unpin(cx)
+            ReceiveFutureInner::New(rx) => {
+                match rx.inner.try_recv(rx.broadcast_mailbox.as_ref()) {
+                    Ok(message) => Poll::Ready(message),
+                    Err(waiting) => {
+                        // Start waiting. The waiting receiver should be immediately polled, in case a
+                        // send operation happened between `try_recv` and here, in which case the
+                        // WaitingReceiver would be fulfilled, but not properly woken.
+                        self.0 = ReceiveFutureInner::Waiting { rx, waiting };
+                        self.poll_unpin(cx)
+                    }
                 }
-            },
+            }
             ReceiveFutureInner::Waiting { rx, waiting } => {
                 {
                     let mut inner = waiting.lock();

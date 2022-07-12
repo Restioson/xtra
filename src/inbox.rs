@@ -102,6 +102,54 @@ impl<A> Chan<A> {
         }
     }
 
+    fn try_recv(
+        &self,
+        broadcast_mailbox: &BroadcastQueue<A>,
+    ) -> Result<ActorMessage<A>, Arc<Spinlock<WaitingReceiver<A>>>> {
+        let mut broadcast = broadcast_mailbox.lock();
+
+        // Peek priorities in order to figure out which channel should be taken from
+        let broadcast_priority = broadcast.peek().map(|it| it.priority());
+
+        let mut inner = self.chan.lock().unwrap();
+
+        let shared_priority: Option<Priority> = inner.priority_queue.peek().map(|it| it.priority());
+
+        // Try take from ordered channel
+        if cmp::max(shared_priority, broadcast_priority) <= Some(Priority::Valued(0)) {
+            if let Some(msg) = inner.pop_ordered(self.capacity) {
+                return Ok(msg.into());
+            }
+        }
+
+        // Choose which priority channel to take from
+        match shared_priority.cmp(&broadcast_priority) {
+            // Shared priority is greater or equal (and it is not empty)
+            Ordering::Greater | Ordering::Equal if shared_priority.is_some() => {
+                Ok(inner.pop_priority(self.capacity).unwrap().into())
+            }
+            // Shared priority is less - take from broadcast
+            Ordering::Less => {
+                let msg = broadcast.pop().unwrap().0;
+                drop(broadcast);
+                inner.try_advance_broadcast_tail(self.capacity);
+
+                Ok(msg.into())
+            }
+            // Equal, but both are empty, so wait or exit if shutdown
+            _ => {
+                // on_shutdown is only notified with inner locked, and it's locked here, so no race
+                if self.sender_count.load(atomic::Ordering::SeqCst) == 0 {
+                    return Ok(ActorMessage::Shutdown);
+                }
+
+                let waiting = Arc::new(Spinlock::new(WaitingReceiver::default()));
+                inner.waiting_receivers.push_back(Arc::downgrade(&waiting));
+                Err(waiting)
+            }
+        }
+    }
+
     fn is_connected(&self) -> bool {
         self.receiver_count.load(atomic::Ordering::SeqCst) > 0
             && self.sender_count.load(atomic::Ordering::SeqCst) > 0
