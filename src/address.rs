@@ -12,8 +12,6 @@ use event_listener::EventListener;
 use futures_sink::Sink;
 use futures_util::FutureExt;
 
-use crate::envelope::ReturningEnvelope;
-use crate::inbox::{tx, PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
 use crate::{inbox, BroadcastFuture, Error, Handler, NameableSending, SendFuture};
@@ -171,10 +169,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         M: Send + 'static,
         A: Handler<M>,
     {
-        let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-        let msg = SentMessage::ToOneActor(PriorityMessageToOne::new(0, Box::new(envelope)));
-        let tx = tx::SendFuture::new(msg, self.0.clone());
-        SendFuture::sending_named(tx, rx)
+        SendFuture::sending_named(message, self.0.clone())
     }
 
     /// Send a message to all actors on this address.

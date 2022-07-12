@@ -7,10 +7,13 @@ use std::task::{Context, Poll};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
+use crate::envelope::ReturningEnvelope;
+use crate::inbox::tx::TxRefCounter;
+use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Strong};
 use crate::send_future::private::SetPriority;
-use crate::{inbox, Error};
+use crate::{inbox, Error, Handler};
 
 /// A [`Future`] that represents the state of sending a message to an actor.
 ///
@@ -86,10 +89,17 @@ where
 }
 
 impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
-    pub(crate) fn sending_erased<F>(sending: F, rx: catty::Receiver<R>) -> Self
+    pub(crate) fn sending_erased<M, A, Rc>(message: M, sender: inbox::Sender<A, Rc>) -> Self
     where
-        F: SendingWithSetPriority<Result<(), Error>>,
+        Rc: TxRefCounter,
+        A: Handler<M, Return = R>,
+        M: Send + 'static,
+        R: Send + 'static,
     {
+        let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
+        let msg = PriorityMessageToOne::new(0, Box::new(envelope));
+        let sending = inbox::SendFuture::new(SentMessage::ToOneActor(msg), sender);
+
         Self {
             inner: SendFutureInner::Sending(ActorErasedSending {
                 future: Box::new(sending),
@@ -101,10 +111,17 @@ impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
 }
 
 impl<A, R, Rc: RefCounter> SendFuture<R, NameableSending<A, R, Rc>, ResolveToHandlerReturn> {
-    pub(crate) fn sending_named(
-        send_fut: inbox::SendFuture<A, Rc>,
-        receiver: catty::Receiver<R>,
-    ) -> Self {
+    pub(crate) fn sending_named<M>(message: M, sender: inbox::Sender<A, Rc>) -> Self
+    where
+        A: Handler<M, Return = R>,
+        M: Send + 'static,
+        R: Send + 'static,
+    {
+        let (envelope, receiver) =
+            ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
+        let msg = SentMessage::ToOneActor(PriorityMessageToOne::new(0, Box::new(envelope)));
+        let send_fut = inbox::SendFuture::new(msg, sender);
+
         Self {
             inner: SendFutureInner::Sending(NameableSending {
                 inner: send_fut,
