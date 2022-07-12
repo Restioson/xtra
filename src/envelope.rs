@@ -80,7 +80,6 @@ impl Instrumentation {
         #[cfg(feature = "instrumentation")]
         {
             let parent = Span(tracing::debug_span!(
-                parent: tracing::Span::current(),
                 "xtra_actor_request",
                 actor = std::any::type_name::<A>(),
                 %message,
