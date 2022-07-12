@@ -44,10 +44,6 @@ impl<A> Sender<A, TxWeak> {
 }
 
 impl<Rc: TxRefCounter, A> Sender<A, Rc> {
-    fn try_send(&self, message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
-        self.inner.try_send(message)
-    }
-
     pub fn stop_all_receivers(&self)
     where
         A: Actor,
@@ -172,7 +168,7 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
 
         loop {
             match mem::replace(this, SendFuture::Complete) {
-                SendFuture::New { msg, tx } => match tx.try_send(msg) {
+                SendFuture::New { msg, tx } => match tx.inner.try_send(msg) {
                     Ok(()) => return Poll::Ready(Ok(())),
                     Err(TrySendFail::Disconnected) => return Poll::Ready(Err(Error::Disconnected)),
                     Err(TrySendFail::Full(waiting)) => {
