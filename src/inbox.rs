@@ -46,14 +46,7 @@ pub struct Chan<A> {
 impl<A> Chan<A> {
     fn new(capacity: Option<usize>) -> Self {
         Self {
-            chan: Mutex::new(ChanInner {
-                ordered_queue: VecDeque::new(),
-                waiting_senders: VecDeque::new(),
-                waiting_receivers: VecDeque::new(),
-                priority_queue: BinaryHeap::new(),
-                broadcast_queues: Vec::new(),
-                broadcast_tail: 0,
-            }),
+            chan: Mutex::new(ChanInner::default()),
             capacity,
             on_shutdown: Event::new(),
             sender_count: AtomicUsize::new(0),
@@ -259,6 +252,20 @@ struct ChanInner<A> {
     priority_queue: BinaryHeap<PriorityMessageToOne<A>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
     broadcast_tail: usize,
+}
+
+// Manual impl to avoid `A: Default` bound.
+impl<A> Default for ChanInner<A> {
+    fn default() -> Self {
+        Self {
+            ordered_queue: VecDeque::default(),
+            waiting_senders: VecDeque::default(),
+            waiting_receivers: VecDeque::default(),
+            priority_queue: BinaryHeap::default(),
+            broadcast_queues: Vec::default(),
+            broadcast_tail: 0,
+        }
+    }
 }
 
 impl<A> ChanInner<A> {
