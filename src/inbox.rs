@@ -27,20 +27,7 @@ type BroadcastQueue<A> = Spinlock<BinaryHeap<MessageToAllActors<A>>>;
 /// severally to each send type - priority, ordered, and broadcast.
 pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
     let broadcast_mailbox = Arc::new(BroadcastQueue::default());
-    let inner = Arc::new(Chan {
-        chan: Mutex::new(ChanInner {
-            ordered_queue: VecDeque::new(),
-            waiting_senders: VecDeque::new(),
-            waiting_receivers: VecDeque::new(),
-            priority_queue: BinaryHeap::new(),
-            broadcast_queues: vec![Arc::downgrade(&broadcast_mailbox)],
-            broadcast_tail: 0,
-        }),
-        capacity,
-        on_shutdown: Event::new(),
-        sender_count: AtomicUsize::new(0),
-        receiver_count: AtomicUsize::new(0),
-    });
+    let inner = Arc::new(Chan::new(capacity, &broadcast_mailbox));
 
     let tx = Sender::new(inner.clone());
     let rx = Receiver::new(inner, broadcast_mailbox);
@@ -58,6 +45,23 @@ pub struct Chan<A> {
 }
 
 impl<A> Chan<A> {
+    fn new(capacity: Option<usize>, broadcast_mailbox: &Arc<BroadcastQueue<A>>) -> Self {
+        Self {
+            chan: Mutex::new(ChanInner {
+                ordered_queue: VecDeque::new(),
+                waiting_senders: VecDeque::new(),
+                waiting_receivers: VecDeque::new(),
+                priority_queue: BinaryHeap::new(),
+                broadcast_queues: vec![Arc::downgrade(broadcast_mailbox)],
+                broadcast_tail: 0,
+            }),
+            capacity,
+            on_shutdown: Event::new(),
+            sender_count: AtomicUsize::new(0),
+            receiver_count: AtomicUsize::new(0),
+        }
+    }
+
     fn try_send(&self, message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
         if !self.is_connected() {
             return Err(TrySendFail::Disconnected);
