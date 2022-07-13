@@ -65,6 +65,17 @@ impl Span {
 
         span
     }
+
+
+    fn is_none(&self) -> bool {
+        #[cfg(feature = "instrumentation")]
+        let none = self.0.is_none();
+
+        #[cfg(not(feature = "instrumentation"))]
+        let none = true;
+
+        none
+    }
 }
 
 impl Instrumentation {
@@ -158,7 +169,7 @@ where
     type Actor = A;
 
     fn start_span(&mut self, msg_name: &'static str) {
-        assert!(self.instrumentation.parent.0.is_none());
+        assert!(self.instrumentation.parent.is_none());
         self.instrumentation = Instrumentation::started::<A>(msg_name);
     }
 
@@ -229,7 +240,7 @@ where
     type Actor = A;
 
     fn start_span(&mut self, msg_name: &'static str) {
-        assert!(self.instrumentation.parent.0.is_none());
+        assert!(self.instrumentation.parent.is_none());
         self.instrumentation = Instrumentation::started::<A>(msg_name);
     }
 
