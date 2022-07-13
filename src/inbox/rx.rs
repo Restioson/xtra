@@ -49,18 +49,7 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
     }
 
     fn pop_broadcast_message(&self) -> Option<MessageToAllActors<A>> {
-        let message = self.broadcast_mailbox.lock().pop();
-
-        // Advance the broadcast tail if we successfully took a message.
-        if message.is_some() {
-            self.inner
-                .chan
-                .lock()
-                .unwrap()
-                .try_advance_broadcast_tail(self.inner.capacity);
-        }
-
-        message
+        self.inner.pop_broadcast_message(&self.broadcast_mailbox)
     }
 }
 

@@ -243,6 +243,23 @@ impl<A> Chan<A> {
             None
         }
     }
+
+    fn pop_broadcast_message(
+        &self,
+        broadcast_mailbox: &BroadcastQueue<A>,
+    ) -> Option<MessageToAllActors<A>> {
+        let message = broadcast_mailbox.lock().pop();
+
+        // Advance the broadcast tail if we successfully took a message.
+        if message.is_some() {
+            self.chan
+                .lock()
+                .unwrap()
+                .try_advance_broadcast_tail(self.capacity);
+        }
+
+        message
+    }
 }
 
 struct ChanInner<A> {
