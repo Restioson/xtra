@@ -46,8 +46,8 @@ pub struct Chan<A> {
 impl<A> Chan<A> {
     fn new(capacity: Option<usize>) -> Self {
         Self {
-            chan: Mutex::new(ChanInner::default()),
             capacity,
+            chan: Mutex::new(ChanInner::default()),
             on_shutdown: Event::new(),
             sender_count: AtomicUsize::new(0),
             receiver_count: AtomicUsize::new(0),
