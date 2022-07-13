@@ -47,10 +47,6 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
 
         ReceiveFuture::new(receiver_with_same_broadcast_mailbox)
     }
-
-    fn pop_broadcast_message(&self) -> Option<MessageToAllActors<A>> {
-        self.inner.pop_broadcast_message(&self.broadcast_mailbox)
-    }
 }
 
 impl<A, Rc: RxRefCounter> Clone for Receiver<A, Rc> {
@@ -118,7 +114,7 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                             unreachable!("Waiting receive future cannot be interrupted")
                         }
                         Poll::Ready(WakeReason::MessageToAllActors) => {
-                            match rx.pop_broadcast_message() {
+                            match rx.inner.pop_broadcast_message(&rx.broadcast_mailbox) {
                                 Some(msg) => ActorMessage::ToAllActors(msg.0),
                                 None => {
                                     // We got woken but failed to pop a message, try receiving again.
