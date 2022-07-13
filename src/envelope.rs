@@ -66,7 +66,6 @@ impl Span {
         span
     }
 
-
     fn is_none(&self) -> bool {
         #[cfg(feature = "instrumentation")]
         let none = self.0.is_none();
