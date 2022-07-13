@@ -26,7 +26,7 @@ type BroadcastQueue<A> = Spinlock<BinaryHeap<MessageToAllActors<A>>>;
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
 pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
-    let broadcast_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
+    let broadcast_mailbox = Arc::new(BroadcastQueue::default());
     let inner = Arc::new(Chan {
         chan: Mutex::new(ChanInner {
             ordered_queue: VecDeque::new(),
