@@ -1,4 +1,3 @@
-use std::collections::BinaryHeap;
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
@@ -67,17 +66,9 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
 
 impl<A, Rc: RxRefCounter> Clone for Receiver<A, Rc> {
     fn clone(&self) -> Self {
-        let new_mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
-        self.inner
-            .chan
-            .lock()
-            .unwrap()
-            .broadcast_queues
-            .push(Arc::downgrade(&new_mailbox));
-
         Receiver {
             inner: self.inner.clone(),
-            broadcast_mailbox: new_mailbox,
+            broadcast_mailbox: self.inner.new_broadcast_mailbox(),
             rc: self.rc.increment(&self.inner),
         }
     }

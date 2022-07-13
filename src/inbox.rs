@@ -62,6 +62,17 @@ impl<A> Chan<A> {
         }
     }
 
+    fn new_broadcast_mailbox(&self) -> Arc<BroadcastQueue<A>> {
+        let mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
+        self.chan
+            .lock()
+            .unwrap()
+            .broadcast_queues
+            .push(Arc::downgrade(&mailbox));
+
+        mailbox
+    }
+
     fn try_send(&self, message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
         if !self.is_connected() {
             return Err(TrySendFail::Disconnected);
