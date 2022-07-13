@@ -26,11 +26,10 @@ type BroadcastQueue<A> = Spinlock<BinaryHeap<MessageToAllActors<A>>>;
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
 pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
-    let broadcast_mailbox = Arc::new(BroadcastQueue::default());
-    let inner = Arc::new(Chan::new(capacity, &broadcast_mailbox));
+    let inner = Arc::new(Chan::new(capacity));
 
     let tx = Sender::new(inner.clone());
-    let rx = Receiver::new(inner, broadcast_mailbox);
+    let rx = Receiver::new(inner);
 
     (tx, rx)
 }
@@ -45,14 +44,14 @@ pub struct Chan<A> {
 }
 
 impl<A> Chan<A> {
-    fn new(capacity: Option<usize>, broadcast_mailbox: &Arc<BroadcastQueue<A>>) -> Self {
+    fn new(capacity: Option<usize>) -> Self {
         Self {
             chan: Mutex::new(ChanInner {
                 ordered_queue: VecDeque::new(),
                 waiting_senders: VecDeque::new(),
                 waiting_receivers: VecDeque::new(),
                 priority_queue: BinaryHeap::new(),
-                broadcast_queues: vec![Arc::downgrade(broadcast_mailbox)],
+                broadcast_queues: Vec::new(),
                 broadcast_tail: 0,
             }),
             capacity,
@@ -62,6 +61,7 @@ impl<A> Chan<A> {
         }
     }
 
+    /// Creates a new broadcast mailbox on this channel.
     fn new_broadcast_mailbox(&self) -> Arc<BroadcastQueue<A>> {
         let mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
         self.chan

@@ -17,13 +17,13 @@ pub struct Receiver<A, Rc: RxRefCounter> {
 }
 
 impl<A> Receiver<A, RxStrong> {
-    pub(super) fn new(inner: Arc<Chan<A>>, broadcast_mailbox: Arc<BroadcastQueue<A>>) -> Self {
+    pub(super) fn new(inner: Arc<Chan<A>>) -> Self {
         let rc = RxStrong(());
         rc.increment(&inner);
 
         Receiver {
+            broadcast_mailbox: inner.new_broadcast_mailbox(),
             inner,
-            broadcast_mailbox,
             rc,
         }
     }
