@@ -14,9 +14,10 @@ use event_listener::{Event, EventListener};
 pub use rx::Receiver;
 pub use tx::{SendFuture, Sender};
 
-use crate::envelope::{BroadcastEnvelope, MessageEnvelope};
+use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
 use crate::inbox::rx::{RxStrong, WaitingReceiver};
 use crate::inbox::tx::{TxStrong, WaitingSender};
+use crate::Actor;
 
 type Spinlock<T> = spin::Mutex<T>;
 pub type MessageToOneActor<A> = Box<dyn MessageEnvelope<Actor = A>>;
@@ -182,6 +183,16 @@ impl<A> Chan<A> {
         for rx in waiting_rx.into_iter().flat_map(|w| w.upgrade()) {
             let _ = rx.lock().fulfill(WakeReason::Shutdown);
         }
+    }
+
+    fn shutdown_all_receivers(&self)
+    where
+        A: Actor,
+    {
+        self.chan
+            .lock()
+            .unwrap()
+            .send_broadcast(MessageToAllActors(Arc::new(Shutdown::new())));
     }
 
     /// Shutdown all [`WaitingSender`](crate::inbox::tx::WaitingSender)s in this channel.

@@ -10,7 +10,6 @@ use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use super::*;
-use crate::envelope::Shutdown;
 use crate::inbox::tx::private::RefCounterInner;
 use crate::send_future::private::SetPriority;
 use crate::{Actor, Error};
@@ -48,11 +47,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     where
         A: Actor,
     {
-        self.inner
-            .chan
-            .lock()
-            .unwrap()
-            .send_broadcast(MessageToAllActors(Arc::new(Shutdown::new())));
+        self.inner.shutdown_all_receivers()
     }
 
     pub fn downgrade(&self) -> Sender<A, TxWeak> {
