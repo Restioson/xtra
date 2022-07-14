@@ -87,6 +87,13 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     pub fn disconnect_notice(&self) -> Option<EventListener> {
         self.inner.disconnect_listener()
     }
+
+    /// Send a message through with [`Sender`].
+    ///
+    /// This consumes the provided [`Sender`] but it can be cloned before it one wishes to reuse it.
+    pub fn send(self, msg: SentMessage<A>) -> SendFuture<A, Rc> {
+        SendFuture::New { msg, tx: self }
+    }
 }
 
 impl<A, Rc: TxRefCounter> Clone for Sender<A, Rc> {
