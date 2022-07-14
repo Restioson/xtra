@@ -68,15 +68,15 @@ impl<A, Rc: RxRefCounter> Drop for Receiver<A, Rc> {
 }
 
 #[must_use = "Futures do nothing unless polled"]
-pub struct ReceiveFuture<A, Rc: RxRefCounter>(ReceiveFutureInner<A, Rc>);
+pub struct ReceiveFuture<A, Rc: RxRefCounter>(ReceiveState<A, Rc>);
 
 impl<A, Rc: RxRefCounter> ReceiveFuture<A, Rc> {
     fn new(rx: Receiver<A, Rc>) -> Self {
-        ReceiveFuture(ReceiveFutureInner::New(rx))
+        ReceiveFuture(ReceiveState::New(rx))
     }
 }
 
-enum ReceiveFutureInner<A, Rc: RxRefCounter> {
+enum ReceiveState<A, Rc: RxRefCounter> {
     New(Receiver<A, Rc>),
     Waiting {
         rx: Receiver<A, Rc>,
@@ -92,19 +92,19 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
         let this = self.get_mut();
 
         loop {
-            match mem::replace(&mut this.0, ReceiveFutureInner::Complete) {
-                ReceiveFutureInner::New(rx) => {
+            match mem::replace(&mut this.0, ReceiveState::Complete) {
+                ReceiveState::New(rx) => {
                     match rx.inner.try_recv(rx.broadcast_mailbox.as_ref()) {
                         Ok(message) => return Poll::Ready(message),
                         Err(waiting) => {
                             // Start waiting. The waiting receiver should be immediately polled, in case a
                             // send operation happened between `try_recv` and here, in which case the
                             // WaitingReceiver would be fulfilled, but not properly woken.
-                            this.0 = ReceiveFutureInner::Waiting { rx, waiting };
+                            this.0 = ReceiveState::Waiting { rx, waiting };
                         }
                     }
                 }
-                ReceiveFutureInner::Waiting { rx, waiting } => {
+                ReceiveState::Waiting { rx, waiting } => {
                     let poll = { waiting.lock().poll_unpin(cx) };
 
                     let actor_message = match poll {
@@ -118,20 +118,20 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                                 Some(msg) => ActorMessage::ToAllActors(msg.0),
                                 None => {
                                     // We got woken but failed to pop a message, try receiving again.
-                                    this.0 = ReceiveFutureInner::New(rx);
+                                    this.0 = ReceiveState::New(rx);
                                     continue;
                                 }
                             }
                         }
                         Poll::Pending => {
-                            this.0 = ReceiveFutureInner::Waiting { rx, waiting };
+                            this.0 = ReceiveState::Waiting { rx, waiting };
                             return Poll::Pending;
                         }
                     };
 
                     return Poll::Ready(actor_message);
                 }
-                ReceiveFutureInner::Complete => return Poll::Pending,
+                ReceiveState::Complete => return Poll::Pending,
             }
         }
     }
@@ -141,8 +141,8 @@ impl<A, Rc: RxRefCounter> ReceiveFuture<A, Rc> {
     /// See docs on [`crate::context::ReceiveFuture::cancel`] for more
     #[must_use = "If dropped, messages could be lost"]
     pub fn cancel(&mut self) -> Option<ActorMessage<A>> {
-        if let ReceiveFutureInner::Waiting { waiting, .. } =
-            mem::replace(&mut self.0, ReceiveFutureInner::Complete)
+        if let ReceiveState::Waiting { waiting, .. } =
+            mem::replace(&mut self.0, ReceiveState::Complete)
         {
             if let Some(WakeReason::MessageToOneActor(msg)) = waiting.lock().cancel() {
                 return Some(msg.into());
@@ -155,8 +155,8 @@ impl<A, Rc: RxRefCounter> ReceiveFuture<A, Rc> {
 
 impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
     fn drop(&mut self) {
-        if let ReceiveFutureInner::Waiting { waiting, rx } =
-            mem::replace(&mut self.0, ReceiveFutureInner::Complete)
+        if let ReceiveState::Waiting { waiting, rx } =
+            mem::replace(&mut self.0, ReceiveState::Complete)
         {
             if let Some(WakeReason::MessageToOneActor(msg)) = waiting.lock().cancel() {
                 rx.inner.requeue_message(msg);
@@ -167,7 +167,7 @@ impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
 
 impl<A, Rc: RxRefCounter> FusedFuture for ReceiveFuture<A, Rc> {
     fn is_terminated(&self) -> bool {
-        matches!(self.0, ReceiveFutureInner::Complete)
+        matches!(self.0, ReceiveState::Complete)
     }
 }
 
