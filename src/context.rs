@@ -143,8 +143,14 @@ impl<A: Actor> Context<A> {
     /// Joins on a future by handling all incoming messages whilst polling it. The future will
     /// always be polled to completion, even if the actor is stopped. If the actor is stopped,
     /// handling of messages will cease, and only the future will be polled. It is somewhat
-    /// analagous to [`futures::join`](futures_util::future::join), but it will not wait for the incoming stream of messages
-    /// from addresses to end before returning - it will return as soon as the provided future does.
+    /// analagous to [`futures::join`](futures_util::future::join), but it will not wait for the
+    /// incoming stream of messages from addresses to end before returning - it will return as soon
+    /// as the provided future does. It will never cancel the handling of a message, even if the
+    /// provided future completes first.
+    ///
+    /// This function explicitly breaks the invariant that an actor only handles one message at a
+    /// time, as it lets other messages be handled inside of a handler. It is recommended to make
+    /// sure that all internal state is finalised and consistent before calling this method.
     ///
     /// ## Example
     ///
@@ -205,8 +211,14 @@ impl<A: Actor> Context<A> {
     /// Handle any incoming messages for the actor while running a given future. This is similar to
     /// [`Context::join`], but will exit if the actor is stopped, returning the future. Returns
     /// `Ok` with the result of the future if it was successfully completed, or `Err` with the
-    /// future if the actor was stopped before it could complete. It is analagous to
-    /// [`futures::select`](futures_util::future::select).
+    /// future if the actor was stopped before it could complete. In this way it is analagous to
+    /// [`futures::select`](futures_util::future::select). However, it will never cancel the current
+    /// message it is handling whilst waiting for the provided future, even if the provided future
+    /// completes first.
+    ///
+    /// This function explicitly breaks the invariant that an actor only handles one message at a
+    /// time, as it lets other messages be handled inside of a handler. It is recommended to make
+    /// sure that all internal state is finalised and consistent before calling this method.
     ///
     /// ## Example
     ///
