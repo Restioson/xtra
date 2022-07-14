@@ -2,7 +2,6 @@
 
 ## 0.6.0
 
-- Sealed `RefCounter` and `MessageChannel` traits
 - `Message` no longer exists - `Return` is now specified on the `Handler` trait itself.
 - `Context::notify_interval` and `Context::notify_after` are now subject to back-pressure, in case the address mailbox
   is full. These aren't API breaking but a semantic changes.
