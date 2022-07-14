@@ -158,29 +158,8 @@ impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
         if let ReceiveFutureInner::Waiting { waiting, rx } =
             mem::replace(&mut self.0, ReceiveFutureInner::Complete)
         {
-            // This receive future was woken with a message - send in back into the channel.
-            // Ordering is compromised somewhat when concurrent receives are involved, and the cap
-            // may overflow (probably not enough to cause backpressure issues), but this is better
-            // than dropping a message.
             if let Some(WakeReason::MessageToOneActor(msg)) = waiting.lock().cancel() {
-                let mut inner = match rx.inner.chan.lock() {
-                    Ok(lock) => lock,
-                    Err(_) => return, // Poisoned - ignore
-                };
-
-                let res = inner.try_fulfill_receiver(WakeReason::MessageToOneActor(msg));
-                match res {
-                    Ok(()) => (),
-                    Err(WakeReason::MessageToOneActor(msg)) => {
-                        if msg.priority == 0 {
-                            // Preserve ordering as much as possible by pushing to the front
-                            inner.ordered_queue.push_front(msg.val)
-                        } else {
-                            inner.priority_queue.push(msg);
-                        }
-                    }
-                    Err(_) => unreachable!("Got wrong wake reason back from try_fulfill_receiver"),
-                }
+                rx.inner.requeue_message(msg);
             }
         }
     }

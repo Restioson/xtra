@@ -260,6 +260,34 @@ impl<A> Chan<A> {
 
         message
     }
+
+    /// Re-queue the given message.
+    ///
+    /// Normally, messages are delivered from the inbox straight to the actor. It can however happen
+    /// that this process gets cancelled. In that case, this function can be used to re-queue the
+    /// given message so it does not get lost.
+    ///
+    /// Note that the ordering of messages in the queues may be slightly off with this function.
+    fn requeue_message(&self, msg: PriorityMessageToOne<A>) {
+        let mut inner = match self.chan.lock() {
+            Ok(lock) => lock,
+            Err(_) => return, // If we can't lock the inner channel, there is nothing we can do.
+        };
+
+        let res = inner.try_fulfill_receiver(WakeReason::MessageToOneActor(msg));
+        match res {
+            Ok(()) => (),
+            Err(WakeReason::MessageToOneActor(msg)) => {
+                if msg.priority == 0 {
+                    // Preserve ordering as much as possible by pushing to the front
+                    inner.ordered_queue.push_front(msg.val)
+                } else {
+                    inner.priority_queue.push(msg);
+                }
+            }
+            Err(_) => unreachable!("Got wrong wake reason back from try_fulfill_receiver"),
+        }
+    }
 }
 
 struct ChanInner<A> {
