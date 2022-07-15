@@ -337,39 +337,6 @@ impl<A: Actor> Context<A> {
         Ok(fut)
     }
 
-    /// Notify the actor with a message after a certain duration has elapsed. This does not take
-    /// priority over other messages.
-    ///
-    /// This function is subject to back-pressure by the actor's mailbox. If the mailbox is full once
-    /// the timer expires, the future will continue to block until the message is delivered.
-    #[cfg(feature = "timing")]
-    pub fn notify_after<M>(
-        &mut self,
-        duration: Duration,
-        notification: M,
-    ) -> Result<impl Future<Output = ()>, Error>
-    where
-        M: Send + 'static,
-        A: Handler<M>,
-    {
-        let addr = self.address()?.downgrade();
-        let mut stopped = addr.join();
-
-        let fut = async move {
-            let delay = Delay::new(duration);
-            match future::select(delay, &mut stopped).await {
-                Either::Left(_) => {
-                    let _ = addr.send(notification).await;
-                }
-                Either::Right(_) => {
-                    // Context stopped before the end of the delay was reached
-                }
-            }
-        };
-
-        Ok(fut)
-    }
-
     pub(crate) fn flow(&self) -> ControlFlow<()> {
         if self.running {
             ControlFlow::Continue(())

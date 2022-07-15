@@ -20,6 +20,9 @@
 - `stop_all` now does not drain all messages when called, and acts just like `stop_self` on all active actors.
 - `Context::attach` is removed in favor of implementing `Clone` for `Context`. If you want to run multiple actors on a
   `Context`, simply clone it before calling `run`.
+- Remove `Context::notify_after` without a direct replacement. To delay the sending of a message, users are encouraged
+  to use the `sleep` function of their executor of choice and combine it with `Address::send` into a new future. To
+  cancel the sleeping early in case the actor stops, use `xtra::scoped`.
 
 ## 0.5.0
 
