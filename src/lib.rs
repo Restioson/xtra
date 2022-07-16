@@ -234,7 +234,7 @@ where
     actor.stopped().await
 }
 
-/// Process exactly on message from the mailbox on the given actor.
+/// Yield one message from the [`Mailbox`] and process it using the given actor.
 pub async fn yield_once<A>(mailbox: &mut Mailbox<A>, actor: &mut A) -> ControlFlow<(), ()>
 where
     A: Actor,
