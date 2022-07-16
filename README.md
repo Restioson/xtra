@@ -82,8 +82,6 @@ Keep in mind that `xtra` has a MSRV of 1.60.0.
 
 ## Cargo features
 
-- `timing`: enables the `notify_interval` method, and brings in the
-  [futures-timer](https://github.com/async-rs/futures-timer) crate.
 - `async_std`: enables integration with [async-std](https://async.rs/).
 - `smol`: enables integration with [smol](https://github.com/smol-rs/smol). Note that this requires smol 1.1 as
   1.1 had a minor breaking change from 1.0 which leads to xtra no longer compiling on 1.0 and 1.1 simultaneously.

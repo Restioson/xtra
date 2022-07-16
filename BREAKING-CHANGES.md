@@ -2,7 +2,7 @@
 
 ## 0.6.0
 
-- Sealed `RefCounter` and `MessageChannel` traits
+- Sealed `RefCounter` trait
 - `Message` no longer exists - `Return` is now specified on the `Handler` trait itself.
 - `Context::notify_interval` and `Context::notify_after` are now subject to back-pressure, in case the address mailbox
   is full. These aren't API breaking but a semantic changes.
@@ -23,6 +23,8 @@
 - Remove `Context::notify_after` without a direct replacement. To delay the sending of a message, users are encouraged
   to use the `sleep` function of their executor of choice and combine it with `Address::send` into a new future. To
   cancel the sleeping early in case the actor stops, use `xtra::scoped`.
+- Remove `Context::notify_interval` without a direct replacement. Users are encouraged to write their own loop within
+  which they call `Address:send`.
 
 ## 0.5.0
 
