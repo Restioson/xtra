@@ -1,12 +1,12 @@
 use std::future::Future;
 
-#[cfg(feature = "with-async_std-1")]
+#[cfg(feature = "async_std")]
 pub use async_std_impl::*;
-#[cfg(feature = "with-smol-1")]
+#[cfg(feature = "smol")]
 pub use smol_impl::*;
-#[cfg(feature = "with-tokio-1")]
+#[cfg(feature = "tokio")]
 pub use tokio_impl::*;
-#[cfg(feature = "with-wasm_bindgen-0_2")]
+#[cfg(feature = "wasm_bindgen")]
 pub use wasm_bindgen_impl::*;
 
 /// An `Spawner` represents anything that can spawn a future to be run in the background. This is
@@ -16,13 +16,14 @@ pub trait Spawner {
     fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F);
 }
 
-#[cfg(feature = "with-async_std-1")]
+#[cfg(feature = "async_std")]
 mod async_std_impl {
     use super::*;
     use crate::{Actor, ActorManager, Address};
 
     /// The async std runtime.
     #[derive(Copy, Clone, Debug, Default)]
+    #[cfg_attr(docsrs, doc(cfg(feature = "async_std")))]
     pub struct AsyncStd;
 
     impl Spawner for AsyncStd {
@@ -32,6 +33,7 @@ mod async_std_impl {
     }
 
     /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
+    #[cfg_attr(docsrs, doc(cfg(feature = "async_std")))]
     pub trait AsyncStdGlobalSpawnExt<A: Actor> {
         /// Spawn the actor onto the global runtime
         fn spawn_global(self) -> Address<A>;
@@ -44,13 +46,14 @@ mod async_std_impl {
     }
 }
 
-#[cfg(feature = "with-smol-1")]
+#[cfg(feature = "smol")]
 mod smol_impl {
     use super::*;
     use crate::{Actor, ActorManager, Address};
 
     /// The smol runtime.
     #[derive(Copy, Clone, Debug)]
+    #[cfg_attr(docsrs, doc(cfg(feature = "smol")))]
     pub enum Smol<'a> {
         /// The global executor.
         Global,
@@ -75,6 +78,7 @@ mod smol_impl {
     }
 
     /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
+    #[cfg_attr(docsrs, doc(cfg(feature = "smol")))]
     pub trait SmolGlobalSpawnExt<A: Actor> {
         /// Spawn the actor onto the global runtime
         fn spawn_global(self) -> Address<A>;
@@ -87,13 +91,14 @@ mod smol_impl {
     }
 }
 
-#[cfg(feature = "with-tokio-1")]
+#[cfg(feature = "tokio")]
 mod tokio_impl {
     use super::*;
     use crate::{Actor, ActorManager, Address};
 
     /// The Tokio runtime.
     #[derive(Copy, Clone, Debug)]
+    #[cfg_attr(docsrs, doc(cfg(feature = "tokio")))]
     pub enum Tokio<'a> {
         /// The global executor.
         Global,
@@ -117,6 +122,7 @@ mod tokio_impl {
     }
 
     /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
+    #[cfg_attr(docsrs, doc(cfg(feature = "tokio")))]
     pub trait TokioGlobalSpawnExt<A: Actor> {
         /// Spawn the actor onto the global runtime
         fn spawn_global(self) -> Address<A>;
@@ -129,13 +135,14 @@ mod tokio_impl {
     }
 }
 
-#[cfg(feature = "with-wasm_bindgen-0_2")]
+#[cfg(feature = "wasm_bindgen")]
 mod wasm_bindgen_impl {
     use super::*;
     use crate::{Actor, ActorManager, Address};
 
     /// Spawn rust futures in WASM on the current thread in the background.
     #[derive(Copy, Clone, Debug, Default)]
+    #[cfg_attr(docsrs, doc(cfg(feature = "wasm-bindgen")))]
     pub struct WasmBindgen;
 
     impl Spawner for WasmBindgen {
@@ -145,6 +152,7 @@ mod wasm_bindgen_impl {
     }
 
     /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
+    #[cfg_attr(docsrs, doc(cfg(feature = "wasm-bindgen")))]
     pub trait WasmBindgenGlobalSpawnExt<A: Actor> {
         /// Spawn the actor onto the global runtime
         fn spawn_global(self) -> Address<A>;

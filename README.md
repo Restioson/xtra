@@ -73,20 +73,20 @@ Too verbose? Check out the [spaad](https://crates.io/crates/spaad) sister-crate!
 
 ## Okay, sounds great! How do I use it?
 Check out the [docs](https://docs.rs/xtra) and the [examples](https://github.com/Restioson/xtra/blob/master/examples)
-to get started! Enabling the `with-tokio-1`, `with-async_std-1`, `with-smol-1`, or `with-wasm_bindgen-0_2` features
+to get started! Enabling the `tokio`, `async_std`, `smol`, or `wasm_bindgen` features
 is recommended in order to enable some  convenience methods (such as `Actor::spawn`). Which you enable will depend on
 which executor you want to use (check out their docs to learn more about each). If you have any questions, feel free to
 [open an issue](https://github.com/Restioson/xtra/issues/new) or message me on the [Rust discord](https://bit.ly/rust-community).
 
-Keep in mind that `xtra` has a MSRV of 1.56.0.
+Keep in mind that `xtra` has a MSRV of 1.60.0.
 
 ## Cargo features
 
-- `with-async_std-1`: enables integration with [async-std](https://async.rs/).
-- `with-smol-1`: enables integration with [smol](https://github.com/smol-rs/smol). Note that this requires smol 1.1 as
+- `async_std`: enables integration with [async-std](https://async.rs/).
+- `smol`: enables integration with [smol](https://github.com/smol-rs/smol). Note that this requires smol 1.1 as
   1.1 had a minor breaking change from 1.0 which leads to xtra no longer compiling on 1.0 and 1.1 simultaneously.
-- `with-tokio-1`: enables integration with [tokio](https://tokio.rs).
-- `with-wasm_bindgen-0_2`: enables integration with [wasm-bindgen](https://github.com/rustwasm/wasm-bindgen), and
+- `tokio`: enables integration with [tokio](https://tokio.rs).
+- `wasm_bindgen`: enables integration with [wasm-bindgen](https://github.com/rustwasm/wasm-bindgen), and
   particularly its futures crate.
 - `with-tracing-0_1`: enables the `Instrumented` wrapper and `InstrumentedExt` traits, to integrate with
   [tracing](https://tracing.rs). This allows a tracing span to follow through execution of a message, either as a child

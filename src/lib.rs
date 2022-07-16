@@ -1,6 +1,6 @@
 //! xtra is a tiny, fast, and safe actor system.
 
-#![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(unsafe_code, missing_docs)]
 
 use std::fmt;
@@ -71,7 +71,7 @@ pub mod refcount {
 /// }
 ///
 /// fn main() {
-/// #   #[cfg(feature = "with-smol-1")]
+/// #   #[cfg(feature = "smol")]
 ///     smol::block_on(async {
 ///         let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///         assert_eq!(addr.send(Msg).await, Ok(20));
@@ -130,7 +130,7 @@ pub trait Handler<M>: Actor {
 /// }
 ///
 /// // Will print "Started!", "Goodbye!", and then "Finally stopping."
-/// # #[cfg(feature = "with-smol-1")]
+/// # #[cfg(feature = "smol")]
 /// smol::block_on(async {
 ///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///     addr.send(Goodbye).await;

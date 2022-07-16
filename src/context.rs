@@ -186,7 +186,7 @@ impl<A: Actor> Context<A> {
     ///     }
     /// }
     ///
-    /// # #[cfg(feature = "with-smol-1")]
+    /// # #[cfg(feature = "smol")]
     /// # smol::block_on(async {
     /// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
     /// assert!(addr.is_connected());
@@ -258,7 +258,7 @@ impl<A: Actor> Context<A> {
     ///     }
     /// }
     ///
-    /// # #[cfg(feature = "with-smol-1")]
+    /// # #[cfg(feature = "smol")]
     /// # smol::block_on(async {
     /// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
     /// assert!(addr.is_connected());
