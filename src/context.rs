@@ -9,8 +9,6 @@ use futures_core::future::BoxFuture;
 use futures_core::FusedFuture;
 use futures_util::future::{self, Either};
 use futures_util::FutureExt;
-#[cfg(feature = "timing")]
-use {crate::Handler, futures_timer::Delay, std::time::Duration};
 
 use crate::envelope::{HandlerSpan, Shutdown};
 use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
@@ -295,46 +293,6 @@ impl<A: Actor> Context<A> {
         }
 
         Either::Right(fut)
-    }
-
-    /// Notify the actor with a message every interval until it is stopped (either directly with
-    /// [`Context::stop_self`], or for a lack of strong [`Address`]es. This does not take priority over other messages.
-    ///
-    /// This function is subject to back-pressure by the actor's mailbox. Thus, if the mailbox is full
-    /// the loop will wait until a slot is available. It is therefore not guaranteed that a message
-    /// will be delivered at exactly `duration` intervals.
-    #[cfg(feature = "timing")]
-    pub fn notify_interval<F, M>(
-        &mut self,
-        duration: Duration,
-        constructor: F,
-    ) -> Result<impl Future<Output = ()>, Error>
-    where
-        F: Send + 'static + Fn() -> M,
-        M: Send + 'static,
-        A: Handler<M>,
-    {
-        let addr = self.address()?.downgrade();
-        let mut stopped = addr.join();
-
-        let fut = async move {
-            loop {
-                let delay = Delay::new(duration);
-                match future::select(delay, &mut stopped).await {
-                    Either::Left(_) => {
-                        if addr.send(constructor()).await.is_err() {
-                            break;
-                        }
-                    }
-                    Either::Right(_) => {
-                        // Context stopped before the end of the delay was reached
-                        break;
-                    }
-                }
-            }
-        };
-
-        Ok(fut)
     }
 
     pub(crate) fn flow(&self) -> ControlFlow<()> {
