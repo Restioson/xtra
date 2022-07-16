@@ -25,6 +25,7 @@
   cancel the sleeping early in case the actor stops, use `xtra::scoped`.
 - Remove `Context::notify_interval` without a direct replacement. Users are encouraged to write their own loop within
   which they call `Address:send`.
+- Rename features from `with-crate-version` to just `crate`. For example, `with-tokio-1` has been renamed to `tokio`. 
 
 ## 0.5.0
 
