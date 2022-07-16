@@ -326,6 +326,10 @@ pub struct Message<A>(pub(crate) ActorMessage<A>);
 ///
 /// If the order in which your actors process messages is not important to you, you can consider this
 /// future to be fully cancellation-safe.
+///
+/// If you wish to maintain message ordering, you can use [`FutureExt::now_or_never`] to do a final
+/// poll on the future. [`ReceiveFuture`] is guaranteed to complete in a single poll if it has
+/// remaining work to do.
 #[must_use = "Futures do nothing unless polled"]
 pub struct ReceiveFuture<A>(InboxReceiveFuture<A, RxStrong>);
 
