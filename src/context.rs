@@ -275,8 +275,11 @@ impl<A: Actor> Context<A> {
                 let mut next_msg = self.next_message();
                 match future::select(fut, &mut next_msg).await {
                     Either::Left((future_res, _)) => {
-                        let message = next_msg.await; // If don't await the future, message ordering might be compromised.
-                        self.tick(message, actor).await;
+                        // Check if `ReceiveFuture` was in the process of handling a message.
+                        // If yes, dispatch it, otherwise continue.
+                        if let Some(message) = next_msg.now_or_never() {
+                            self.tick(message, actor).await;
+                        }
 
                         return Either::Left(future_res);
                     }

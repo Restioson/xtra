@@ -1082,3 +1082,13 @@ fn no_sender_returns_disconnected() {
     drop(addr);
     assert!(!ctx.weak_address().is_connected());
 }
+
+#[tokio::test]
+async fn receive_future_can_dispatch_in_one_poll() {
+    let (addr, ctx) = Context::<Greeter>::new(None);
+
+    let _ = addr.send(Hello("world")).split_receiver().await;
+    let receive_future = ctx.next_message();
+
+    assert!(receive_future.now_or_never().is_some())
+}
