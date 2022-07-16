@@ -192,9 +192,6 @@ impl<A: Actor> Context<A> {
     /// assert!(addr.is_connected());
     /// assert_eq!(addr.send(Joining).await, Ok(true)); // Assert that the join did evaluate the future
     /// # })
-    #[cfg_attr(docsrs, doc("```"))]
-    #[cfg_attr(docsrs, doc(include = "../examples/interleaved_messages.rs"))]
-    #[cfg_attr(docsrs, doc("```"))]
     pub async fn join<F, R>(&mut self, actor: &mut A, fut: F) -> R
     where
         F: Future<Output = R>,
