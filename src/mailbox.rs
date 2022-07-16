@@ -48,7 +48,7 @@ pub struct Message<A>(pub(crate) ActorMessage<A>);
 #[must_use = "Futures do nothing unless polled"]
 pub struct ReceiveFuture<A>(pub(crate) inbox::rx::ReceiveFuture<A, RxStrong>);
 
-impl<'c, A> ReceiveFuture<A> {
+impl<A> ReceiveFuture<A> {
     /// Cancel the receiving future, returning a message if it had been fulfilled with one, but had
     /// not yet been polled after wakeup. Future calls to `Future::poll` will return `Poll::Pending`,
     /// and `FusedFuture::is_terminated` will return `true`.
