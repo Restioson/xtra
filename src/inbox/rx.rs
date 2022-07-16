@@ -297,7 +297,7 @@ impl<A> WaitingReceiver<A> {
         Ok(())
     }
 
-    /// Signify that this waiting receiver was cancelled through [`ReceiveFuture::cancel`]
+    /// Cancel this [`WaitingReceiver`] returning its current, internal state.
     fn cancel(&mut self) -> Option<WakeReason<A>> {
         mem::replace(&mut self.wake_reason, Some(WakeReason::Cancelled))
     }
