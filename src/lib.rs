@@ -1,6 +1,6 @@
 //! xtra is a tiny, fast, and safe actor system.
 
-#![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(unsafe_code, missing_docs)]
 
 use std::fmt;
