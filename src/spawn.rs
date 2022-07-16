@@ -23,6 +23,7 @@ mod async_std_impl {
 
     /// The async std runtime.
     #[derive(Copy, Clone, Debug, Default)]
+    #[cfg_attr(docsrs, doc(cfg(feature = "async_std")))]
     pub struct AsyncStd;
 
     impl Spawner for AsyncStd {
@@ -32,6 +33,7 @@ mod async_std_impl {
     }
 
     /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
+    #[cfg_attr(docsrs, doc(cfg(feature = "async_std")))]
     pub trait AsyncStdGlobalSpawnExt<A: Actor> {
         /// Spawn the actor onto the global runtime
         fn spawn_global(self) -> Address<A>;
@@ -51,6 +53,7 @@ mod smol_impl {
 
     /// The smol runtime.
     #[derive(Copy, Clone, Debug)]
+    #[cfg_attr(docsrs, doc(cfg(feature = "smol")))]
     pub enum Smol<'a> {
         /// The global executor.
         Global,
@@ -75,6 +78,7 @@ mod smol_impl {
     }
 
     /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
+    #[cfg_attr(docsrs, doc(cfg(feature = "smol")))]
     pub trait SmolGlobalSpawnExt<A: Actor> {
         /// Spawn the actor onto the global runtime
         fn spawn_global(self) -> Address<A>;
@@ -94,6 +98,7 @@ mod tokio_impl {
 
     /// The Tokio runtime.
     #[derive(Copy, Clone, Debug)]
+    #[cfg_attr(docsrs, doc(cfg(feature = "tokio")))]
     pub enum Tokio<'a> {
         /// The global executor.
         Global,
@@ -117,6 +122,7 @@ mod tokio_impl {
     }
 
     /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
+    #[cfg_attr(docsrs, doc(cfg(feature = "tokio")))]
     pub trait TokioGlobalSpawnExt<A: Actor> {
         /// Spawn the actor onto the global runtime
         fn spawn_global(self) -> Address<A>;
@@ -136,6 +142,7 @@ mod wasm_bindgen_impl {
 
     /// Spawn rust futures in WASM on the current thread in the background.
     #[derive(Copy, Clone, Debug, Default)]
+    #[cfg_attr(docsrs, doc(cfg(feature = "wasm-bindgen")))]
     pub struct WasmBindgen;
 
     impl Spawner for WasmBindgen {
@@ -145,6 +152,7 @@ mod wasm_bindgen_impl {
     }
 
     /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
+    #[cfg_attr(docsrs, doc(cfg(feature = "wasm-bindgen")))]
     pub trait WasmBindgenGlobalSpawnExt<A: Actor> {
         /// Spawn the actor onto the global runtime
         fn spawn_global(self) -> Address<A>;

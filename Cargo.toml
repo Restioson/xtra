@@ -110,6 +110,7 @@ members = ["examples/basic_wasm_bindgen"]
 
 [package.metadata.docs.rs]
 features = ["async_std", "smol", "tokio", "wasm_bindgen"]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [[bench]]
 name = "throughput"
