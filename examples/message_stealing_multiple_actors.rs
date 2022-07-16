@@ -2,6 +2,7 @@
 //! switch only after it has received many messages.
 
 use std::time::Duration;
+use xtra::Mailbox;
 
 use xtra::prelude::*;
 
@@ -50,11 +51,11 @@ impl Handler<Print> for Printer {
 
 #[smol_potat::main]
 async fn main() {
-    let (addr, ctx) = Context::new(Some(32));
-    smol::spawn(xtra::run(ctx.clone(), Printer::new(0))).detach();
-    smol::spawn(xtra::run(ctx.clone(), Printer::new(1))).detach();
-    smol::spawn(xtra::run(ctx.clone(), Printer::new(2))).detach();
-    smol::spawn(xtra::run(ctx, Printer::new(3))).detach();
+    let (addr, mailbox) = Mailbox::new(Some(32));
+    smol::spawn(xtra::run(mailbox.clone(), Printer::new(0))).detach();
+    smol::spawn(xtra::run(mailbox.clone(), Printer::new(1))).detach();
+    smol::spawn(xtra::run(mailbox.clone(), Printer::new(2))).detach();
+    smol::spawn(xtra::run(mailbox, Printer::new(3))).detach();
 
     while addr.send(Print("hello".to_string())).await.is_ok() {}
     println!("Stopping to send");

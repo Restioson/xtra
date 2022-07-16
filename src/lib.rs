@@ -3,6 +3,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
 #![deny(unsafe_code, missing_docs)]
 
+use crate::context::{Message, TickFuture};
 use futures_util::future;
 use futures_util::future::Either;
 use std::fmt;
@@ -12,6 +13,7 @@ use std::ops::ControlFlow;
 pub use self::address::{Address, WeakAddress};
 pub use self::broadcast_future::BroadcastFuture;
 pub use self::context::Context;
+pub use self::mailbox::Mailbox;
 pub use self::manager::ActorManager;
 pub use self::receiver::Receiver;
 pub use self::scoped_task::scoped;
@@ -22,6 +24,7 @@ mod broadcast_future;
 mod context;
 mod envelope;
 mod inbox;
+mod mailbox;
 mod manager;
 pub mod message_channel;
 mod receiver;
@@ -40,7 +43,7 @@ pub mod prelude {
     pub use crate::context::Context;
     pub use crate::message_channel::MessageChannel;
     #[doc(no_inline)]
-    pub use crate::{Actor, Handler};
+    pub use crate::{Actor, Handler, Mailbox};
 }
 
 /// This module contains types representing the strength of an address's reference counting, which
@@ -112,7 +115,7 @@ pub trait Handler<M>: Actor {
 /// #[async_trait]
 /// impl Actor for MyActor {
 ///     type Stop = ();
-///     async fn started(&mut self, ctx: &mut Context<Self>) {
+///     async fn started(&mut self, ctx: &mut Mailbox<Self>) {
 ///         println!("Started!");
 ///     }
 ///
@@ -151,7 +154,7 @@ pub trait Actor: 'static + Send + Sized {
 
     /// Called as soon as the actor has been started.
     #[allow(unused_variables)]
-    async fn started(&mut self, ctx: &mut Context<Self>) {}
+    async fn started(&mut self, mailbox: &mut Mailbox<Self>) {}
 
     /// Called at the end of an actor's event loop.
     ///
@@ -182,11 +185,11 @@ pub trait Actor: 'static + Send + Sized {
     /// })
     /// ```
     fn create(self, message_cap: Option<usize>) -> ActorManager<Self> {
-        let (address, ctx) = Context::new(message_cap);
+        let (address, mailbox) = Mailbox::new(message_cap);
         ActorManager {
             address,
             actor: self,
-            ctx,
+            mailbox,
         }
     }
 }
@@ -220,29 +223,37 @@ impl std::error::Error for Error {}
 ///
 /// This is the primary event loop of an actor which takes messages out of the mailbox and hands
 /// them to the actor.
-pub async fn run<A>(mut context: Context<A>, mut actor: A) -> A::Stop
+pub async fn run<A>(mut mailbox: Mailbox<A>, mut actor: A) -> A::Stop
 where
     A: Actor,
 {
-    actor.started(&mut context).await;
+    actor.started(&mut mailbox).await;
 
-    // Idk why anyone would do this, but we have to check that they didn't already stop the actor
-    // in the started method, otherwise it would kinda be a bug
-    if !context.running {
-        return actor.stopped().await;
-    }
-
-    while let ControlFlow::Continue(()) = yield_once(&mut context, &mut actor).await {}
+    while let ControlFlow::Continue(()) = yield_once(&mut mailbox, &mut actor).await {}
 
     return actor.stopped().await;
 }
 
 /// Process exactly on message from the mailbox on the given actor.
-pub async fn yield_once<A>(context: &mut Context<A>, actor: &mut A) -> ControlFlow<(), ()>
+pub async fn yield_once<A>(mailbox: &mut Mailbox<A>, actor: &mut A) -> ControlFlow<(), ()>
 where
     A: Actor,
 {
-    context.tick(context.next_message().await, actor).await
+    let message = mailbox.next().await;
+
+    tick(message, actor, mailbox).await
+}
+
+/// Process exactly on message from the mailbox on the given actor.
+pub fn tick<'a, A>(
+    message: Message<A>,
+    actor: &'a mut A,
+    mailbox: &'a mut Mailbox<A>,
+) -> TickFuture<'a, A>
+where
+    A: Actor,
+{
+    TickFuture::new(message.0, actor, mailbox)
 }
 
 /// Handle any incoming messages for the actor while running a given future. This is similar to
@@ -279,13 +290,13 @@ where
 ///
 ///     async fn handle(&mut self, _msg: Selecting, ctx: &mut Context<Self>) -> bool {
 ///         // Actor is still running, so this will return Either::Left
-///         match xtra::select(ctx, self, future::ready(1)).await {
+///         match xtra::select(ctx.mailbox(), self, future::ready(1)).await {
 ///             Either::Left(ans) => println!("Answer is: {}", ans),
 ///             Either::Right(_) => panic!("How did we get here?"),
 ///         };
 ///
-///         let addr = ctx.address().unwrap();
-///         let select = xtra::select(ctx, self, future::pending::<()>());
+///         let addr = ctx.mailbox().address();
+///         let select = xtra::select(ctx.mailbox(), self, future::pending::<()>());
 ///         let _ = addr.send(Stop).split_receiver().await;
 ///
 ///         // Actor is stopping, so this will return Err, even though the future will
@@ -302,18 +313,20 @@ where
 /// # })
 ///
 /// ```
-pub async fn select<A, F, R>(context: &mut Context<A>, actor: &mut A, mut fut: F) -> Either<R, F>
+pub async fn select<A, F, R>(mailbox: &mut Mailbox<A>, actor: &mut A, mut fut: F) -> Either<R, F>
 where
     F: Future<Output = R> + Unpin,
     A: Actor,
 {
-    while context.running {
+    let mut control_flow = ControlFlow::Continue(());
+
+    while control_flow.is_continue() {
         let (msg, unfinished) = {
-            let mut next_msg = context.next_message();
+            let mut next_msg = mailbox.next();
             match future::select(fut, &mut next_msg).await {
                 Either::Left((future_res, _)) => {
                     if let Some(msg) = next_msg.cancel() {
-                        context.tick(msg, actor).await;
+                        TickFuture::new(msg.0, actor, mailbox).await;
                     }
 
                     return Either::Left(future_res);
@@ -322,7 +335,7 @@ where
             }
         };
 
-        context.tick(msg, actor).await;
+        control_flow = TickFuture::new(msg.0, actor, mailbox).await;
         fut = unfinished;
     }
 
@@ -362,8 +375,8 @@ where
 ///     type Return = bool;
 ///
 ///     async fn handle(&mut self, _msg: Joining, ctx: &mut Context<Self>) -> bool {
-///         let addr = ctx.address().unwrap();
-///         let join = xtra::join(ctx, self, future::ready::<()>(()));
+///         let addr = ctx.mailbox().address();
+///         let join = xtra::join(ctx.mailbox(), self, future::ready::<()>(()));
 ///         let _ = addr.send(Stop).split_receiver().await;
 ///
 ///         // Actor is stopping, but the join should still evaluate correctly
@@ -380,13 +393,13 @@ where
 #[cfg_attr(docsrs, doc("```"))]
 #[cfg_attr(docsrs, doc(include = "../examples/interleaved_messages.rs"))]
 #[cfg_attr(docsrs, doc("```"))]
-pub async fn join<A, F, R>(context: &mut Context<A>, actor: &mut A, fut: F) -> R
+pub async fn join<A, F, R>(mailbox: &mut Mailbox<A>, actor: &mut A, fut: F) -> R
 where
     F: Future<Output = R>,
     A: Actor,
 {
     futures_util::pin_mut!(fut);
-    match select(context, actor, fut).await {
+    match select(mailbox, actor, fut).await {
         Either::Left(res) => res,
         Either::Right(fut) => fut.await,
     }

@@ -9,7 +9,7 @@ use futures_util::FutureExt;
 
 use crate::context::Context;
 use crate::inbox::{HasPriority, Priority};
-use crate::{Actor, Handler};
+use crate::{Actor, Handler, Mailbox};
 
 /// A message envelope is a struct that encapsulates a message and its return channel sender (if applicable).
 /// Firstly, this allows us to be generic over returning and non-returning messages (as all use the
@@ -46,8 +46,8 @@ pub trait MessageEnvelope: Send {
     fn handle<'a>(
         self: Box<Self>,
         act: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan);
+        mailbox: &'a mut Mailbox<Self::Actor>,
+    ) -> (BoxFuture<'a, ControlFlow<(), ()>>, HandlerSpan);
 }
 
 #[derive(Clone)]
@@ -169,8 +169,8 @@ where
     fn handle<'a>(
         self: Box<Self>,
         act: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan) {
+        mailbox: &'a mut Mailbox<Self::Actor>,
+    ) -> (BoxFuture<'a, ControlFlow<(), ()>>, HandlerSpan) {
         let Self {
             message,
             result_sender,
@@ -178,7 +178,19 @@ where
             ..
         } = *self;
 
-        let fut = async move { (act.handle(message, ctx).await, ctx.flow()) };
+        let fut = async move {
+            let mut ctx = Context {
+                running: true,
+                mailbox,
+            };
+            let r = act.handle(message, &mut ctx).await;
+
+            if ctx.running {
+                (r, ControlFlow::Continue(()))
+            } else {
+                (r, ControlFlow::Break(()))
+            }
+        };
 
         let (fut, span) = instrumentation.apply::<A, M, _>(fut);
 
@@ -199,7 +211,7 @@ pub trait BroadcastEnvelope: HasPriority + Send + Sync {
     fn handle<'a>(
         self: Arc<Self>,
         act: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
+        mailbox: &'a mut Mailbox<Self::Actor>,
     ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan);
 }
 
@@ -231,13 +243,22 @@ where
     fn handle<'a>(
         self: Arc<Self>,
         act: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan) {
+        mailbox: &'a mut Mailbox<Self::Actor>,
+    ) -> (BoxFuture<'a, ControlFlow<(), ()>>, HandlerSpan) {
         let (msg, instrumentation) = (self.message.clone(), self.instrumentation.clone());
         drop(self); // Drop ASAP to end the message waiting for actor span
         let fut = async move {
-            act.handle(msg, ctx).await;
-            ctx.flow()
+            let mut ctx = Context {
+                running: true,
+                mailbox,
+            };
+            act.handle(msg, &mut ctx).await;
+
+            if ctx.running {
+                ControlFlow::Continue(())
+            } else {
+                ControlFlow::Break(())
+            }
         };
         let (fut, span) = instrumentation.apply::<A, M, _>(fut);
         (Box::pin(fut), span)
@@ -258,11 +279,8 @@ impl<A> Shutdown<A> {
         Shutdown(PhantomData)
     }
 
-    pub fn handle(ctx: &mut Context<A>) -> (BoxFuture<ControlFlow<()>>, HandlerSpan) {
-        let fut = Box::pin(async {
-            ctx.running = false;
-            ControlFlow::Break(())
-        });
+    pub fn handle() -> (BoxFuture<'static, ControlFlow<()>>, HandlerSpan) {
+        let fut = Box::pin(async { ControlFlow::Break(()) });
 
         (fut, HandlerSpan::disabled())
     }
@@ -283,8 +301,8 @@ where
     fn handle<'a>(
         self: Arc<Self>,
         _act: &'a mut Self::Actor,
-        ctx: &'a mut Context<Self::Actor>,
+        _mailbox: &'a mut Mailbox<Self::Actor>,
     ) -> (BoxFuture<'a, ControlFlow<()>>, HandlerSpan) {
-        Self::handle(ctx)
+        Self::handle()
     }
 }

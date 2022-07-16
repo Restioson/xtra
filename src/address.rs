@@ -78,6 +78,15 @@ impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
 /// method.
 pub type WeakAddress<A> = Address<A, Weak>;
 
+impl<A> WeakAddress<A> {
+    /// Try to upgrade this [`WeakAddress`] to a strong one.
+    ///
+    /// This will yield `None` if there are no more other strong addresses around.
+    pub fn try_upgrade(&self) -> Option<Address<A>> {
+        Some(Address(self.0.upgrade()?))
+    }
+}
+
 /// Functions which apply only to strong addresses (the default kind).
 impl<A> Address<A, Strong> {
     /// Create a weak address to the actor. Unlike with the strong variety of address (this kind),

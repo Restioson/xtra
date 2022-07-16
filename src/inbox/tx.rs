@@ -27,6 +27,12 @@ impl<A> Sender<A, TxStrong> {
 
         Sender { inner, rc }
     }
+
+    pub fn upgrade(&self) -> Option<Sender<A, TxStrong>> {
+        let sender = Sender::try_new_strong(self.inner.clone())?;
+
+        Some(sender)
+    }
 }
 
 impl<Rc: TxRefCounter, A> Sender<A, Rc> {

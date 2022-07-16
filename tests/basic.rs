@@ -10,7 +10,7 @@ use futures_util::FutureExt;
 use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::{ActorManager, Error};
+use xtra::{ActorManager, Error, Mailbox};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
@@ -207,7 +207,7 @@ async fn actor_can_be_restarted() {
 
     assert_eq!(fut.await, 5);
 
-    let (addr, ctx) = Context::new(None);
+    let (addr, ctx) = Mailbox::new(None);
     let fut1 = xtra::run(ctx.clone(), Accumulator(0));
     let fut2 = xtra::run(ctx, Accumulator(0));
 
@@ -241,7 +241,7 @@ async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
 
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self() {
-    let (address, ctx) = Context::new(None);
+    let (address, ctx) = Mailbox::new(None);
     tokio::spawn(xtra::run(ctx.clone(), ActorStopSelf));
     tokio::spawn(xtra::run(ctx, ActorStopSelf));
     address.send(StopSelf).await.unwrap();
@@ -256,7 +256,7 @@ async fn two_actors_on_address_with_stop_self() {
 
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self_context_alive() {
-    let (address, ctx) = Context::new(None);
+    let (address, ctx) = Mailbox::new(None);
     tokio::spawn(xtra::run(ctx.clone(), ActorStopSelf));
     tokio::spawn(xtra::run(ctx.clone(), ActorStopSelf)); // Context not dropped here
     address.send(StopSelf).await.unwrap();
@@ -446,7 +446,7 @@ async fn handle_order() {
 
 #[tokio::test]
 async fn waiting_sender_order() {
-    let (addr, mut ctx) = Context::new(Some(1));
+    let (addr, mut ctx) = Mailbox::new(Some(1));
     let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
     let mut ele = Elephant::default();
 
@@ -555,7 +555,7 @@ async fn set_priority_msg_channel() {
 
 #[tokio::test]
 async fn broadcast_tail_advances_bound_1() {
-    let (addr, mut ctx) = Context::new(Some(1));
+    let (addr, mut ctx) = Mailbox::new(Some(1));
     let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
     let mut ngwevu = Elephant {
         name: "Ngwevu",
@@ -666,7 +666,7 @@ async fn broadcast_tail_advances_bound_1() {
 
 #[tokio::test]
 async fn broadcast_tail_advances_bound_2() {
-    let (addr, mut ctx) = Context::new(Some(2));
+    let (addr, mut ctx) = Mailbox::new(Some(2));
     let mut ngwevu = Elephant {
         name: "Ngwevu",
         msgs: vec![],
@@ -698,7 +698,7 @@ async fn broadcast_tail_advances_bound_2() {
 
 #[tokio::test]
 async fn broadcast_tail_does_not_advance_unless_both_handle() {
-    let (addr, mut ctx) = Context::new(Some(2));
+    let (addr, mut ctx) = Mailbox::new(Some(2));
     let mut ngwevu = Elephant {
         name: "Ngwevu",
         msgs: vec![],
@@ -763,7 +763,7 @@ impl Handler<PrintHello> for Greeter {
 
 #[tokio::test]
 async fn address_send_exercises_backpressure() {
-    let (address, mut context) = Context::new(Some(1));
+    let (address, mut context) = Mailbox::new(Some(1));
 
     // Regular send
 
@@ -792,7 +792,7 @@ async fn address_send_exercises_backpressure() {
 
     // Priority send
 
-    let (address, mut context) = Context::new(Some(1));
+    let (address, mut context) = Mailbox::new(Some(1));
 
     let _ = address
         .send(Hello("world"))
@@ -848,7 +848,7 @@ async fn address_send_exercises_backpressure() {
 
 #[test]
 fn address_debug() {
-    let (addr1, _ctx) = Context::<Greeter>::new(None);
+    let (addr1, _ctx) = Mailbox::<Greeter>::new(None);
 
     let addr2 = addr1.clone();
     let weak_addr = addr2.downgrade();
@@ -870,7 +870,7 @@ fn address_debug() {
 
 #[test]
 fn message_channel_debug() {
-    let (addr1, _ctx) = Context::<Greeter>::new(None);
+    let (addr1, _ctx) = Mailbox::<Greeter>::new(None);
 
     let mc = MessageChannel::<Hello, String>::new(addr1);
     let weak_mc = mc.downgrade();
@@ -893,7 +893,7 @@ fn message_channel_debug() {
 #[test]
 fn scoped_task() {
     // Completes when address is connected
-    let (addr, ctx) = Context::<Greeter>::new(None);
+    let (addr, ctx) = Mailbox::new(None);
     let scoped = xtra::scoped(&addr, futures_util::future::ready(()));
     assert!(scoped.now_or_never().is_some());
 
@@ -905,20 +905,20 @@ fn scoped_task() {
     assert_eq!(scoped.now_or_never(), Some(None));
 
     // Does not complete when address starts off from a disconnected strong
-    let (addr, ctx) = Context::<ActorStopSelf>::new(None);
+    let (addr, ctx) = Mailbox::new(None);
     let _ = addr.send(StopSelf).split_receiver().now_or_never().unwrap();
     assert!(xtra::run(ctx, ActorStopSelf).now_or_never().is_some());
     let scoped = xtra::scoped(&addr, futures_util::future::ready(()));
     assert_eq!(scoped.now_or_never(), Some(None));
 
     // Does not complete when address disconnects after ScopedTask creation but before first poll
-    let (addr, ctx) = Context::<Greeter>::new(None);
+    let (addr, ctx) = Mailbox::<Greeter>::new(None);
     drop(ctx);
     let scoped = xtra::scoped(&addr, futures_util::future::ready(()));
     assert_eq!(scoped.now_or_never(), Some(None));
 
     // Does not complete when address disconnects after ScopedTask creation but before first poll
-    let (addr, act_ctx) = Context::<Greeter>::new(None);
+    let (addr, act_ctx) = Mailbox::<Greeter>::new(None);
     let mut scoped = xtra::scoped(&addr, futures_util::future::pending::<()>()).boxed();
     let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
     assert!(scoped.poll_unpin(&mut fut_ctx).is_pending());
@@ -948,78 +948,6 @@ fn test_addr_cmp_hash_eq() {
     assert!(!chan1.same_actor(&chan2));
 }
 
-#[tokio::test]
-async fn stop_in_started_actor_stops_immediately() {
-    let (_address, ctx) = Context::new(None);
-    let fut = xtra::run(ctx, StopInStarted);
-
-    fut.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
-}
-
-struct StopInStarted;
-
-#[async_trait]
-impl Actor for StopInStarted {
-    type Stop = ();
-
-    async fn started(&mut self, ctx: &mut Context<Self>) {
-        ctx.stop_self();
-    }
-
-    async fn stopped(self) -> Self::Stop {}
-}
-
-#[tokio::test]
-async fn stop_all_stops_immediately() {
-    let (_address, ctx) = Context::new(None);
-
-    let fut1 = xtra::run(
-        ctx.clone(),
-        InstantShutdownAll {
-            stop_all: true,
-            number: 1,
-        },
-    );
-    let fut2 = xtra::run(
-        ctx.clone(),
-        InstantShutdownAll {
-            stop_all: false,
-            number: 2,
-        },
-    );
-    let fut3 = xtra::run(
-        ctx,
-        InstantShutdownAll {
-            stop_all: false,
-            number: 3,
-        },
-    );
-
-    fut1.now_or_never().expect("Should stop immediately");
-    fut2.now_or_never().expect("Should stop immediately");
-    fut3.now_or_never().expect("Should stop immediately");
-}
-
-struct InstantShutdownAll {
-    stop_all: bool,
-    number: u8,
-}
-
-#[async_trait]
-impl Actor for InstantShutdownAll {
-    type Stop = ();
-
-    async fn started(&mut self, ctx: &mut Context<Self>) {
-        if self.stop_all {
-            ctx.stop_all();
-        }
-    }
-
-    async fn stopped(self) {
-        println!("Actor {} stopped", self.number);
-    }
-}
-
 struct Pending;
 
 #[async_trait]
@@ -1036,21 +964,14 @@ async fn timeout_returns_interrupted() {
     let ActorManager {
         address,
         mut actor,
-        mut ctx,
+        mut mailbox,
     } = Greeter.create(None);
 
     tokio::spawn(async move {
-        actor.started(&mut ctx).await;
-
-        if !ctx.running {
-            return actor.stopped().await;
-        }
+        actor.started(&mut mailbox).await;
 
         loop {
-            let msg = ctx.next_message().await;
-
-            let ctrl = ctx
-                .tick(msg, &mut actor)
+            let ctrl = xtra::yield_once(&mut mailbox, &mut actor)
                 .timeout(Duration::from_secs(1))
                 .await;
 
@@ -1100,7 +1021,7 @@ async fn timeout_returns_interrupted() {
 
 #[test]
 fn no_sender_returns_disconnected() {
-    let (addr, ctx) = Context::<Greeter>::new(None);
+    let (addr, ctx) = Mailbox::<Greeter>::new(None);
     drop(addr);
-    assert!(!ctx.weak_address().is_connected());
+    assert!(!ctx.address().is_connected());
 }

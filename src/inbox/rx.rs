@@ -32,13 +32,6 @@ impl<A> Receiver<A, RxStrong> {
 }
 
 impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
-    pub fn sender(&self) -> Option<Sender<A, TxStrong>> {
-        Some(Sender {
-            inner: self.inner.clone(),
-            rc: TxStrong::try_new(&self.inner)?,
-        })
-    }
-
     pub fn weak_sender(&self) -> Sender<A, TxWeak> {
         Sender {
             inner: self.inner.clone(),

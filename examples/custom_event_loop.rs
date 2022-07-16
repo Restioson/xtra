@@ -40,24 +40,21 @@ async fn main() {
     let ActorManager {
         address,
         mut actor,
-        mut ctx,
+        mut mailbox,
     } = Counter::new().create(None);
 
     tokio::spawn(async move {
-        actor.started(&mut ctx).await;
-
-        if !ctx.running {
-            return actor.stopped().await;
-        }
+        actor.started(&mut mailbox).await;
 
         loop {
             let start = Instant::now();
-            let msg = ctx.next_message().await;
+            let msg = mailbox.next().await;
             println!("Got message in {}us", start.elapsed().as_micros());
 
             let before = actor.count;
             let start = Instant::now();
-            let ctrl = ctx.tick(msg, &mut actor).await;
+
+            let ctrl = xtra::tick(msg, &mut actor, &mut mailbox).await;
 
             if let ControlFlow::Break(_) = ctrl {
                 println!("Goodbye!");
