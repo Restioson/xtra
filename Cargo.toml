@@ -10,7 +10,7 @@ documentation = "https://docs.rs/xtra"
 readme = "README.md"
 keywords = ["async", "actor", "futures", "xtra", "async-await"]
 categories = ["asynchronous", "concurrency"]
-rust-version = "1.56.0"
+rust-version = "1.60.0"
 
 [dependencies]
 async-trait = "0.1.56"
