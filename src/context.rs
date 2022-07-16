@@ -9,8 +9,6 @@ use futures_core::future::BoxFuture;
 use futures_core::FusedFuture;
 use futures_util::future::{self, Either};
 use futures_util::FutureExt;
-#[cfg(feature = "timing")]
-use {crate::Handler, futures_timer::Delay, std::time::Duration};
 
 use crate::envelope::{HandlerSpan, Shutdown};
 use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
