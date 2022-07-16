@@ -236,7 +236,7 @@ where
     actor.stopped().await
 }
 
-/// Yield one message from the [`Mailbox`] and process it using the given actor.
+/// Yields to the manager to handle one message, returning the actor should be shut down or not.
 pub async fn yield_once<A>(mailbox: &mut Mailbox<A>, actor: &mut A) -> ControlFlow<(), ()>
 where
     A: Actor,
@@ -246,7 +246,10 @@ where
     tick(message, actor, mailbox).await
 }
 
-/// Process exactly on message from the mailbox on the given actor.
+/// Handle one message and return whether to exit from the manage loop or not.
+///
+/// Note that this will immediately create the message handler span if the `instrumentation`
+/// feature is enabled.
 pub fn tick<'a, A>(
     message: Message<A>,
     actor: &'a mut A,
