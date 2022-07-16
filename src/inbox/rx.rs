@@ -228,22 +228,6 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
     }
 }
 
-impl<A, Rc: RxRefCounter> ReceiveFuture<A, Rc> {
-    /// See docs on [`crate::context::ReceiveFuture::cancel`] for more
-    #[must_use = "If dropped, messages could be lost"]
-    pub fn cancel(&mut self) -> Option<ActorMessage<A>> {
-        if let ReceiveFutureInner::Waiting { waiting, .. } =
-            mem::replace(&mut self.0, ReceiveFutureInner::Complete)
-        {
-            if let Some(WakeReason::MessageToOneActor(msg)) = waiting.lock().cancel() {
-                return Some(msg.into());
-            }
-        }
-
-        None
-    }
-}
-
 impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
     fn drop(&mut self) {
         if let ReceiveFutureInner::Waiting { waiting, rx } =

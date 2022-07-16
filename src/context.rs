@@ -275,9 +275,8 @@ impl<A: Actor> Context<A> {
                 let mut next_msg = self.next_message();
                 match future::select(fut, &mut next_msg).await {
                     Either::Left((future_res, _)) => {
-                        if let Some(msg) = next_msg.cancel() {
-                            self.tick(msg, actor).await;
-                        }
+                        let message = next_msg.await; // If don't await the future, message ordering might be compromised.
+                        self.tick(message, actor).await;
 
                         return Either::Left(future_res);
                     }
@@ -315,22 +314,17 @@ impl<A> Clone for Context<A> {
 pub struct Message<A>(pub(crate) ActorMessage<A>);
 
 /// A future which will resolve to the next message to be handled by the actor.
+///
+/// # Cancellation safety
+///
+/// This future is cancellation-safe in that no messages will ever be lost, even if this future is
+/// dropped half-way through. However, reinserting the message into the mailbox may mess with the
+/// ordering of messages and they may be handled by the actor out of order.
+///
+/// If the order in which your actors process messages is not important to you, you can consider this
+/// future to be fully cancellation-safe.
 #[must_use = "Futures do nothing unless polled"]
 pub struct ReceiveFuture<A>(InboxReceiveFuture<A, RxStrong>);
-
-impl<A> ReceiveFuture<A> {
-    /// Cancel the receiving future, returning a message if it had been fulfilled with one, but had
-    /// not yet been polled after wakeup. Future calls to `Future::poll` will return `Poll::Pending`,
-    /// and `FusedFuture::is_terminated` will return `true`.
-    ///
-    /// This is important to do over `Drop`, as with `Drop` messages may be sent back into the
-    /// channel and could be observed as received out of order, if multiple receives are concurrent
-    /// on one thread.
-    #[must_use = "If dropped, messages could be lost"]
-    pub fn cancel(&mut self) -> Option<Message<A>> {
-        self.0.cancel().map(Message)
-    }
-}
 
 impl<A> Future for ReceiveFuture<A> {
     type Output = Message<A>;
