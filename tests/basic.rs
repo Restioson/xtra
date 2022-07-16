@@ -208,8 +208,8 @@ async fn actor_can_be_restarted() {
     assert_eq!(fut.await, 5);
 
     let (addr, ctx) = Context::new(None);
-    let fut1 = ctx.clone().run(Accumulator(0));
-    let fut2 = ctx.run(Accumulator(0));
+    let fut1 = xtra::run(ctx.clone(), Accumulator(0));
+    let fut2 = xtra::run(ctx, Accumulator(0));
 
     for _ in 0..5 {
         let _ = addr.send(Inc).split_receiver().await;
@@ -242,8 +242,8 @@ async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self() {
     let (address, ctx) = Context::new(None);
-    tokio::spawn(ctx.clone().run(ActorStopSelf));
-    tokio::spawn(ctx.run(ActorStopSelf));
+    tokio::spawn(xtra::run(ctx.clone(), ActorStopSelf));
+    tokio::spawn(xtra::run(ctx, ActorStopSelf));
     address.send(StopSelf).await.unwrap();
     tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -257,8 +257,8 @@ async fn two_actors_on_address_with_stop_self() {
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self_context_alive() {
     let (address, ctx) = Context::new(None);
-    tokio::spawn(ctx.clone().run(ActorStopSelf));
-    tokio::spawn(ctx.clone().run(ActorStopSelf)); // Context not dropped here
+    tokio::spawn(xtra::run(ctx.clone(), ActorStopSelf));
+    tokio::spawn(xtra::run(ctx.clone(), ActorStopSelf)); // Context not dropped here
     address.send(StopSelf).await.unwrap();
     tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -462,7 +462,8 @@ async fn waiting_sender_order() {
     assert!(first.poll_unpin(&mut fut_ctx).is_pending());
     assert!(second.poll_unpin(&mut fut_ctx).is_pending());
 
-    ctx.yield_once(&mut ele).await;
+    let act = &mut ele;
+    xtra::yield_once(&mut ctx, act).await;
 
     assert!(second.poll_unpin(&mut fut_ctx).is_pending());
     assert!(first.poll_unpin(&mut fut_ctx).is_ready());
@@ -486,7 +487,8 @@ async fn waiting_sender_order() {
     assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
     assert!(greater.poll_unpin(&mut fut_ctx).is_pending());
 
-    ctx.yield_once(&mut ele).await;
+    let act = &mut ele;
+    xtra::yield_once(&mut ctx, act).await;
 
     assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
     assert!(greater.poll_unpin(&mut fut_ctx).is_ready());
@@ -509,7 +511,8 @@ async fn waiting_sender_order() {
     assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
     assert!(greater.poll_unpin(&mut fut_ctx).is_pending());
 
-    ctx.yield_once(&mut ele).await;
+    let act = &mut ele;
+    xtra::yield_once(&mut ctx, act).await;
 
     assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
     assert!(greater.poll_unpin(&mut fut_ctx).is_ready());
@@ -559,7 +562,7 @@ async fn broadcast_tail_advances_bound_1() {
         msgs: vec![],
     };
 
-    let mut indlovu = Box::pin(ctx.clone().run(Elephant::default()));
+    let mut indlovu = Box::pin(xtra::run(ctx.clone(), Elephant::default()));
 
     addr.broadcast(Message::Broadcast { priority: 0 })
         .priority(0)
@@ -583,7 +586,8 @@ async fn broadcast_tail_advances_bound_1() {
         "New broadcast message should not be accepted when tail = len"
     );
     assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
-    ctx.yield_once(&mut ngwevu).await;
+    let act = &mut ngwevu;
+    xtra::yield_once(&mut ctx, act).await;
 
     assert!(
         addr.broadcast(Message::Broadcast { priority: 0 })
@@ -599,7 +603,8 @@ async fn broadcast_tail_advances_bound_1() {
     );
 
     assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
-    ctx.yield_once(&mut ngwevu).await;
+    let act = &mut ngwevu;
+    xtra::yield_once(&mut ctx, act).await;
 
     assert_eq!(
         addr.broadcast(Message::Broadcast { priority: 0 })
@@ -628,7 +633,8 @@ async fn broadcast_tail_advances_bound_1() {
     );
 
     // Will handle the broadcast of priority 0 from earlier
-    ctx.yield_once(&mut ngwevu).await;
+    let act = &mut ngwevu;
+    xtra::yield_once(&mut ctx, act).await;
     assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
 
     assert!(
@@ -641,7 +647,8 @@ async fn broadcast_tail_advances_bound_1() {
     );
 
     // Should handle greater
-    ctx.yield_once(&mut ngwevu).await;
+    let act = &mut ngwevu;
+    xtra::yield_once(&mut ctx, act).await;
     assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
 
     assert!(
@@ -665,7 +672,7 @@ async fn broadcast_tail_advances_bound_2() {
         msgs: vec![],
     };
 
-    tokio::spawn(ctx.clone().run(Elephant::default()));
+    tokio::spawn(xtra::run(ctx.clone(), Elephant::default()));
 
     let _ = addr
         .broadcast(Message::Broadcast { priority: 0 })
@@ -676,7 +683,8 @@ async fn broadcast_tail_advances_bound_2() {
         .priority(0)
         .await;
 
-    ctx.yield_once(&mut ngwevu).await;
+    let act = &mut ngwevu;
+    xtra::yield_once(&mut ctx, act).await;
 
     assert_eq!(
         addr.broadcast(Message::Broadcast { priority: 0 })
@@ -696,7 +704,7 @@ async fn broadcast_tail_does_not_advance_unless_both_handle() {
         msgs: vec![],
     };
 
-    let _fut = ctx.clone().run(Elephant::default());
+    let _fut = xtra::run(ctx.clone(), Elephant::default());
 
     let _ = addr
         .broadcast(Message::Broadcast { priority: 0 })
@@ -707,7 +715,8 @@ async fn broadcast_tail_does_not_advance_unless_both_handle() {
         .priority(0)
         .await;
 
-    ctx.yield_once(&mut ngwevu).await;
+    let act = &mut ngwevu;
+    xtra::yield_once(&mut ctx, act).await;
 
     assert_eq!(
         addr.broadcast(Message::Broadcast { priority: 0 }).priority(0).timeout(Duration::from_secs(2)).await,
@@ -769,7 +778,8 @@ async fn address_send_exercises_backpressure() {
         "Fail to queue 2nd message because mailbox is full"
     );
 
-    context.yield_once(&mut Greeter).await; // process one message
+    let act = &mut Greeter;
+    xtra::yield_once(&mut context, act).await; // process one message
 
     let _ = address
         .send(Hello("world"))
@@ -777,7 +787,8 @@ async fn address_send_exercises_backpressure() {
         .now_or_never()
         .expect("be able to queue another message because the mailbox is empty again");
 
-    context.yield_once(&mut Greeter).await; // process one message
+    let act = &mut Greeter;
+    xtra::yield_once(&mut context, act).await; // process one message
 
     // Priority send
 
@@ -799,7 +810,8 @@ async fn address_send_exercises_backpressure() {
         "Fail to queue 2nd priority message because mailbox is full"
     );
 
-    context.yield_once(&mut Greeter).await; // process one message
+    let act = &mut Greeter;
+    xtra::yield_once(&mut context, act).await; // process one message
 
     let _ = address
         .send(PrintHello("world"))
@@ -824,7 +836,8 @@ async fn address_send_exercises_backpressure() {
         "Fail to queue 2nd broadcast because mailbox is full"
     );
 
-    context.yield_once(&mut Greeter).await; // process one message
+    let act = &mut Greeter;
+    xtra::yield_once(&mut context, act).await; // process one message
 
     let _ = address
         .broadcast(PrintHello("world"))
@@ -887,14 +900,14 @@ fn scoped_task() {
     // Does not complete when address starts off from a disconnected weak
     let weak = addr.downgrade();
     drop(addr);
-    assert!(ctx.run(Greeter).now_or_never().is_some());
+    assert!(xtra::run(ctx, Greeter).now_or_never().is_some());
     let scoped = xtra::scoped(&weak, futures_util::future::ready(()));
     assert_eq!(scoped.now_or_never(), Some(None));
 
     // Does not complete when address starts off from a disconnected strong
     let (addr, ctx) = Context::<ActorStopSelf>::new(None);
     let _ = addr.send(StopSelf).split_receiver().now_or_never().unwrap();
-    assert!(ctx.run(ActorStopSelf).now_or_never().is_some());
+    assert!(xtra::run(ctx, ActorStopSelf).now_or_never().is_some());
     let scoped = xtra::scoped(&addr, futures_util::future::ready(()));
     assert_eq!(scoped.now_or_never(), Some(None));
 
@@ -938,7 +951,7 @@ fn test_addr_cmp_hash_eq() {
 #[tokio::test]
 async fn stop_in_started_actor_stops_immediately() {
     let (_address, ctx) = Context::new(None);
-    let fut = ctx.run(StopInStarted);
+    let fut = xtra::run(ctx, StopInStarted);
 
     fut.now_or_never().unwrap(); // if it stops immediately, this returns `Some`
 }
@@ -960,18 +973,27 @@ impl Actor for StopInStarted {
 async fn stop_all_stops_immediately() {
     let (_address, ctx) = Context::new(None);
 
-    let fut1 = ctx.clone().run(InstantShutdownAll {
-        stop_all: true,
-        number: 1,
-    });
-    let fut2 = ctx.clone().run(InstantShutdownAll {
-        stop_all: false,
-        number: 2,
-    });
-    let fut3 = ctx.run(InstantShutdownAll {
-        stop_all: false,
-        number: 3,
-    });
+    let fut1 = xtra::run(
+        ctx.clone(),
+        InstantShutdownAll {
+            stop_all: true,
+            number: 1,
+        },
+    );
+    let fut2 = xtra::run(
+        ctx.clone(),
+        InstantShutdownAll {
+            stop_all: false,
+            number: 2,
+        },
+    );
+    let fut3 = xtra::run(
+        ctx,
+        InstantShutdownAll {
+            stop_all: false,
+            number: 3,
+        },
+    );
 
     fut1.now_or_never().expect("Should stop immediately");
     fut2.now_or_never().expect("Should stop immediately");

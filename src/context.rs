@@ -57,8 +57,8 @@ impl<A: Actor> Context<A> {
     /// let (addr_a, ctx_a) = Context::<ActorA>::new(Some(5));
     /// let (addr_b, ctx_b) = Context::<ActorB>::new(Some(5));
     ///
-    /// smol::spawn(ctx_a.run(ActorA { address: addr_b })).detach();
-    /// smol::spawn(ctx_b.run(ActorB { address: addr_a })).detach();
+    /// smol::spawn(xtra::run(ctx_a, ActorA { address: addr_b })).detach();
+    /// smol::spawn(xtra::run(ctx_b, ActorB { address: addr_a })).detach();
     /// # };
     ///
     /// ```
@@ -102,26 +102,6 @@ impl<A: Actor> Context<A> {
         Address(self.mailbox.weak_sender())
     }
 
-    /// Run the given actor's main loop, handling incoming messages to its mailbox.
-    pub async fn run(mut self, mut actor: A) -> A::Stop {
-        actor.started(&mut self).await;
-
-        // Idk why anyone would do this, but we have to check that they didn't already stop the actor
-        // in the started method, otherwise it would kinda be a bug
-        if !self.running {
-            return actor.stopped().await;
-        }
-
-        loop {
-            match self.yield_once(&mut actor).await {
-                ControlFlow::Continue(()) => {}
-                ControlFlow::Break(()) => {
-                    return actor.stopped().await;
-                }
-            }
-        }
-    }
-
     /// Get for the next message from the actor's mailbox.
     pub fn next_message(&self) -> ReceiveFuture<A> {
         ReceiveFuture(self.mailbox.receive())
@@ -133,168 +113,6 @@ impl<A: Actor> Context<A> {
     /// feature is enabled.
     pub fn tick<'a>(&'a mut self, msg: Message<A>, actor: &'a mut A) -> TickFuture<'a, A> {
         TickFuture::new(msg.0, actor, self)
-    }
-
-    /// Yields to the manager to handle one message, returning the actor should be shut down or not.
-    pub async fn yield_once(&mut self, act: &mut A) -> ControlFlow<()> {
-        self.tick(self.next_message().await, act).await
-    }
-
-    /// Joins on a future by handling all incoming messages whilst polling it. The future will
-    /// always be polled to completion, even if the actor is stopped. If the actor is stopped,
-    /// handling of messages will cease, and only the future will be polled. It is somewhat
-    /// analagous to [`futures::join`](futures_util::future::join), but it will not wait for the
-    /// incoming stream of messages from addresses to end before returning - it will return as soon
-    /// as the provided future does. It will never cancel the handling of a message, even if the
-    /// provided future completes first.
-    ///
-    /// This function explicitly breaks the invariant that an actor only handles one message at a
-    /// time, as it lets other messages be handled inside of a handler. It is recommended to make
-    /// sure that all internal state is finalised and consistent before calling this method.
-    ///
-    /// ## Example
-    ///
-    /// ```rust
-    /// # use std::time::Duration;
-    /// use futures_util::FutureExt;
-    /// # use xtra::prelude::*;
-    /// # use smol::future;
-    /// # struct MyActor;
-    /// # #[async_trait] impl Actor for MyActor { type Stop = (); async fn stopped(self) {} }
-    ///
-    /// struct Stop;
-    /// struct Joining;
-    ///
-    /// #[async_trait]
-    /// impl Handler<Stop> for MyActor {
-    ///     type Return = ();
-    ///
-    ///     async fn handle(&mut self, _msg: Stop, ctx: &mut Context<Self>) {
-    ///         ctx.stop_self();
-    ///     }
-    /// }
-    ///
-    /// #[async_trait]
-    /// impl Handler<Joining> for MyActor {
-    ///     type Return = bool;
-    ///
-    ///     async fn handle(&mut self, _msg: Joining, ctx: &mut Context<Self>) -> bool {
-    ///         let addr = ctx.address().unwrap();
-    ///         let join = ctx.join(self, future::ready::<()>(()));
-    ///         let _ = addr.send(Stop).split_receiver().await;
-    ///
-    ///         // Actor is stopping, but the join should still evaluate correctly
-    ///         join.now_or_never().is_some()
-    ///     }
-    /// }
-    ///
-    /// # #[cfg(feature = "with-smol-1")]
-    /// # smol::block_on(async {
-    /// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
-    /// assert!(addr.is_connected());
-    /// assert_eq!(addr.send(Joining).await, Ok(true)); // Assert that the join did evaluate the future
-    /// # })
-    #[cfg_attr(docsrs, doc("```"))]
-    #[cfg_attr(docsrs, doc(include = "../examples/interleaved_messages.rs"))]
-    #[cfg_attr(docsrs, doc("```"))]
-    pub async fn join<F, R>(&mut self, actor: &mut A, fut: F) -> R
-    where
-        F: Future<Output = R>,
-    {
-        futures_util::pin_mut!(fut);
-        match self.select(actor, fut).await {
-            Either::Left(res) => res,
-            Either::Right(fut) => fut.await,
-        }
-    }
-
-    /// Handle any incoming messages for the actor while running a given future. This is similar to
-    /// [`Context::join`], but will exit if the actor is stopped, returning the future. Returns
-    /// `Ok` with the result of the future if it was successfully completed, or `Err` with the
-    /// future if the actor was stopped before it could complete. In this way it is analagous to
-    /// [`futures::select`](futures_util::future::select). However, it will never cancel the current
-    /// message it is handling whilst waiting for the provided future, even if the provided future
-    /// completes first.
-    ///
-    /// This function explicitly breaks the invariant that an actor only handles one message at a
-    /// time, as it lets other messages be handled inside of a handler. It is recommended to make
-    /// sure that all internal state is finalised and consistent before calling this method.
-    ///
-    /// ## Example
-    ///
-    /// ```rust
-    /// # use std::time::Duration;
-    /// use futures_util::future::Either;
-    /// # use xtra::prelude::*;
-    /// # use smol::future;
-    /// # struct MyActor;
-    /// # #[async_trait] impl Actor for MyActor { type Stop = (); async fn stopped(self) {} }
-    ///
-    /// struct Stop;
-    /// struct Selecting;
-    ///
-    /// #[async_trait]
-    /// impl Handler<Stop> for MyActor {
-    ///     type Return = ();
-    ///
-    ///     async fn handle(&mut self, _msg: Stop, ctx: &mut Context<Self>) {
-    ///         ctx.stop_self();
-    ///     }
-    /// }
-    ///
-    /// #[async_trait]
-    /// impl Handler<Selecting> for MyActor {
-    ///     type Return = bool;
-    ///
-    ///     async fn handle(&mut self, _msg: Selecting, ctx: &mut Context<Self>) -> bool {
-    ///         // Actor is still running, so this will return Either::Left
-    ///         match ctx.select(self, future::ready(1)).await {
-    ///             Either::Left(ans) => println!("Answer is: {}", ans),
-    ///             Either::Right(_) => panic!("How did we get here?"),
-    ///         };
-    ///
-    ///         let addr = ctx.address().unwrap();
-    ///         let select = ctx.select(self, future::pending::<()>());
-    ///         let _ = addr.send(Stop).split_receiver().await;
-    ///
-    ///         // Actor is stopping, so this will return Err, even though the future will
-    ///         // usually never complete.
-    ///         matches!(select.await, Either::Right(_))
-    ///     }
-    /// }
-    ///
-    /// # #[cfg(feature = "with-smol-1")]
-    /// # smol::block_on(async {
-    /// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
-    /// assert!(addr.is_connected());
-    /// assert_eq!(addr.send(Selecting).await, Ok(true)); // Assert that the select did end early
-    /// # })
-    ///
-    /// ```
-    pub async fn select<F, R>(&mut self, actor: &mut A, mut fut: F) -> Either<R, F>
-    where
-        F: Future<Output = R> + Unpin,
-    {
-        while self.running {
-            let (msg, unfinished) = {
-                let mut next_msg = self.next_message();
-                match future::select(fut, &mut next_msg).await {
-                    Either::Left((future_res, _)) => {
-                        if let Some(msg) = next_msg.cancel() {
-                            self.tick(msg, actor).await;
-                        }
-
-                        return Either::Left(future_res);
-                    }
-                    Either::Right(tuple) => tuple,
-                }
-            };
-
-            self.tick(msg, actor).await;
-            fut = unfinished;
-        }
-
-        Either::Right(fut)
     }
 
     /// Notify the actor with a message every interval until it is stopped (either directly with
@@ -357,13 +175,19 @@ impl<A> Clone for Context<A> {
 }
 
 /// A message sent to a given actor, or a notification that it should shut down.
-pub struct Message<A>(pub(crate) ActorMessage<A>);
+pub struct Message<A>(ActorMessage<A>);
+
+impl<A: 'static> Message<A> {
+    pub fn handle<'c>(self, actor: &'c mut A, ctx: &'c mut Context<A>) -> TickFuture<'c, A> {
+        TickFuture::new(self.0, actor, ctx)
+    }
+}
 
 /// A future which will resolve to the next message to be handled by the actor.
 #[must_use = "Futures do nothing unless polled"]
 pub struct ReceiveFuture<A>(InboxReceiveFuture<A, RxStrong>);
 
-impl<A> ReceiveFuture<A> {
+impl<'c, A> ReceiveFuture<A> {
     /// Cancel the receiving future, returning a message if it had been fulfilled with one, but had
     /// not yet been polled after wakeup. Future calls to `Future::poll` will return `Poll::Pending`,
     /// and `FusedFuture::is_terminated` will return `true`.

@@ -51,10 +51,10 @@ impl Handler<Print> for Printer {
 #[smol_potat::main]
 async fn main() {
     let (addr, ctx) = Context::new(Some(32));
-    smol::spawn(ctx.clone().run(Printer::new(0))).detach();
-    smol::spawn(ctx.clone().run(Printer::new(1))).detach();
-    smol::spawn(ctx.clone().run(Printer::new(2))).detach();
-    smol::spawn(ctx.run(Printer::new(3))).detach();
+    smol::spawn(xtra::run(ctx.clone(), Printer::new(0))).detach();
+    smol::spawn(xtra::run(ctx.clone(), Printer::new(1))).detach();
+    smol::spawn(xtra::run(ctx.clone(), Printer::new(2))).detach();
+    smol::spawn(xtra::run(ctx, Printer::new(3))).detach();
 
     while addr.send(Print("hello".to_string())).await.is_ok() {}
     println!("Stopping to send");

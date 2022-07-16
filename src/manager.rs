@@ -42,6 +42,6 @@ impl<A: Actor> ActorManager<A> {
     /// });
     /// ```
     pub fn run(self) -> (Address<A>, impl Future<Output = A::Stop>) {
-        (self.address, self.ctx.run(self.actor))
+        (self.address, crate::run(self.ctx, self.actor))
     }
 }

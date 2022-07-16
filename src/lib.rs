@@ -3,7 +3,11 @@
 #![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
 #![deny(unsafe_code, missing_docs)]
 
+use futures_util::future;
+use futures_util::future::Either;
 use std::fmt;
+use std::future::Future;
+use std::ops::ControlFlow;
 
 pub use self::address::{Address, WeakAddress};
 pub use self::broadcast_future::BroadcastFuture;
@@ -211,3 +215,179 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+/// Run the provided actor.
+///
+/// This is the primary event loop of an actor which takes messages out of the mailbox and hands
+/// them to the actor.
+pub async fn run<A>(mut context: Context<A>, mut actor: A) -> A::Stop
+where
+    A: Actor,
+{
+    actor.started(&mut context).await;
+
+    // Idk why anyone would do this, but we have to check that they didn't already stop the actor
+    // in the started method, otherwise it would kinda be a bug
+    if !context.running {
+        return actor.stopped().await;
+    }
+
+    while let ControlFlow::Continue(()) = yield_once(&mut context, &mut actor).await {}
+
+    return actor.stopped().await;
+}
+
+/// Process exactly on message from the mailbox on the given actor.
+pub async fn yield_once<A>(context: &mut Context<A>, actor: &mut A) -> ControlFlow<(), ()>
+where
+    A: Actor,
+{
+    context.tick(context.next_message().await, actor).await
+}
+
+/// Handle any incoming messages for the actor while running a given future. This is similar to
+/// [`Context::join`], but will exit if the actor is stopped, returning the future. Returns
+/// `Ok` with the result of the future if it was successfully completed, or `Err` with the
+/// future if the actor was stopped before it could complete. It is analagous to
+/// [`futures::select`](futures_util::future::select).
+///
+/// ## Example
+///
+/// ```rust
+/// # use std::time::Duration;
+/// use futures_util::future::Either;
+/// # use xtra::prelude::*;
+/// # use smol::future;
+/// # struct MyActor;
+/// # #[async_trait] impl Actor for MyActor { type Stop = (); async fn stopped(self) {} }
+///
+/// struct Stop;
+/// struct Selecting;
+///
+/// #[async_trait]
+/// impl Handler<Stop> for MyActor {
+///     type Return = ();
+///
+///     async fn handle(&mut self, _msg: Stop, ctx: &mut Context<Self>) {
+///         ctx.stop_self();
+///     }
+/// }
+///
+/// #[async_trait]
+/// impl Handler<Selecting> for MyActor {
+///     type Return = bool;
+///
+///     async fn handle(&mut self, _msg: Selecting, ctx: &mut Context<Self>) -> bool {
+///         // Actor is still running, so this will return Either::Left
+///         match xtra::select(ctx, self, future::ready(1)).await {
+///             Either::Left(ans) => println!("Answer is: {}", ans),
+///             Either::Right(_) => panic!("How did we get here?"),
+///         };
+///
+///         let addr = ctx.address().unwrap();
+///         let select = xtra::select(ctx, self, future::pending::<()>());
+///         let _ = addr.send(Stop).split_receiver().await;
+///
+///         // Actor is stopping, so this will return Err, even though the future will
+///         // usually never complete.
+///         matches!(select.await, Either::Right(_))
+///     }
+/// }
+///
+/// # #[cfg(feature = "with-smol-1")]
+/// # smol::block_on(async {
+/// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
+/// assert!(addr.is_connected());
+/// assert_eq!(addr.send(Selecting).await, Ok(true)); // Assert that the select did end early
+/// # })
+///
+/// ```
+pub async fn select<A, F, R>(context: &mut Context<A>, actor: &mut A, mut fut: F) -> Either<R, F>
+where
+    F: Future<Output = R> + Unpin,
+    A: Actor,
+{
+    while context.running {
+        let (msg, unfinished) = {
+            let mut next_msg = context.next_message();
+            match future::select(fut, &mut next_msg).await {
+                Either::Left((future_res, _)) => {
+                    if let Some(msg) = next_msg.cancel() {
+                        context.tick(msg, actor).await;
+                    }
+
+                    return Either::Left(future_res);
+                }
+                Either::Right(tuple) => tuple,
+            }
+        };
+
+        context.tick(msg, actor).await;
+        fut = unfinished;
+    }
+
+    Either::Right(fut)
+}
+
+/// Joins on a future by handling all incoming messages whilst polling it. The future will
+/// always be polled to completion, even if the actor is stopped. If the actor is stopped,
+/// handling of messages will cease, and only the future will be polled. It is somewhat
+/// analagous to [`futures::join`](futures_util::future::join), but it will not wait for the incoming stream of messages
+/// from addresses to end before returning - it will return as soon as the provided future does.
+///
+/// ## Example
+///
+/// ```rust
+/// # use std::time::Duration;
+/// use futures_util::FutureExt;
+/// # use xtra::prelude::*;
+/// # use smol::future;
+/// # struct MyActor;
+/// # #[async_trait] impl Actor for MyActor { type Stop = (); async fn stopped(self) {} }
+///
+/// struct Stop;
+/// struct Joining;
+///
+/// #[async_trait]
+/// impl Handler<Stop> for MyActor {
+///     type Return = ();
+///
+///     async fn handle(&mut self, _msg: Stop, ctx: &mut Context<Self>) {
+///         ctx.stop_self();
+///     }
+/// }
+///
+/// #[async_trait]
+/// impl Handler<Joining> for MyActor {
+///     type Return = bool;
+///
+///     async fn handle(&mut self, _msg: Joining, ctx: &mut Context<Self>) -> bool {
+///         let addr = ctx.address().unwrap();
+///         let join = xtra::join(ctx, self, future::ready::<()>(()));
+///         let _ = addr.send(Stop).split_receiver().await;
+///
+///         // Actor is stopping, but the join should still evaluate correctly
+///         join.now_or_never().is_some()
+///     }
+/// }
+///
+/// # #[cfg(feature = "with-smol-1")]
+/// # smol::block_on(async {
+/// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
+/// assert!(addr.is_connected());
+/// assert_eq!(addr.send(Joining).await, Ok(true)); // Assert that the join did evaluate the future
+/// # })
+#[cfg_attr(docsrs, doc("```"))]
+#[cfg_attr(docsrs, doc(include = "../examples/interleaved_messages.rs"))]
+#[cfg_attr(docsrs, doc("```"))]
+pub async fn join<A, F, R>(context: &mut Context<A>, actor: &mut A, fut: F) -> R
+where
+    F: Future<Output = R>,
+    A: Actor,
+{
+    futures_util::pin_mut!(fut);
+    match select(context, actor, fut).await {
+        Either::Left(res) => res,
+        Either::Right(fut) => fut.await,
+    }
+}
