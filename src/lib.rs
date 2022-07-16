@@ -1,6 +1,6 @@
 //! xtra is a tiny, fast, and safe actor system.
 
-#![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(unsafe_code, missing_docs)]
 
 use std::fmt;
@@ -80,7 +80,7 @@ pub mod refcount {
 /// }
 ///
 /// fn main() {
-/// #   #[cfg(feature = "with-smol-1")]
+/// #   #[cfg(feature = "smol")]
 ///     smol::block_on(async {
 ///         let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///         assert_eq!(addr.send(Msg).await, Ok(20));
@@ -139,7 +139,7 @@ pub trait Handler<M>: Actor {
 /// }
 ///
 /// // Will print "Started!", "Goodbye!", and then "Finally stopping."
-/// # #[cfg(feature = "with-smol-1")]
+/// # #[cfg(feature = "smol")]
 /// smol::block_on(async {
 ///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///     addr.send(Goodbye).await;
@@ -392,9 +392,6 @@ where
 /// assert!(addr.is_connected());
 /// assert_eq!(addr.send(Joining).await, Ok(true)); // Assert that the join did evaluate the future
 /// # })
-#[cfg_attr(docsrs, doc("```"))]
-#[cfg_attr(docsrs, doc(include = "../examples/interleaved_messages.rs"))]
-#[cfg_attr(docsrs, doc("```"))]
 pub async fn join<A, F, R>(mailbox: &mut Mailbox<A>, actor: &mut A, fut: F) -> R
 where
     F: Future<Output = R>,

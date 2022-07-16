@@ -12,7 +12,7 @@ jobs:
         toolchain: [
           stable,
           beta,
-          1.56.0 # MSRV
+          1.60.0 # MSRV
         ]
         args: [
           --all-features,
