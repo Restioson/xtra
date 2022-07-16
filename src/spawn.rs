@@ -1,12 +1,12 @@
 use std::future::Future;
 
-#[cfg(feature = "with-async_std-1")]
+#[cfg(feature = "async_std")]
 pub use async_std_impl::*;
-#[cfg(feature = "with-smol-1")]
+#[cfg(feature = "smol")]
 pub use smol_impl::*;
-#[cfg(feature = "with-tokio-1")]
+#[cfg(feature = "tokio")]
 pub use tokio_impl::*;
-#[cfg(feature = "with-wasm_bindgen-0_2")]
+#[cfg(feature = "wasm_bindgen")]
 pub use wasm_bindgen_impl::*;
 
 /// An `Spawner` represents anything that can spawn a future to be run in the background. This is
@@ -16,7 +16,7 @@ pub trait Spawner {
     fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F);
 }
 
-#[cfg(feature = "with-async_std-1")]
+#[cfg(feature = "async_std")]
 mod async_std_impl {
     use super::*;
     use crate::{Actor, ActorManager, Address};
@@ -44,7 +44,7 @@ mod async_std_impl {
     }
 }
 
-#[cfg(feature = "with-smol-1")]
+#[cfg(feature = "smol")]
 mod smol_impl {
     use super::*;
     use crate::{Actor, ActorManager, Address};
@@ -87,7 +87,7 @@ mod smol_impl {
     }
 }
 
-#[cfg(feature = "with-tokio-1")]
+#[cfg(feature = "tokio")]
 mod tokio_impl {
     use super::*;
     use crate::{Actor, ActorManager, Address};
@@ -129,7 +129,7 @@ mod tokio_impl {
     }
 }
 
-#[cfg(feature = "with-wasm_bindgen-0_2")]
+#[cfg(feature = "wasm_bindgen")]
 mod wasm_bindgen_impl {
     use super::*;
     use crate::{Actor, ActorManager, Address};

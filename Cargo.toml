@@ -25,16 +25,9 @@ spin = { version = "0.9.3", default-features = false, features = ["spin_mutex"] 
 # Feature `timing`
 futures-timer = { version = "3.0", optional = true, default-features = false }
 
-# Feature `with-async_std-1`
 async-std = { version = "1.0", features = ["unstable"], optional = true }
-
-# Feature `with-smol-1`
 smol = { version = "1.1", optional = true }
-
-# Feature `with-tokio-1`
 tokio = { version = "1.0", features = ["rt", "time"], optional = true }
-
-# Feature `with-wasm_bindgen-0_2`
 wasm-bindgen = { version = "0.2", optional = true, default-features = false }
 wasm-bindgen-futures = { version = "0.4", optional = true, default-features = false }
 
@@ -54,69 +47,69 @@ async-std = { version = "1.0", features = ["attributes"] }
 [features]
 default = ["timing"]
 timing = ["futures-timer"]
-instrumentation = ["tracing"]
-with-async_std-1 = ["async-std"]
-with-smol-1 = ["smol"]
-with-tokio-1 = ["tokio"]
-with-wasm_bindgen-0_2 = ["wasm-bindgen", "wasm-bindgen-futures"]
+instrumentation = ["dep:tracing"]
+async_std = ["dep:async-std"]
+smol = ["dep:smol"]
+tokio = ["dep:tokio"]
+wasm_bindgen = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures"]
 
 [[example]]
 name = "basic_tokio"
-required-features = ["with-tokio-1"]
+required-features = ["tokio"]
 
 [[example]]
 name = "basic_async_std"
-required-features = ["with-async_std-1"]
+required-features = ["async_std"]
 
 [[example]]
 name = "basic_smol"
 path = "examples/basic_smol.rs"
-required-features = ["with-smol-1"]
+required-features = ["smol"]
 
 [[example]]
 name = "interleaved_messages"
-required-features = ["with-smol-1"]
+required-features = ["smol"]
 
 [[example]]
 name = "message_stealing_multiple_actors"
-required-features = ["with-smol-1"]
+required-features = ["smol"]
 
 [[example]]
 name = "crude_bench"
-required-features = ["with-tokio-1"]
+required-features = ["tokio"]
 
 [[example]]
 name = "global_spawner_ext"
-required-features = ["with-smol-1"]
+required-features = ["smol"]
 
 [[example]]
 name = "backpressure"
-required-features = ["with-tokio-1"]
+required-features = ["tokio"]
 
 [[example]]
 name = "address_sink"
-required-features = ["with-tokio-1", "tokio/full"]
+required-features = ["tokio", "tokio/full"]
 
 [[example]]
 name = "send_interval"
-required-features = ["with-tokio-1", "tokio/full"]
+required-features = ["tokio", "tokio/full"]
 
 [[example]]
 name = "scoped_actor_task"
-required-features = ["with-tokio-1", "futures-util/default"]
+required-features = ["tokio", "futures-util/default"]
 
 [[example]]
 name = "custom_event_loop"
 
 [[test]]
 name = "basic"
-required-features = ["with-tokio-1"]
+required-features = ["tokio"]
 
 [workspace]
 members = ["examples/basic_wasm_bindgen"]
 
 [package.metadata.docs.rs]
-features = ["with-async_std-1", "with-smol-1", "with-tokio-1", "with-wasm_bindgen-0_2"]
+features = ["async_std", "smol", "tokio", "wasm_bindgen"]
 
 [[bench]]
 name = "throughput"

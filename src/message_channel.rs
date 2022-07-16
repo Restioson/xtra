@@ -54,7 +54,7 @@ use crate::{Error, Handler};
 /// }
 ///
 /// fn main() {
-/// # #[cfg(feature = "with-smol-1")]
+/// # #[cfg(feature = "smol")]
 /// smol::block_on(async {
 ///         let alice = Alice.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///         let bob = Bob.create(None).spawn(&mut xtra::spawn::Smol::Global);
