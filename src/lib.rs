@@ -3,7 +3,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
 #![deny(unsafe_code, missing_docs)]
 
-use crate::context::{Message, TickFuture};
+use crate::context::TickFuture;
+use crate::mailbox::Message;
 use futures_util::future;
 use futures_util::future::Either;
 use std::fmt;

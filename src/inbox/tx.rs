@@ -20,18 +20,23 @@ pub struct Sender<A, Rc: TxRefCounter> {
     pub(super) rc: Rc,
 }
 
+impl<A> Sender<A, TxWeak> {
+    pub fn upgrade(&self) -> Option<Sender<A, TxStrong>> {
+        let sender = Sender {
+            inner: self.inner.clone(),
+            rc: TxStrong::try_new(&self.inner)?,
+        };
+
+        Some(sender)
+    }
+}
+
 impl<A> Sender<A, TxStrong> {
     pub fn new(inner: Arc<Chan<A>>) -> Self {
         let rc = TxStrong(());
         rc.increment(&inner);
 
         Sender { inner, rc }
-    }
-
-    pub fn upgrade(&self) -> Option<Sender<A, TxStrong>> {
-        let sender = Sender::try_new_strong(self.inner.clone())?;
-
-        Some(sender)
     }
 }
 

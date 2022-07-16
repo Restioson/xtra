@@ -1,5 +1,5 @@
 use std::future::Future;
-use std::time::{Duration, Instgant};
+use std::time::{Duration, Instant};
 
 use futures_util::FutureExt;
 use xtra::prelude::*;
