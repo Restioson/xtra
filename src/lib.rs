@@ -231,7 +231,7 @@ where
 
     while let ControlFlow::Continue(()) = yield_once(&mut mailbox, &mut actor).await {}
 
-    return actor.stopped().await;
+    actor.stopped().await
 }
 
 /// Process exactly on message from the mailbox on the given actor.
