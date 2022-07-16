@@ -2,9 +2,9 @@
 //! switch only after it has received many messages.
 
 use std::time::Duration;
-use xtra::Mailbox;
 
 use xtra::prelude::*;
+use xtra::Mailbox;
 
 struct Printer {
     times: usize,

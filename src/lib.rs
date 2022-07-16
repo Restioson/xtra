@@ -3,13 +3,12 @@
 #![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
 #![deny(unsafe_code, missing_docs)]
 
-use crate::context::TickFuture;
-use crate::mailbox::Message;
-use futures_util::future;
-use futures_util::future::Either;
 use std::fmt;
 use std::future::Future;
 use std::ops::ControlFlow;
+
+use futures_util::future;
+use futures_util::future::Either;
 
 pub use self::address::{Address, WeakAddress};
 pub use self::broadcast_future::BroadcastFuture;
@@ -19,6 +18,8 @@ pub use self::manager::ActorManager;
 pub use self::receiver::Receiver;
 pub use self::scoped_task::scoped;
 pub use self::send_future::{ActorErasedSending, NameableSending, SendFuture};
+use crate::context::TickFuture;
+use crate::mailbox::Message;
 
 pub mod address;
 mod broadcast_future;

@@ -1,11 +1,13 @@
-use crate::inbox::rx::RxStrong;
-use crate::inbox::ActorMessage;
-use crate::{inbox, Address, WeakAddress};
-use futures_core::FusedFuture;
-use futures_util::FutureExt;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+use futures_core::FusedFuture;
+use futures_util::FutureExt;
+
+use crate::inbox::rx::RxStrong;
+use crate::inbox::ActorMessage;
+use crate::{inbox, Address, WeakAddress};
 
 /// The mailbox of an actor.
 ///
