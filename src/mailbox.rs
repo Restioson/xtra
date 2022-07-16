@@ -35,7 +35,7 @@ impl<A> Mailbox<A> {
 
     /// Grab an address to this mailbox.
     ///
-    /// The returned address is a [`WeakAddress`]. To get a strong address, use [`WeakAddress::upgrade`].
+    /// The returned address is a [`WeakAddress`]. To get a strong address, use [`WeakAddress::try_upgrade`].
     pub fn address(&self) -> WeakAddress<A> {
         Address(self.0.weak_sender())
     }

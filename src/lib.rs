@@ -262,7 +262,7 @@ where
 }
 
 /// Handle any incoming messages for the actor while running a given future. This is similar to
-/// [`Context::join`], but will exit if the actor is stopped, returning the future. Returns
+/// [`join`], but will exit if the actor is stopped, returning the future. Returns
 /// `Ok` with the result of the future if it was successfully completed, or `Err` with the
 /// future if the actor was stopped before it could complete. It is analagous to
 /// [`futures::select`](futures_util::future::select).
