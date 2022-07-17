@@ -2,9 +2,9 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::Poll;
 use std::{mem, task};
-use std::sync::Arc;
 
 use futures_core::future::BoxFuture;
 use futures_core::FusedFuture;
@@ -13,9 +13,9 @@ use futures_util::FutureExt;
 
 use crate::envelope::{HandlerSpan, Shutdown};
 use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
+use crate::inbox::tx::{TxStrong, TxWeak};
 use crate::inbox::{ActorMessage, Chan};
 use crate::{inbox, Actor, Address, Error, WeakAddress};
-use crate::inbox::tx::{TxStrong, TxWeak};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via

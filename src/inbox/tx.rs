@@ -1,4 +1,4 @@
-use std::fmt::{Debug};
+use std::fmt::Debug;
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
@@ -11,7 +11,7 @@ use futures_util::FutureExt;
 use super::*;
 use crate::inbox::tx::private::RefCounterInner;
 use crate::send_future::private::SetPriority;
-use crate::{Error};
+use crate::Error;
 
 impl<A> SetPriority for SendFuture<A> {
     fn set_priority(&mut self, priority: u32) {

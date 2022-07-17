@@ -13,10 +13,10 @@ use event_listener::EventListener;
 use futures_sink::Sink;
 use futures_util::FutureExt;
 
+use crate::inbox::Chan;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
 use crate::{BroadcastFuture, Error, Handler, NameableSending, SendFuture};
-use crate::inbox::Chan;
 
 /// An [`Address`] is a reference to an actor through which messages can be
 /// sent. It can be cloned to create more addresses to the same actor.
@@ -94,7 +94,7 @@ impl<A> Address<A, Strong> {
     pub fn downgrade(&self) -> WeakAddress<A> {
         Address {
             inner: self.inner.clone(),
-            rc: Weak::new(&self.inner)
+            rc: Weak::new(&self.inner),
         }
     }
 }
@@ -105,7 +105,7 @@ impl<A> Address<A, Either> {
     pub fn downgrade(&self) -> WeakAddress<A> {
         Address {
             inner: self.inner.clone(),
-            rc: Weak::new(&self.inner)
+            rc: Weak::new(&self.inner),
         }
     }
 }
@@ -164,7 +164,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     pub fn as_either(&self) -> Address<A, Either> {
         Address {
             inner: self.inner.clone(),
-            rc: self.rc.increment(&self.inner).into_either()
+            rc: self.rc.increment(&self.inner).into_either(),
         }
     }
 
@@ -267,7 +267,7 @@ impl<A, Rc: RefCounter> Clone for Address<A, Rc> {
     fn clone(&self) -> Self {
         Address {
             inner: self.inner.clone(),
-            rc: self.rc.increment(&self.inner)
+            rc: self.rc.increment(&self.inner),
         }
     }
 }
@@ -291,10 +291,12 @@ impl<A, Rc: RefCounter> Eq for Address<A, Rc> {}
 /// address will compare as greater than a weak one.
 impl<A, Rc: RefCounter, Rc2: RefCounter> PartialOrd<Address<A, Rc2>> for Address<A, Rc> {
     fn partial_cmp(&self, other: &Address<A, Rc2>) -> Option<Ordering> {
-        Some(match Arc::as_ptr(&self.inner).cmp(&Arc::as_ptr(&other.inner)) {
-            Ordering::Equal => self.rc.is_strong().cmp(&other.rc.is_strong()),
-            ord => ord,
-        })
+        Some(
+            match Arc::as_ptr(&self.inner).cmp(&Arc::as_ptr(&other.inner)) {
+                Ordering::Equal => self.rc.is_strong().cmp(&other.rc.is_strong()),
+                ord => ord,
+            },
+        )
     }
 }
 

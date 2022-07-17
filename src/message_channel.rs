@@ -8,10 +8,10 @@ use std::sync::Arc;
 use futures_sink::Sink;
 
 use crate::address::{ActorJoinHandle, Address};
+use crate::inbox::tx::TxWeak;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture};
 use crate::{Error, Handler};
-use crate::inbox::tx::TxWeak;
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`], but associated with the message type rather
@@ -322,7 +322,7 @@ where
     ) -> Box<dyn MessageChannelTrait<M, Weak, Return = Self::Return> + Send + Sync + 'static> {
         Box::new(Address {
             inner: self.inner.clone(),
-            rc: TxWeak::new(&self.inner)
+            rc: TxWeak::new(&self.inner),
         })
     }
 

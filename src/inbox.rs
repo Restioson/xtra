@@ -15,10 +15,10 @@ use std::{cmp, mem};
 
 use event_listener::{Event, EventListener};
 pub use rx::Receiver;
-pub use tx::{SendFuture};
+pub use tx::SendFuture;
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
-use crate::inbox::rx::{WaitingReceiver};
+use crate::inbox::rx::WaitingReceiver;
 use crate::{Actor, Error};
 
 type Spinlock<T> = spin::Mutex<T>;
