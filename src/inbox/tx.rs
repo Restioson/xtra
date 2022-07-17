@@ -21,10 +21,10 @@ pub struct Sender<A, Rc: TxRefCounter> {
 
 impl<A> Sender<A, TxStrong> {
     pub fn new(inner: Arc<Chan<A>>) -> Self {
-        let rc = TxStrong(());
-        rc.increment(&inner);
-
-        Sender { inner, rc }
+        Sender {
+            inner,
+            rc: TxStrong::first(&inner),
+        }
     }
 
     pub fn try_new_strong(inner: Arc<Chan<A>>) -> Option<Self> {
@@ -202,6 +202,14 @@ pub struct TxStrong(());
 pub struct TxWeak(());
 
 impl TxStrong {
+    /// Create the first strong reference.
+    pub(crate) fn first(inner: &Chan<A>) -> Self {
+        let rc = TxStrong(());
+        rc.increment(&inner);
+
+        rc
+    }
+
     /// Attempt to construct a new `TxStrong` pointing to the given `inner` if there are existing
     /// strong references to `inner`. This will return `None` if there were 0 strong references to
     /// the inner.
