@@ -842,16 +842,14 @@ fn address_debug() {
 
     assert_eq!(
         format!("{:?}", addr1),
-        "Address(Sender<basic::Greeter> { \
-        rx_count: 1, tx_count: 2, rc: TxStrong(()) })"
+        "Address<basic::Greeter> { rx_count: 1, tx_count: 2, rc: TxStrong(()) }"
     );
 
     assert_eq!(format!("{:?}", addr1), format!("{:?}", addr2));
 
     assert_eq!(
         format!("{:?}", weak_addr),
-        "Address(Sender<basic::Greeter> { \
-        rx_count: 1, tx_count: 2, rc: TxWeak(()) })"
+        "Address<basic::Greeter> { rx_count: 1, tx_count: 2, rc: TxWeak(()) }"
     );
 }
 
@@ -865,14 +863,14 @@ fn message_channel_debug() {
     assert_eq!(
         format!("{:?}", mc),
         "MessageChannel<basic::Hello, alloc::string::String>(\
-            Sender<basic::Greeter> { rx_count: 1, tx_count: 1, rc: TxStrong(()) }\
+            Address<basic::Greeter> { rx_count: 1, tx_count: 1, rc: TxStrong(()) }\
         )"
     );
 
     assert_eq!(
         format!("{:?}", weak_mc),
         "MessageChannel<basic::Hello, alloc::string::String>(\
-            Sender<basic::Greeter> { rx_count: 1, tx_count: 1, rc: TxWeak(()) }\
+            Address<basic::Greeter> { rx_count: 1, tx_count: 1, rc: TxWeak(()) }\
         )"
     );
 }
