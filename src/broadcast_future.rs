@@ -8,9 +8,8 @@ use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use crate::envelope::BroadcastEnvelopeConcrete;
-use crate::inbox::tx::TxRefCounter;
-use crate::inbox::{SendFuture, SentMessage};
-use crate::{inbox, Error, Handler};
+use crate::inbox::{Chan, SendFuture, SentMessage};
+use crate::{Error, Handler};
 
 /// A [`Future`] that represents the state of broadcasting a message to all actors connected to an
 /// [`Address`](crate::Address).
@@ -23,19 +22,16 @@ use crate::{inbox, Error, Handler};
 /// case the mailbox of an actor is bounded, this future yields `Pending` until a slot for this
 /// message is available.
 #[must_use = "Futures do nothing unless polled"]
-pub struct BroadcastFuture<A, M, Rc: TxRefCounter> {
-    inner: Inner<A, M, Rc>,
+pub struct BroadcastFuture<A, M> {
+    inner: Inner<A, M>,
 }
 
-impl<A, M, Rc> BroadcastFuture<A, M, Rc>
-where
-    Rc: TxRefCounter,
-{
-    pub(crate) fn new(message: M, sender: inbox::Sender<A, Rc>) -> Self {
+impl<A, M> BroadcastFuture<A, M> {
+    pub(crate) fn new(message: M, chan: Arc<Chan<A>>) -> Self {
         Self {
             inner: Inner::Initial {
                 message,
-                sender,
+                chan,
                 priority: None,
             },
         }
@@ -47,11 +43,13 @@ where
     pub fn priority(self, priority: u32) -> Self {
         match self.inner {
             Inner::Initial {
-                message, sender, ..
+                message,
+                chan: sender,
+                ..
             } => Self {
                 inner: Inner::Initial {
                     message,
-                    sender,
+                    chan: sender,
                     priority: Some(priority),
                 },
             },
@@ -60,19 +58,18 @@ where
     }
 }
 
-enum Inner<A, M, Rc: TxRefCounter> {
+enum Inner<A, M> {
     Initial {
         message: M,
-        sender: inbox::Sender<A, Rc>,
+        chan: Arc<Chan<A>>,
         priority: Option<u32>,
     },
-    Sending(SendFuture<A, Rc>),
+    Sending(SendFuture<A>),
     Done,
 }
 
-impl<A, M, Rc> Future for BroadcastFuture<A, M, Rc>
+impl<A, M> Future for BroadcastFuture<A, M>
 where
-    Rc: TxRefCounter,
     M: Clone + Send + Sync + 'static + Unpin,
     A: Handler<M, Return = ()>,
 {
@@ -84,13 +81,15 @@ where
         match mem::replace(&mut this.inner, Inner::Done) {
             Inner::Initial {
                 message,
-                sender,
+                chan,
                 priority,
             } => {
                 let envelope =
                     BroadcastEnvelopeConcrete::<A, M>::new(message, priority.unwrap_or(0));
-                this.inner =
-                    Inner::Sending(sender.send(SentMessage::ToAllActors(Arc::new(envelope))));
+                this.inner = Inner::Sending(SendFuture::New {
+                    chan,
+                    msg: SentMessage::ToAllActors(Arc::new(envelope)),
+                });
                 this.poll_unpin(cx)
             }
             Inner::Sending(mut send_fut) => match send_fut.poll_unpin(cx) {
@@ -107,9 +106,8 @@ where
     }
 }
 
-impl<A, M, Rc> FusedFuture for BroadcastFuture<A, M, Rc>
+impl<A, M> FusedFuture for BroadcastFuture<A, M>
 where
-    Rc: TxRefCounter,
     Self: Future,
 {
     fn is_terminated(&self) -> bool {

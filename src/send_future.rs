@@ -2,16 +2,15 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::mem;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use crate::envelope::ReturningEnvelope;
-use crate::inbox::tx::TxRefCounter;
-use crate::inbox::{PriorityMessageToOne, SentMessage};
+use crate::inbox::{tx, Chan, PriorityMessageToOne, SentMessage};
 use crate::receiver::Receiver;
-use crate::refcount::{RefCounter, Strong};
 use crate::send_future::private::SetPriority;
 use crate::{inbox, Error, Handler};
 
@@ -89,9 +88,8 @@ where
 }
 
 impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
-    pub(crate) fn sending_erased<M, A, Rc>(message: M, sender: inbox::Sender<A, Rc>) -> Self
+    pub(crate) fn sending_erased<M, A>(message: M, chan: Arc<Chan<A>>) -> Self
     where
-        Rc: TxRefCounter,
         A: Handler<M, Return = R>,
         M: Send + 'static,
         R: Send + 'static,
@@ -101,7 +99,10 @@ impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
 
         Self {
             inner: SendFutureInner::Sending(ActorErasedSending {
-                future: Box::new(sender.send(SentMessage::ToOneActor(msg))),
+                future: Box::new(tx::SendFuture::New {
+                    msg: SentMessage::ToOneActor(msg),
+                    chan,
+                }),
                 rx: Some(rx),
             }),
             phantom: PhantomData,
@@ -109,11 +110,11 @@ impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
     }
 }
 
-impl<A, R, Rc: RefCounter> SendFuture<R, NameableSending<A, R, Rc>, ResolveToHandlerReturn> {
+impl<A, R> SendFuture<R, NameableSending<A, R>, ResolveToHandlerReturn> {
     /// Construct a [`SendFuture`] that contains the actor's name in its type.
     ///
     /// Compared to [`SendFuture::sending_erased`], this function avoids one allocation.
-    pub(crate) fn sending_named<M>(message: M, sender: inbox::Sender<A, Rc>) -> Self
+    pub(crate) fn sending_named<M>(message: M, chan: Arc<Chan<A>>) -> Self
     where
         A: Handler<M, Return = R>,
         M: Send + 'static,
@@ -124,7 +125,10 @@ impl<A, R, Rc: RefCounter> SendFuture<R, NameableSending<A, R, Rc>, ResolveToHan
 
         Self {
             inner: SendFutureInner::Sending(NameableSending {
-                inner: sender.send(SentMessage::ToOneActor(msg)),
+                inner: tx::SendFuture::New {
+                    msg: SentMessage::ToOneActor(msg),
+                    chan,
+                },
                 receiver: Some(Receiver::new(rx)),
             }),
             phantom: PhantomData,
@@ -133,18 +137,18 @@ impl<A, R, Rc: RefCounter> SendFuture<R, NameableSending<A, R, Rc>, ResolveToHan
 }
 
 /// "Sending" state of [`SendFuture`] for cases where the actor type is known and we can there refer to it by name.
-pub struct NameableSending<A, R, Rc: RefCounter = Strong> {
-    inner: inbox::SendFuture<A, Rc>,
+pub struct NameableSending<A, R> {
+    inner: inbox::SendFuture<A>,
     receiver: Option<Receiver<R>>,
 }
 
-impl<A, R, Rc: RefCounter> SetPriority for NameableSending<A, R, Rc> {
+impl<A, R> SetPriority for NameableSending<A, R> {
     fn set_priority(&mut self, priority: u32) {
         self.inner.set_priority(priority)
     }
 }
 
-impl<A, R, Rc: RefCounter> Future for NameableSending<A, R, Rc> {
+impl<A, R> Future for NameableSending<A, R> {
     type Output = Receiver<R>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

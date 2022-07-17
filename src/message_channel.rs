@@ -294,7 +294,7 @@ where
         &self,
         message: M,
     ) -> SendFuture<R, ActorErasedSending<Self::Return>, ResolveToHandlerReturn> {
-        SendFuture::sending_erased(message, self.0.clone())
+        SendFuture::sending_erased(message, self.0.inner.clone())
     }
 
     fn clone_channel(

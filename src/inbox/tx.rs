@@ -15,7 +15,7 @@ use crate::send_future::private::SetPriority;
 use crate::{Actor, Error};
 
 pub struct Sender<A, Rc: TxRefCounter> {
-    inner: Arc<Chan<A>>,
+    pub inner: Arc<Chan<A>>,
     rc: Rc,
 }
 
@@ -87,13 +87,6 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     pub fn disconnect_notice(&self) -> Option<EventListener> {
         self.inner.disconnect_listener()
     }
-
-    /// Send a message through with [`Sender`].
-    ///
-    /// This consumes the provided [`Sender`] but it can be cloned before it one wishes to reuse it.
-    pub fn send(self, msg: SentMessage<A>) -> SendFuture<A, Rc> {
-        SendFuture::New { msg, tx: self }
-    }
 }
 
 impl<A, Rc: TxRefCounter> Clone for Sender<A, Rc> {
@@ -124,7 +117,7 @@ impl<A, Rc: TxRefCounter> Debug for Sender<A, Rc> {
     }
 }
 
-impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
+impl<A> SetPriority for SendFuture<A> {
     fn set_priority(&mut self, priority: u32) {
         match self {
             SendFuture::New {
@@ -137,16 +130,16 @@ impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
 }
 
 #[must_use = "Futures do nothing unless polled"]
-pub enum SendFuture<A, Rc: TxRefCounter> {
+pub enum SendFuture<A> {
     New {
         msg: SentMessage<A>,
-        tx: Sender<A, Rc>,
+        chan: Arc<Chan<A>>,
     },
     WaitingToSend(Arc<Spinlock<WaitingSender<A>>>),
     Complete,
 }
 
-impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
+impl<A> Future for SendFuture<A> {
     type Output = Result<(), Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
@@ -154,7 +147,7 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
 
         loop {
             match mem::replace(this, SendFuture::Complete) {
-                SendFuture::New { msg, tx } => match tx.inner.try_send(msg) {
+                SendFuture::New { msg, chan } => match chan.try_send(msg) {
                     Ok(()) => return Poll::Ready(Ok(())),
                     Err(TrySendFail::Disconnected) => return Poll::Ready(Err(Error::Disconnected)),
                     Err(TrySendFail::Full(waiting)) => {
@@ -181,7 +174,7 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
     }
 }
 
-impl<A, Rc: TxRefCounter> FusedFuture for SendFuture<A, Rc> {
+impl<A> FusedFuture for SendFuture<A> {
     fn is_terminated(&self) -> bool {
         matches!(self, SendFuture::Complete)
     }

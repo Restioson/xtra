@@ -162,25 +162,25 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         message: M,
     ) -> SendFuture<
         <A as Handler<M>>::Return,
-        NameableSending<A, <A as Handler<M>>::Return, Rc>,
+        NameableSending<A, <A as Handler<M>>::Return>,
         ResolveToHandlerReturn,
     >
     where
         M: Send + 'static,
         A: Handler<M>,
     {
-        SendFuture::sending_named(message, self.0.clone())
+        SendFuture::sending_named(message, self.0.inner.clone())
     }
 
     /// Send a message to all actors on this address.
     ///
     /// For details, please see the documentation on [`BroadcastFuture`].
-    pub fn broadcast<M>(&self, msg: M) -> BroadcastFuture<A, M, Rc>
+    pub fn broadcast<M>(&self, msg: M) -> BroadcastFuture<A, M>
     where
         M: Clone + Sync + Send + 'static,
         A: Handler<M, Return = ()>,
     {
-        BroadcastFuture::new(msg, self.0.clone())
+        BroadcastFuture::new(msg, self.0.inner.clone())
     }
 
     /// Waits until this address becomes disconnected. Note that if this is called on a strong
