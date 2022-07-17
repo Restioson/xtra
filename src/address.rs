@@ -6,6 +6,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use event_listener::EventListener;
@@ -14,7 +15,8 @@ use futures_util::FutureExt;
 
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
-use crate::{inbox, BroadcastFuture, Error, Handler, NameableSending, SendFuture};
+use crate::{BroadcastFuture, Error, Handler, NameableSending, SendFuture};
+use crate::inbox::Chan;
 
 /// An [`Address`] is a reference to an actor through which messages can be
 /// sent. It can be cloned to create more addresses to the same actor.
@@ -62,11 +64,19 @@ use crate::{inbox, BroadcastFuture, Error, Handler, NameableSending, SendFuture}
 /// of their priority. All actors must handle a message for it to be removed from the mailbox and
 /// the length to decrease. This means that the backpressure provided by [`Address::broadcast`] will
 /// wait for the slowest actor.
-pub struct Address<A, Rc: RefCounter = Strong>(pub(crate) inbox::Sender<A, Rc>);
+pub struct Address<A, Rc: RefCounter = Strong> {
+    pub(crate) inner: Arc<Chan<A>>,
+    pub(crate) rc: Rc,
+}
 
 impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Address").field(&self.0).finish()
+        let act = std::any::type_name::<A>();
+        f.debug_struct(&format!("Address<{}>", act))
+            .field("rx_count", &self.inner.receiver_count())
+            .field("tx_count", &self.inner.sender_count())
+            .field("rc", &self.rc)
+            .finish()
     }
 }
 
@@ -82,7 +92,10 @@ impl<A> Address<A, Strong> {
     /// an actor will not be prevented from being dropped if only weak sinks, channels, and
     /// addresses exist.
     pub fn downgrade(&self) -> WeakAddress<A> {
-        Address(self.0.downgrade())
+        Address {
+            inner: self.inner.clone(),
+            rc: Weak::new(&self.inner)
+        }
     }
 }
 
@@ -90,7 +103,10 @@ impl<A> Address<A, Strong> {
 impl<A> Address<A, Either> {
     /// Converts this address into a weak address.
     pub fn downgrade(&self) -> WeakAddress<A> {
-        Address(self.0.downgrade())
+        Address {
+            inner: self.inner.clone(),
+            rc: Weak::new(&self.inner)
+        }
     }
 }
 
@@ -124,19 +140,19 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// })
     /// ```
     pub fn is_connected(&self) -> bool {
-        self.0.is_connected()
+        self.inner.is_connected()
     }
 
     /// Returns the number of messages in the actor's mailbox. This will be the sum of broadcast
     /// messages, priority messages, and ordered messages. It can be up to three times the capacity,
     /// as the capacity is for each send type (broadcast, priority, and ordered).
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.inner.len()
     }
 
     /// The capacity of the actor's mailbox per send type (broadcast, priority, and ordered).
     pub fn capacity(&self) -> Option<usize> {
-        self.0.capacity()
+        self.inner.capacity()
     }
 
     /// Returns whether the actor's mailbox is empty.
@@ -146,7 +162,10 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
 
     /// Convert this address into a generic address which can be weak or strong.
     pub fn as_either(&self) -> Address<A, Either> {
-        Address(self.0.clone().into_either_rc())
+        Address {
+            inner: self.inner.clone(),
+            rc: self.rc.increment(&self.inner).into_either()
+        }
     }
 
     /// Send a message to the actor. The message will, by default, have a priority of 0 and be sent
@@ -169,7 +188,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         M: Send + 'static,
         A: Handler<M>,
     {
-        SendFuture::sending_named(message, self.0.inner.clone())
+        SendFuture::sending_named(message, self.inner.clone())
     }
 
     /// Send a message to all actors on this address.
@@ -180,21 +199,21 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         M: Clone + Sync + Send + 'static,
         A: Handler<M, Return = ()>,
     {
-        BroadcastFuture::new(msg, self.0.inner.clone())
+        BroadcastFuture::new(msg, self.inner.clone())
     }
 
     /// Waits until this address becomes disconnected. Note that if this is called on a strong
     /// address, it will only ever trigger if the actor calls [`Context::stop_self`](crate::Context::stop_self),
     /// as the address would prevent the actor being dropped due to too few strong addresses.
     pub fn join(&self) -> ActorJoinHandle {
-        ActorJoinHandle(self.0.disconnect_notice())
+        ActorJoinHandle(self.inner.disconnect_listener())
     }
 
     /// Returns true if this address and the other address point to the same actor. This is
     /// distinct from the implementation of `PartialEq` as it ignores reference count type, which
     /// must be the same for `PartialEq` to return `true`.
     pub fn same_actor<Rc2: RefCounter>(&self, other: &Address<A, Rc2>) -> bool {
-        self.0.inner_ptr() == other.0.inner_ptr()
+        Arc::ptr_eq(&self.inner, &other.inner)
     }
 
     /// Converts this address into a sink that can be used to send messages to the actor. These
@@ -246,7 +265,10 @@ impl Future for ActorJoinHandle {
 // Required because #[derive] adds an A: Clone bound
 impl<A, Rc: RefCounter> Clone for Address<A, Rc> {
     fn clone(&self) -> Self {
-        Address(self.0.clone())
+        Address {
+            inner: self.inner.clone(),
+            rc: self.rc.increment(&self.inner)
+        }
     }
 }
 
@@ -257,7 +279,7 @@ impl<A, Rc: RefCounter> Clone for Address<A, Rc> {
 /// it wraps.
 impl<A, Rc: RefCounter, Rc2: RefCounter> PartialEq<Address<A, Rc2>> for Address<A, Rc> {
     fn eq(&self, other: &Address<A, Rc2>) -> bool {
-        (self.same_actor(other)) && (self.0.is_strong() == other.0.is_strong())
+        (self.same_actor(other)) && (self.rc.is_strong() == other.rc.is_strong())
     }
 }
 
@@ -269,8 +291,8 @@ impl<A, Rc: RefCounter> Eq for Address<A, Rc> {}
 /// address will compare as greater than a weak one.
 impl<A, Rc: RefCounter, Rc2: RefCounter> PartialOrd<Address<A, Rc2>> for Address<A, Rc> {
     fn partial_cmp(&self, other: &Address<A, Rc2>) -> Option<Ordering> {
-        Some(match self.0.inner_ptr().cmp(&other.0.inner_ptr()) {
-            Ordering::Equal => self.0.is_strong().cmp(&other.0.is_strong()),
+        Some(match Arc::as_ptr(&self.inner).cmp(&Arc::as_ptr(&other.inner)) {
+            Ordering::Equal => self.rc.is_strong().cmp(&other.rc.is_strong()),
             ord => ord,
         })
     }
@@ -278,14 +300,22 @@ impl<A, Rc: RefCounter, Rc2: RefCounter> PartialOrd<Address<A, Rc2>> for Address
 
 impl<A, Rc: RefCounter> Ord for Address<A, Rc> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.0.inner_ptr().cmp(&other.0.inner_ptr())
+        Arc::as_ptr(&self.inner).cmp(&Arc::as_ptr(&other.inner))
     }
 }
 
 impl<A, Rc: RefCounter> Hash for Address<A, Rc> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_usize(self.0.inner_ptr() as *const _ as usize);
-        state.write_u8(self.0.is_strong() as u8);
+        state.write_usize(Arc::as_ptr(&self.inner) as usize);
+        state.write_u8(self.rc.is_strong() as u8);
         state.finish();
+    }
+}
+
+impl<A, Rc: RefCounter> Drop for Address<A, Rc> {
+    fn drop(&mut self) {
+        if self.rc.decrement(&self.inner) {
+            self.inner.shutdown_waiting_receivers()
+        }
     }
 }

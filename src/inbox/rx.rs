@@ -7,17 +7,16 @@ use std::task::{Context, Poll, Waker};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
-use crate::inbox::tx::TxWeak;
 use crate::inbox::*;
 
 pub struct Receiver<A, Rc: RxRefCounter> {
-    inner: Arc<Chan<A>>,
+    pub(crate) inner: Arc<Chan<A>>,
     broadcast_mailbox: Arc<BroadcastQueue<A>>,
     rc: Rc,
 }
 
 impl<A> Receiver<A, RxStrong> {
-    pub(super) fn new(inner: Arc<Chan<A>>) -> Self {
+    pub fn new(inner: Arc<Chan<A>>) -> Self {
         let rc = RxStrong(());
         rc.increment(&inner);
 
@@ -30,14 +29,6 @@ impl<A> Receiver<A, RxStrong> {
 }
 
 impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
-    pub fn sender(&self) -> Option<Sender<A, TxStrong>> {
-        Sender::try_new_strong(self.inner.clone())
-    }
-
-    pub fn weak_sender(&self) -> Sender<A, TxWeak> {
-        Sender::new_weak(self.inner.clone())
-    }
-
     pub fn receive(&self) -> ReceiveFuture<A, Rc> {
         let receiver_with_same_broadcast_mailbox = Receiver {
             inner: self.inner.clone(),

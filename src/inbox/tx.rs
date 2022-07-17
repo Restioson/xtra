@@ -1,121 +1,17 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug};
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use event_listener::EventListener;
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use super::*;
 use crate::inbox::tx::private::RefCounterInner;
 use crate::send_future::private::SetPriority;
-use crate::{Actor, Error};
-
-pub struct Sender<A, Rc: TxRefCounter> {
-    pub inner: Arc<Chan<A>>,
-    rc: Rc,
-}
-
-impl<A> Sender<A, TxStrong> {
-    pub fn new(inner: Arc<Chan<A>>) -> Self {
-        Sender {
-            inner,
-            rc: TxStrong::first(&inner),
-        }
-    }
-
-    pub fn try_new_strong(inner: Arc<Chan<A>>) -> Option<Self> {
-        let rc = TxStrong::try_new(&inner)?;
-
-        Some(Self { inner, rc })
-    }
-}
-
-impl<A> Sender<A, TxWeak> {
-    pub fn new_weak(inner: Arc<Chan<A>>) -> Self {
-        let rc = TxWeak::new(&inner);
-
-        Sender { inner, rc }
-    }
-}
-
-impl<Rc: TxRefCounter, A> Sender<A, Rc> {
-    pub fn stop_all_receivers(&self)
-    where
-        A: Actor,
-    {
-        self.inner.shutdown_all_receivers()
-    }
-
-    pub fn downgrade(&self) -> Sender<A, TxWeak> {
-        Sender {
-            inner: self.inner.clone(),
-            rc: TxWeak(()),
-        }
-    }
-
-    pub fn is_strong(&self) -> bool {
-        self.rc.is_strong()
-    }
-
-    pub fn inner_ptr(&self) -> *const Chan<A> {
-        (&self.inner as &Chan<A>) as *const Chan<A>
-    }
-
-    pub fn into_either_rc(self) -> Sender<A, TxEither> {
-        Sender {
-            inner: self.inner.clone(),
-            rc: self.rc.increment(&self.inner).into_either(),
-        }
-    }
-
-    pub fn is_connected(&self) -> bool {
-        self.inner.is_connected()
-    }
-
-    pub fn capacity(&self) -> Option<usize> {
-        self.inner.capacity
-    }
-
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    pub fn disconnect_notice(&self) -> Option<EventListener> {
-        self.inner.disconnect_listener()
-    }
-}
-
-impl<A, Rc: TxRefCounter> Clone for Sender<A, Rc> {
-    fn clone(&self) -> Self {
-        Sender {
-            inner: self.inner.clone(),
-            rc: self.rc.increment(&self.inner),
-        }
-    }
-}
-
-impl<A, Rc: TxRefCounter> Drop for Sender<A, Rc> {
-    fn drop(&mut self) {
-        if self.rc.decrement(&self.inner) {
-            self.inner.shutdown_waiting_receivers()
-        }
-    }
-}
-
-impl<A, Rc: TxRefCounter> Debug for Sender<A, Rc> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let act = std::any::type_name::<A>();
-        f.debug_struct(&format!("Sender<{}>", act))
-            .field("rx_count", &self.inner.receiver_count())
-            .field("tx_count", &self.inner.sender_count())
-            .field("rc", &self.rc)
-            .finish()
-    }
-}
+use crate::{Error};
 
 impl<A> SetPriority for SendFuture<A> {
     fn set_priority(&mut self, priority: u32) {
@@ -203,9 +99,9 @@ pub struct TxWeak(());
 
 impl TxStrong {
     /// Create the first strong reference.
-    pub(crate) fn first(inner: &Chan<A>) -> Self {
+    pub(crate) fn first<A>(inner: &Chan<A>) -> Self {
         let rc = TxStrong(());
-        rc.increment(&inner);
+        rc.increment(inner);
 
         rc
     }

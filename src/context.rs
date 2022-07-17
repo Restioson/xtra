@@ -4,6 +4,7 @@ use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::task::Poll;
 use std::{mem, task};
+use std::sync::Arc;
 
 use futures_core::future::BoxFuture;
 use futures_core::FusedFuture;
@@ -12,8 +13,9 @@ use futures_util::FutureExt;
 
 use crate::envelope::{HandlerSpan, Shutdown};
 use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
-use crate::inbox::ActorMessage;
+use crate::inbox::{ActorMessage, Chan};
 use crate::{inbox, Actor, Address, Error, WeakAddress};
+use crate::inbox::tx::{TxStrong, TxWeak};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
@@ -61,14 +63,18 @@ impl<A: Actor> Context<A> {
     ///
     /// ```
     pub fn new(message_cap: Option<usize>) -> (Address<A>, Self) {
-        let (tx, rx) = inbox::new(message_cap);
+        let chan = Arc::new(Chan::new(message_cap));
 
         let context = Context {
             running: true,
-            mailbox: rx,
+            mailbox: inbox::Receiver::new(chan.clone()),
+        };
+        let address = Address {
+            rc: TxStrong::first(&chan),
+            inner: chan,
         };
 
-        (Address(tx), context)
+        (address, context)
     }
 
     /// Stop this actor as soon as it has finished processing current message. This means that the
@@ -81,23 +87,27 @@ impl<A: Actor> Context<A> {
     ///
     /// This is equivalent to calling [`Context::stop_self`] on all actors active on this address.
     pub fn stop_all(&mut self) {
-        // We only need to shut down if there are still any strong senders left
-        if let Some(sender) = self.mailbox.sender() {
-            sender.stop_all_receivers();
-        }
+        self.mailbox.inner.shutdown_all_receivers()
     }
 
     /// Get an address to the current actor if there are still external addresses to the actor.
     pub fn address(&self) -> Result<Address<A>, Error> {
-        self.mailbox
-            .sender()
-            .ok_or(Error::Disconnected)
-            .map(Address)
+        let chan = self.mailbox.inner.clone();
+
+        Ok(Address {
+            rc: TxStrong::try_new(&chan).ok_or(Error::Disconnected)?,
+            inner: chan,
+        })
     }
 
     /// Get a weak address to the current actor.
     pub fn weak_address(&self) -> WeakAddress<A> {
-        Address(self.mailbox.weak_sender())
+        let chan = self.mailbox.inner.clone();
+
+        Address {
+            rc: TxWeak::new(&chan),
+            inner: chan,
+        }
     }
 
     /// Run the given actor's main loop, handling incoming messages to its mailbox.

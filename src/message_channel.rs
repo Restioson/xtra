@@ -3,6 +3,7 @@
 //! the message type rather than the actor type.
 
 use std::fmt;
+use std::sync::Arc;
 
 use futures_sink::Sink;
 
@@ -10,6 +11,7 @@ use crate::address::{ActorJoinHandle, Address};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture};
 use crate::{Error, Handler};
+use crate::inbox::tx::TxWeak;
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`], but associated with the message type rather
@@ -294,7 +296,7 @@ where
         &self,
         message: M,
     ) -> SendFuture<R, ActorErasedSending<Self::Return>, ResolveToHandlerReturn> {
-        SendFuture::sending_erased(message, self.0.inner.clone())
+        SendFuture::sending_erased(message, self.inner.clone())
     }
 
     fn clone_channel(
@@ -308,20 +310,23 @@ where
     }
 
     fn to_inner_ptr(&self) -> *const () {
-        self.0.inner_ptr() as *const ()
+        Arc::as_ptr(&self.inner) as *const ()
     }
 
     fn is_strong(&self) -> bool {
-        self.0.is_strong()
+        self.rc.is_strong()
     }
 
     fn to_weak(
         &self,
     ) -> Box<dyn MessageChannelTrait<M, Weak, Return = Self::Return> + Send + Sync + 'static> {
-        Box::new(Address(self.0.downgrade()))
+        Box::new(Address {
+            inner: self.inner.clone(),
+            rc: TxWeak::new(&self.inner)
+        })
     }
 
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
+        fmt::Debug::fmt(&self, f)
     }
 }

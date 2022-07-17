@@ -15,27 +15,15 @@ use std::{cmp, mem};
 
 use event_listener::{Event, EventListener};
 pub use rx::Receiver;
-pub use tx::{SendFuture, Sender};
+pub use tx::{SendFuture};
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
-use crate::inbox::rx::{RxStrong, WaitingReceiver};
-use crate::inbox::tx::TxStrong;
+use crate::inbox::rx::{WaitingReceiver};
 use crate::{Actor, Error};
 
 type Spinlock<T> = spin::Mutex<T>;
 pub type MessageToOneActor<A> = Box<dyn MessageEnvelope<Actor = A>>;
 type BroadcastQueue<A> = Spinlock<BinaryHeap<MessageToAllActors<A>>>;
-
-/// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
-/// severally to each send type - priority, ordered, and broadcast.
-pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
-    let inner = Arc::new(Chan::new(capacity));
-
-    let tx = Sender::new(inner.clone());
-    let rx = Receiver::new(inner);
-
-    (tx, rx)
-}
 
 // Public because of private::RefCounterInner. This should never actually be exported, though.
 pub struct Chan<A> {
@@ -47,7 +35,10 @@ pub struct Chan<A> {
 }
 
 impl<A> Chan<A> {
-    fn new(capacity: Option<usize>) -> Self {
+    /// Create an new channel.
+    ///
+    /// The given capacity is applied severally to each send type - priority, ordered, and broadcast.
+    pub fn new(capacity: Option<usize>) -> Self {
         Self {
             capacity,
             chan: Mutex::new(ChanInner::default()),
@@ -162,21 +153,25 @@ impl<A> Chan<A> {
         }
     }
 
-    fn is_connected(&self) -> bool {
+    pub fn is_connected(&self) -> bool {
         self.receiver_count() > 0 && self.sender_count() > 0
     }
 
-    fn sender_count(&self) -> usize {
+    pub fn sender_count(&self) -> usize {
         self.sender_count.load(atomic::Ordering::SeqCst)
     }
 
-    fn receiver_count(&self) -> usize {
+    pub fn receiver_count(&self) -> usize {
         self.receiver_count.load(atomic::Ordering::SeqCst)
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         let inner = self.chan.lock().unwrap();
         inner.broadcast_tail + inner.ordered_queue.len() + inner.priority_queue.len()
+    }
+
+    pub fn capacity(&self) -> Option<usize> {
+        self.capacity
     }
 
     fn is_full(&self, len: usize) -> bool {
@@ -184,7 +179,7 @@ impl<A> Chan<A> {
     }
 
     /// Shutdown all [`WaitingReceiver`](crate::inbox::rx::WaitingReceiver)s in this channel.
-    fn shutdown_waiting_receivers(&self) {
+    pub fn shutdown_waiting_receivers(&self) {
         let waiting_rx = {
             let mut inner = match self.chan.lock() {
                 Ok(lock) => lock,
@@ -203,7 +198,7 @@ impl<A> Chan<A> {
         }
     }
 
-    fn shutdown_all_receivers(&self)
+    pub fn shutdown_all_receivers(&self)
     where
         A: Actor,
     {
@@ -236,7 +231,7 @@ impl<A> Chan<A> {
         }
     }
 
-    fn disconnect_listener(&self) -> Option<EventListener> {
+    pub fn disconnect_listener(&self) -> Option<EventListener> {
         // Listener is created before checking connectivity to avoid the following race scenario:
         //
         // 1. is_connected returns true
