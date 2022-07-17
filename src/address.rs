@@ -13,7 +13,7 @@ use futures_sink::Sink;
 use futures_util::FutureExt;
 
 use crate::envelope::ReturningEnvelope;
-use crate::inbox::{PriorityMessageToOne, SentMessage};
+use crate::inbox::SentMessage;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
 use crate::{inbox, BroadcastFuture, Error, Handler, NameableSending, SendFuture};
@@ -171,8 +171,8 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         M: Send + 'static,
         A: Handler<M>,
     {
-        let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-        let msg = SentMessage::ToOneActor(PriorityMessageToOne::new(0, Box::new(envelope)));
+        let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message, 0);
+        let msg = SentMessage::ToOneActor(Box::new(envelope));
         let tx = self.0.send(msg);
         SendFuture::sending_named(tx, rx)
     }
@@ -180,7 +180,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// Send a message to all actors on this address.
     ///
     /// For details, please see the documentation on [`BroadcastFuture`].
-    pub fn broadcast<M>(&self, msg: M) -> BroadcastFuture<A, M, Rc>
+    pub fn broadcast<M>(&self, msg: M) -> BroadcastFuture<A, Rc>
     where
         M: Clone + Sync + Send + 'static,
         A: Handler<M, Return = ()>,

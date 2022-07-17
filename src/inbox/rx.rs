@@ -59,11 +59,12 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
     fn try_recv(&self) -> Result<ActorMessage<A>, Arc<Spinlock<WaitingReceiver<A>>>> {
         // Peek priorities in order to figure out which channel should be taken from
         let mut broadcast = self.broadcast_mailbox.lock();
-        let broadcast_priority = broadcast.peek().map(|it| it.priority());
+        let broadcast_priority = broadcast.peek().map(|it| it.0.priority());
 
         let mut inner = self.inner.chan.lock().unwrap();
 
-        let shared_priority: Option<Priority> = inner.priority_queue.peek().map(|it| it.priority());
+        let shared_priority: Option<Priority> =
+            inner.priority_queue.peek().map(|it| it.0.priority());
 
         // Try take from ordered channel
         if cmp::max(shared_priority, broadcast_priority) <= Some(Priority::Valued(0)) {
@@ -263,11 +264,11 @@ impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
                 match res {
                     Ok(()) => (),
                     Err(WakeReason::MessageToOneActor(msg)) => {
-                        if msg.priority == 0 {
+                        if msg.priority() == Priority::default() {
                             // Preserve ordering as much as possible by pushing to the front
-                            inner.ordered_queue.push_front(msg.val)
+                            inner.ordered_queue.push_front(msg)
                         } else {
-                            inner.priority_queue.push(msg);
+                            inner.priority_queue.push(ByPriority(msg));
                         }
                     }
                     Err(_) => unreachable!("Got wrong wake reason back from try_fulfill_receiver"),

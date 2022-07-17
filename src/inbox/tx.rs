@@ -39,7 +39,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
 
         match message {
             SentMessage::ToAllActors(m) if !self.inner.is_full(inner.broadcast_tail) => {
-                inner.send_broadcast(MessageToAllActors(m));
+                inner.send_broadcast(m);
                 Ok(())
             }
             SentMessage::ToAllActors(m) => {
@@ -53,15 +53,17 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
                 match res {
                     Ok(()) => Ok(()),
                     Err(WakeReason::MessageToOneActor(m))
-                        if m.priority == 0 && !self.inner.is_full(inner.ordered_queue.len()) =>
+                        if m.priority() == Priority::default()
+                            && !self.inner.is_full(inner.ordered_queue.len()) =>
                     {
-                        inner.ordered_queue.push_back(m.val);
+                        inner.ordered_queue.push_back(m);
                         Ok(())
                     }
                     Err(WakeReason::MessageToOneActor(m))
-                        if m.priority != 0 && !self.inner.is_full(inner.priority_queue.len()) =>
+                        if m.priority() != Priority::default()
+                            && !self.inner.is_full(inner.priority_queue.len()) =>
                     {
-                        inner.priority_queue.push(m);
+                        inner.priority_queue.push(ByPriority(m));
                         Ok(())
                     }
                     Err(WakeReason::MessageToOneActor(m)) => {
@@ -83,7 +85,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
             .chan
             .lock()
             .unwrap()
-            .send_broadcast(MessageToAllActors(Arc::new(Shutdown::new())));
+            .send_broadcast(Arc::new(Shutdown::new()));
     }
 
     pub fn send(&self, message: SentMessage<A>) -> SendFuture<A, Rc> {
@@ -208,7 +210,8 @@ impl<A, Rc: TxRefCounter> SendFuture<A, Rc> {
 impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
     fn set_priority(&mut self, priority: u32) {
         match &mut self.inner {
-            SendFutureInner::New(SentMessage::ToOneActor(ref mut m)) => m.priority = priority,
+            SendFutureInner::New(SentMessage::ToOneActor(ref mut m)) => m.set_priority(priority),
+            SendFutureInner::New(SentMessage::ToAllActors(ref mut m)) => m.set_priority(priority),
             _ => panic!("setting priority after polling is unsupported"),
         }
     }
