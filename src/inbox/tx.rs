@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
-use std::sync::{atomic, Arc};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use event_listener::EventListener;
@@ -115,12 +115,10 @@ impl<A, Rc: TxRefCounter> Drop for Sender<A, Rc> {
 
 impl<A, Rc: TxRefCounter> Debug for Sender<A, Rc> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use atomic::Ordering::SeqCst;
-
         let act = std::any::type_name::<A>();
         f.debug_struct(&format!("Sender<{}>", act))
-            .field("rx_count", &self.inner.receiver_count.load(SeqCst))
-            .field("tx_count", &self.inner.sender_count.load(SeqCst))
+            .field("rx_count", &self.inner.receiver_count())
+            .field("tx_count", &self.inner.sender_count())
             .field("rc", &self.rc)
             .finish()
     }

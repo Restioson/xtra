@@ -151,7 +151,7 @@ impl<A> Chan<A> {
             // Equal, but both are empty, so wait or exit if shutdown
             _ => {
                 // on_shutdown is only notified with inner locked, and it's locked here, so no race
-                if self.sender_count.load(atomic::Ordering::SeqCst) == 0 {
+                if self.sender_count() == 0 {
                     return Ok(ActorMessage::Shutdown);
                 }
 
@@ -163,8 +163,15 @@ impl<A> Chan<A> {
     }
 
     fn is_connected(&self) -> bool {
-        self.receiver_count.load(atomic::Ordering::SeqCst) > 0
-            && self.sender_count.load(atomic::Ordering::SeqCst) > 0
+        self.receiver_count() > 0 && self.sender_count() > 0
+    }
+
+    fn sender_count(&self) -> usize {
+        self.sender_count.load(atomic::Ordering::SeqCst)
+    }
+
+    fn receiver_count(&self) -> usize {
+        self.receiver_count.load(atomic::Ordering::SeqCst)
     }
 
     fn len(&self) -> usize {
