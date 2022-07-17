@@ -155,6 +155,8 @@ where
     ///
     /// The provided [`Sink`] will process one message at a time completely and thus enforces
     /// back-pressure according to the bounds of the actor's mailbox.
+    ///
+    /// [`Sink`]: futures_sink::Sink
     pub fn into_sink(self) -> impl futures_sink::Sink<M, Error = crate::Error> {
         futures_util::sink::unfold((), move |(), message| self.send(message))
     }
