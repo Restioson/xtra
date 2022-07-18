@@ -136,7 +136,17 @@ impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
                         ..
                     },
                 ..
-            } => m.priority = priority,
+            } => m.set_priority(priority),
+            SendFuture::New {
+                msg:
+                    SentMessage {
+                        msg: MessageKind::ToAllActors(ref mut m),
+                        ..
+                    },
+                ..
+            } => Arc::get_mut(m)
+                .expect("envelope is not cloned until here")
+                .set_priority(priority),
             _ => panic!("setting priority after polling is unsupported"),
         }
     }

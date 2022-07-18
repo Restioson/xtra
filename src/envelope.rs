@@ -17,9 +17,11 @@ use crate::{Actor, Handler};
 /// allows us to erase the type of the message when this is in dyn Trait format, thereby being able to
 /// use only one channel to send all the kinds of messages that the actor can receives. This does,
 /// however, induce a bit of allocation (as envelopes have to be boxed).
-pub trait MessageEnvelope: Send {
+pub trait MessageEnvelope: HasPriority + Send {
     /// The type of actor that this envelope carries a message for
     type Actor;
+
+    fn set_priority(&mut self, new_priority: u32);
 
     /// Starts the instrumentation of this message request. This will create the request span.
     fn start_span(&mut self, msg_name: &'static str);
@@ -141,21 +143,35 @@ impl Instrumentation {
 pub struct ReturningEnvelope<A, M, R> {
     message: M,
     result_sender: Sender<R>,
+    priority: u32,
     phantom: PhantomData<for<'a> fn(&'a A)>,
     instrumentation: Instrumentation,
 }
 
 impl<A, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
-    pub fn new(message: M) -> (Self, Receiver<R>) {
+    pub fn new(message: M, priority: u32) -> (Self, Receiver<R>) {
         let (tx, rx) = catty::oneshot();
         let envelope = ReturningEnvelope {
             message,
             result_sender: tx,
+            priority,
             phantom: PhantomData,
             instrumentation: Instrumentation::empty(),
         };
 
         (envelope, rx)
+    }
+}
+
+impl<A, M, R> HasPriority for ReturningEnvelope<A, M, R> {
+    fn priority(&self) -> Priority {
+        Priority::Valued(self.priority)
+    }
+}
+
+impl<A> HasPriority for Box<dyn MessageEnvelope<Actor = A>> {
+    fn priority(&self) -> Priority {
+        self.as_ref().priority()
     }
 }
 
@@ -166,6 +182,10 @@ where
     R: Send + 'static,
 {
     type Actor = A;
+
+    fn set_priority(&mut self, new_priority: u32) {
+        self.priority = new_priority;
+    }
 
     fn start_span(&mut self, msg_name: &'static str) {
         assert!(self.instrumentation.parent.is_none());
@@ -202,6 +222,8 @@ where
 pub trait BroadcastEnvelope: HasPriority + Send + Sync {
     type Actor;
 
+    fn set_priority(&mut self, new_priority: u32);
+
     /// Starts the instrumentation of this message request, if this arc is unique. This will create
     /// the request span
     fn start_span(&mut self, msg_name: &'static str);
@@ -211,6 +233,12 @@ pub trait BroadcastEnvelope: HasPriority + Send + Sync {
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> (BoxFuture<'a, ControlFlow<()>>, Span);
+}
+
+impl<A> HasPriority for Arc<dyn BroadcastEnvelope<Actor = A>> {
+    fn priority(&self) -> Priority {
+        self.as_ref().priority()
+    }
 }
 
 pub struct BroadcastEnvelopeConcrete<A, M> {
@@ -237,6 +265,10 @@ where
     M: Clone + Send + Sync + 'static,
 {
     type Actor = A;
+
+    fn set_priority(&mut self, new_priority: u32) {
+        self.priority = new_priority;
+    }
 
     fn start_span(&mut self, msg_name: &'static str) {
         assert!(self.instrumentation.parent.is_none());
@@ -294,6 +326,8 @@ where
     A: Actor,
 {
     type Actor = A;
+
+    fn set_priority(&mut self, _: u32) {}
 
     // This message is not instrumented
     fn start_span(&mut self, _msg_name: &'static str) {}

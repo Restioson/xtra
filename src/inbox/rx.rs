@@ -115,7 +115,7 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                         }
                         Poll::Ready(WakeReason::MessageToAllActors) => {
                             match rx.inner.pop_broadcast_message(&rx.broadcast_mailbox) {
-                                Some(msg) => ActorMessage::ToAllActors(msg.0),
+                                Some(msg) => ActorMessage::ToAllActors(msg),
                                 None => {
                                     // We got woken but failed to pop a message, try receiving again.
                                     this.0 = ReceiveState::New(rx);
@@ -134,22 +134,6 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                 ReceiveState::Complete => return Poll::Pending,
             }
         }
-    }
-}
-
-impl<A, Rc: RxRefCounter> ReceiveFuture<A, Rc> {
-    /// See docs on [`crate::context::ReceiveFuture::cancel`] for more
-    #[must_use = "If dropped, messages could be lost"]
-    pub fn cancel(&mut self) -> Option<ActorMessage<A>> {
-        if let ReceiveState::Waiting { waiting, .. } =
-            mem::replace(&mut self.0, ReceiveState::Complete)
-        {
-            if let Some(WakeReason::MessageToOneActor(msg)) = waiting.lock().cancel() {
-                return Some(msg.into());
-            }
-        }
-
-        None
     }
 }
 
@@ -201,7 +185,7 @@ impl<A> WaitingReceiver<A> {
         Ok(())
     }
 
-    /// Signify that this waiting receiver was cancelled through [`ReceiveFuture::cancel`]
+    /// Cancel this [`WaitingReceiver`] returning its current, internal state.
     fn cancel(&mut self) -> Option<WakeReason<A>> {
         mem::replace(&mut self.wake_reason, Some(WakeReason::Cancelled))
     }

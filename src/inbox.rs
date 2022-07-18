@@ -20,8 +20,7 @@ use crate::inbox::tx::{TxStrong, WaitingSender};
 use crate::Actor;
 
 type Spinlock<T> = spin::Mutex<T>;
-pub type MessageToOneActor<A> = Box<dyn MessageEnvelope<Actor = A>>;
-type BroadcastQueue<A> = Spinlock<BinaryHeap<MessageToAllActors<A>>>;
+type BroadcastQueue<A> = Spinlock<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelope<Actor = A>>>>>;
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
@@ -77,7 +76,7 @@ impl<A> Chan<A> {
 
         match message.msg {
             MessageKind::ToAllActors(m) if !self.is_full(inner.broadcast_tail) => {
-                inner.send_broadcast(MessageToAllActors(m));
+                inner.send_broadcast(m);
                 Ok(())
             }
             MessageKind::ToAllActors(m) => {
@@ -91,15 +90,17 @@ impl<A> Chan<A> {
                 match res {
                     Ok(()) => Ok(()),
                     Err(WakeReason::MessageToOneActor(m))
-                        if m.priority == 0 && !self.is_full(inner.ordered_queue.len()) =>
+                        if m.priority() == Priority::default()
+                            && !self.is_full(inner.ordered_queue.len()) =>
                     {
-                        inner.ordered_queue.push_back(m.val);
+                        inner.ordered_queue.push_back(m);
                         Ok(())
                     }
                     Err(WakeReason::MessageToOneActor(m))
-                        if m.priority != 0 && !self.is_full(inner.priority_queue.len()) =>
+                        if m.priority() != Priority::default()
+                            && !self.is_full(inner.priority_queue.len()) =>
                     {
-                        inner.priority_queue.push(m);
+                        inner.priority_queue.push(ByPriority(m));
                         Ok(())
                     }
                     Err(WakeReason::MessageToOneActor(m)) => {
@@ -202,7 +203,7 @@ impl<A> Chan<A> {
         self.chan
             .lock()
             .unwrap()
-            .send_broadcast(MessageToAllActors(Arc::new(Shutdown::new())));
+            .send_broadcast(Arc::new(Shutdown::new()));
     }
 
     /// Shutdown all [`WaitingSender`](crate::inbox::tx::WaitingSender)s in this channel.
@@ -249,7 +250,7 @@ impl<A> Chan<A> {
     fn pop_broadcast_message(
         &self,
         broadcast_mailbox: &BroadcastQueue<A>,
-    ) -> Option<MessageToAllActors<A>> {
+    ) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
         let message = broadcast_mailbox.lock().pop();
 
         // Advance the broadcast tail if we successfully took a message.
@@ -260,7 +261,7 @@ impl<A> Chan<A> {
                 .try_advance_broadcast_tail(self.capacity);
         }
 
-        message
+        Some(message?.0)
     }
 
     /// Re-queue the given message.
@@ -270,7 +271,7 @@ impl<A> Chan<A> {
     /// given message so it does not get lost.
     ///
     /// Note that the ordering of messages in the queues may be slightly off with this function.
-    fn requeue_message(&self, msg: PriorityMessageToOne<A>) {
+    fn requeue_message(&self, msg: Box<dyn MessageEnvelope<Actor = A>>) {
         let mut inner = match self.chan.lock() {
             Ok(lock) => lock,
             Err(_) => return, // If we can't lock the inner channel, there is nothing we can do.
@@ -280,11 +281,11 @@ impl<A> Chan<A> {
         match res {
             Ok(()) => (),
             Err(WakeReason::MessageToOneActor(msg)) => {
-                if msg.priority == 0 {
+                if msg.priority() == Priority::default() {
                     // Preserve ordering as much as possible by pushing to the front
-                    inner.ordered_queue.push_front(msg.val)
+                    inner.ordered_queue.push_front(msg)
                 } else {
-                    inner.priority_queue.push(msg);
+                    inner.priority_queue.push(ByPriority(msg));
                 }
             }
             Err(_) => unreachable!("Got wrong wake reason back from try_fulfill_receiver"),
@@ -293,10 +294,10 @@ impl<A> Chan<A> {
 }
 
 struct ChanInner<A> {
-    ordered_queue: VecDeque<MessageToOneActor<A>>,
+    ordered_queue: VecDeque<Box<dyn MessageEnvelope<Actor = A>>>,
     waiting_senders: VecDeque<Weak<Spinlock<WaitingSender<A>>>>,
     waiting_receivers: VecDeque<Weak<Spinlock<WaitingReceiver<A>>>>,
-    priority_queue: BinaryHeap<PriorityMessageToOne<A>>,
+    priority_queue: BinaryHeap<ByPriority<Box<dyn MessageEnvelope<Actor = A>>>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
     broadcast_tail: usize,
 }
@@ -316,24 +317,30 @@ impl<A> Default for ChanInner<A> {
 }
 
 impl<A> ChanInner<A> {
-    fn pop_priority(&mut self, capacity: Option<usize>) -> Option<MessageToOneActor<A>> {
+    fn pop_priority(
+        &mut self,
+        capacity: Option<usize>,
+    ) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
         if capacity.map_or(false, |cap| cap == self.priority_queue.len()) {
             match self.try_fulfill_sender(MessageType::Priority) {
-                Some(MessageKind::ToOneActor(msg)) => self.priority_queue.push(msg),
+                Some(MessageKind::ToOneActor(msg)) => self.priority_queue.push(ByPriority(msg)),
                 Some(_) => unreachable!(),
                 None => {}
             }
         }
 
-        Some(self.priority_queue.pop()?.val)
+        Some(self.priority_queue.pop()?.0)
     }
 
-    fn pop_ordered(&mut self, capacity: Option<usize>) -> Option<MessageToOneActor<A>> {
+    fn pop_ordered(
+        &mut self,
+        capacity: Option<usize>,
+    ) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
         if capacity.map_or(false, |cap| cap == self.ordered_queue.len()) {
             match self.try_fulfill_sender(MessageType::Ordered) {
-                Some(MessageKind::ToOneActor(msg)) => self.ordered_queue.push_back(msg.val),
+                Some(MessageKind::ToOneActor(msg)) => self.ordered_queue.push_back(msg),
                 Some(_) => unreachable!(),
                 None => {}
             }
@@ -355,17 +362,17 @@ impl<A> ChanInner<A> {
         // If len < cap, try fulfill a waiting sender
         if capacity.map_or(false, |cap| longest < cap) {
             match self.try_fulfill_sender(MessageType::Broadcast) {
-                Some(MessageKind::ToAllActors(m)) => self.send_broadcast(MessageToAllActors(m)),
+                Some(MessageKind::ToAllActors(m)) => self.send_broadcast(m),
                 Some(_) => unreachable!(),
                 None => {}
             }
         }
     }
 
-    fn send_broadcast(&mut self, m: MessageToAllActors<A>) {
+    fn send_broadcast(&mut self, m: Arc<dyn BroadcastEnvelope<Actor = A>>) {
         self.broadcast_queues.retain(|queue| match queue.upgrade() {
             Some(q) => {
-                q.lock().push(m.clone());
+                q.lock().push(ByPriority(m.clone()));
                 true
             }
             None => false, // The corresponding receiver has been dropped - remove it
@@ -401,7 +408,7 @@ impl<A> ChanInner<A> {
                 self.waiting_senders
                     .iter()
                     .position(|tx| match tx.upgrade() {
-                        Some(tx) => matches!(tx.lock().peek(), MessageKind::ToOneActor(m) if m.priority == 0),
+                        Some(tx) => matches!(tx.lock().peek(), MessageKind::ToOneActor(m) if m.priority() == Priority::default()),
                         None => false,
                     })?
             } else {
@@ -411,7 +418,8 @@ impl<A> ChanInner<A> {
                     .max_by_key(|(_idx, tx)| match tx.upgrade() {
                         Some(tx) => match tx.lock().peek() {
                             MessageKind::ToOneActor(m)
-                                if for_type == MessageType::Priority && m.priority > 0 =>
+                                if for_type == MessageType::Priority
+                                    && m.priority() > Priority::default() =>
                             {
                                 Some(m.priority())
                             }
@@ -446,12 +454,12 @@ pub struct SentMessage<A> {
 }
 
 pub enum MessageKind<A> {
-    ToOneActor(PriorityMessageToOne<A>),
+    ToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
     ToAllActors(Arc<dyn BroadcastEnvelope<Actor = A>>),
 }
 
 impl<A> SentMessage<A> {
-    pub fn msg_to_one<M>(msg: PriorityMessageToOne<A>) -> Self {
+    pub fn msg_to_one<M>(msg: Box<dyn MessageEnvelope<Actor = A>>) -> Self {
         SentMessage {
             #[cfg(feature = "instrumentation")]
             msg_type: std::any::type_name::<M>(),
@@ -471,7 +479,7 @@ impl<A> SentMessage<A> {
         #[cfg(feature = "instrumentation")]
         match &mut self.msg {
             MessageKind::ToOneActor(m) => {
-                m.val.start_span(self.msg_type);
+                m.start_span(self.msg_type);
             }
             MessageKind::ToAllActors(m) => {
                 Arc::get_mut(m)
@@ -491,8 +499,8 @@ impl<A> From<MessageKind<A>> for WakeReason<A> {
     }
 }
 
-impl<A> From<PriorityMessageToOne<A>> for MessageKind<A> {
-    fn from(msg: PriorityMessageToOne<A>) -> Self {
+impl<A> From<Box<dyn MessageEnvelope<Actor = A>>> for MessageKind<A> {
+    fn from(msg: Box<dyn MessageEnvelope<Actor = A>>) -> Self {
         MessageKind::ToOneActor(msg)
     }
 }
@@ -503,20 +511,14 @@ enum TrySendFail<A> {
 }
 
 pub enum ActorMessage<A> {
-    ToOneActor(MessageToOneActor<A>),
+    ToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
     ToAllActors(Arc<dyn BroadcastEnvelope<Actor = A>>),
     Shutdown,
 }
 
-impl<A> From<MessageToOneActor<A>> for ActorMessage<A> {
-    fn from(msg: MessageToOneActor<A>) -> Self {
+impl<A> From<Box<dyn MessageEnvelope<Actor = A>>> for ActorMessage<A> {
+    fn from(msg: Box<dyn MessageEnvelope<Actor = A>>) -> Self {
         ActorMessage::ToOneActor(msg)
-    }
-}
-
-impl<A> From<PriorityMessageToOne<A>> for ActorMessage<A> {
-    fn from(msg: PriorityMessageToOne<A>) -> Self {
-        ActorMessage::ToOneActor(msg.val)
     }
 }
 
@@ -527,7 +529,7 @@ impl<A> From<Arc<dyn BroadcastEnvelope<Actor = A>>> for ActorMessage<A> {
 }
 
 pub enum WakeReason<A> {
-    MessageToOneActor(PriorityMessageToOne<A>),
+    MessageToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
     // should be fetched from own receiver
     MessageToAllActors,
     Shutdown,
@@ -541,77 +543,53 @@ pub enum Priority {
     Shutdown,
 }
 
+impl Default for Priority {
+    fn default() -> Self {
+        Priority::Valued(0)
+    }
+}
+
 pub trait HasPriority {
     fn priority(&self) -> Priority;
 }
 
-impl<A> HasPriority for PriorityMessageToOne<A> {
-    fn priority(&self) -> Priority {
-        Priority::Valued(self.priority)
-    }
-}
+/// A wrapper struct that allows comparison and ordering for anything thas has a priority, i.e. implements [`HasPriority`].
+struct ByPriority<T>(pub T);
 
-pub struct PriorityMessageToOne<A> {
-    pub priority: u32,
-    val: MessageToOneActor<A>,
-}
-
-impl<A> PriorityMessageToOne<A> {
-    pub fn new(priority: u32, val: MessageToOneActor<A>) -> Self {
-        PriorityMessageToOne { priority, val }
-    }
-}
-
-impl<A> PartialEq for PriorityMessageToOne<A> {
-    fn eq(&self, other: &Self) -> bool {
-        self.priority == other.priority
-    }
-}
-
-impl<A> Eq for PriorityMessageToOne<A> {}
-
-impl<A> PartialOrd for PriorityMessageToOne<A> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<A> Ord for PriorityMessageToOne<A> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.priority.cmp(&other.priority)
-    }
-}
-
-struct MessageToAllActors<A>(Arc<dyn BroadcastEnvelope<Actor = A>>);
-
-impl<A> Clone for MessageToAllActors<A> {
-    fn clone(&self) -> Self {
-        MessageToAllActors(self.0.clone())
-    }
-}
-
-impl<A> HasPriority for MessageToAllActors<A> {
+impl<T> HasPriority for ByPriority<T>
+where
+    T: HasPriority,
+{
     fn priority(&self) -> Priority {
         self.0.priority()
     }
 }
 
-impl<A> Eq for MessageToAllActors<A> {}
-
-impl<A> PartialEq<Self> for MessageToAllActors<A> {
+impl<T> PartialEq for ByPriority<T>
+where
+    T: HasPriority,
+{
     fn eq(&self, other: &Self) -> bool {
-        self.0.priority() == other.0.priority()
+        self.0.priority().eq(&other.0.priority())
     }
 }
 
-impl<A> PartialOrd<Self> for MessageToAllActors<A> {
+impl<T> Eq for ByPriority<T> where T: HasPriority {}
+
+impl<T> PartialOrd for ByPriority<T>
+where
+    T: HasPriority,
+{
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+        self.0.priority().partial_cmp(&other.0.priority())
     }
 }
 
-impl<A> Ord for MessageToAllActors<A> {
+impl<T> Ord for ByPriority<T>
+where
+    T: HasPriority,
+{
     fn cmp(&self, other: &Self) -> Ordering {
-        self.priority().cmp(&other.priority())
+        self.0.priority().cmp(&other.0.priority())
     }
 }

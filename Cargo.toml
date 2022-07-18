@@ -16,8 +16,8 @@ rust-version = "1.60.0"
 async-trait = "0.1.56"
 catty = "0.1.5"
 futures-core = { version = "0.3.21", default-features = false, features = ["alloc"] }
-futures-sink = { version = "0.3.21", default-features = false }
-futures-util = { version = "0.3.21", default-features = false, features = ["sink", "alloc"] }
+futures-sink = { version = "0.3.21", default-features = false, optional = true }
+futures-util = { version = "0.3.21", default-features = false, features = ["alloc"] }
 pin-project-lite = "0.2.9"
 event-listener = "2.4.0"
 spin = { version = "0.9.3", default-features = false, features = ["spin_mutex"] }
@@ -50,6 +50,7 @@ async_std = ["dep:async-std"]
 smol = ["dep:smol"]
 tokio = ["dep:tokio"]
 wasm_bindgen = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures"]
+sink = ["dep:futures-sink", "futures-util/sink"]
 
 [[example]]
 name = "basic_tokio"
@@ -86,7 +87,7 @@ required-features = ["tokio"]
 
 [[example]]
 name = "address_sink"
-required-features = ["tokio", "tokio/full"]
+required-features = ["tokio", "tokio/full", "sink"]
 
 [[example]]
 name = "send_interval"

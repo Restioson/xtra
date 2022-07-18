@@ -9,12 +9,11 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use event_listener::EventListener;
-use futures_sink::Sink;
 use futures_util::FutureExt;
 
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::ResolveToHandlerReturn;
-use crate::{inbox, BroadcastFuture, Error, Handler, NameableSending, SendFuture};
+use crate::{inbox, BroadcastFuture, Handler, NameableSending, SendFuture};
 
 /// An [`Address`] is a reference to an actor through which messages can be
 /// sent. It can be cloned to create more addresses to the same actor.
@@ -175,7 +174,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// Send a message to all actors on this address.
     ///
     /// For details, please see the documentation on [`BroadcastFuture`].
-    pub fn broadcast<M>(&self, msg: M) -> BroadcastFuture<A, M, Rc>
+    pub fn broadcast<M>(&self, msg: M) -> BroadcastFuture<A, Rc>
     where
         M: Clone + Sync + Send + 'static,
         A: Handler<M, Return = ()>,
@@ -212,7 +211,10 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///
     /// Because [`Sink`]s do not return anything, this function is only available for messages with
     /// a [`Handler`] implementation that sets [`Return`](Handler::Return) to `()`.
-    pub fn into_sink<M>(self) -> impl Sink<M, Error = Error>
+    ///
+    /// [`Sink`]: futures_sink::Sink
+    #[cfg(feature = "sink")]
+    pub fn into_sink<M>(self) -> impl futures_sink::Sink<M, Error = crate::Error>
     where
         A: Handler<M, Return = ()>,
         M: Send + 'static,

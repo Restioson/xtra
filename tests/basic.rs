@@ -1082,3 +1082,28 @@ fn no_sender_returns_disconnected() {
     drop(addr);
     assert!(!ctx.weak_address().is_connected());
 }
+
+#[tokio::test]
+async fn receive_future_can_dispatch_in_one_poll() {
+    let (addr, ctx) = Context::<Greeter>::new(None);
+
+    let _ = addr.send(Hello("world")).split_receiver().await;
+    let receive_future = ctx.next_message();
+
+    assert!(receive_future.now_or_never().is_some())
+}
+
+#[tokio::test]
+async fn receive_future_can_dispatch_in_one_poll_after_it_has_been_polled() {
+    let (addr, ctx) = Context::<Greeter>::new(None);
+    let mut receive_future = ctx.next_message();
+
+    let poll = receive_future.poll_unpin(&mut std::task::Context::from_waker(
+        futures_util::task::noop_waker_ref(),
+    ));
+    assert!(poll.is_pending());
+
+    let _ = addr.send(Hello("world")).split_receiver().await;
+
+    assert!(receive_future.now_or_never().is_some())
+}
