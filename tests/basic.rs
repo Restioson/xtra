@@ -7,11 +7,10 @@ use std::time::Duration;
 
 use futures_util::task::noop_waker_ref;
 use futures_util::FutureExt;
-use smol::stream;
 use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::{ActorManager, Error, KeepRunning};
+use xtra::{ActorManager, Error};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
@@ -209,7 +208,7 @@ async fn actor_can_be_restarted() {
     assert_eq!(fut.await, 5);
 
     let (addr, ctx) = Context::new(None);
-    let fut1 = ctx.attach(Accumulator(0));
+    let fut1 = ctx.clone().run(Accumulator(0));
     let fut2 = ctx.run(Accumulator(0));
 
     for _ in 0..5 {
@@ -231,46 +230,6 @@ async fn actor_can_be_restarted() {
     assert!(!addr.is_connected());
 }
 
-struct StreamCancelMessage;
-
-struct StreamCancelTester;
-
-#[async_trait]
-impl Actor for StreamCancelTester {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
-}
-
-#[async_trait]
-impl Handler<StreamCancelMessage> for StreamCancelTester {
-    type Return = KeepRunning;
-
-    async fn handle(&mut self, _: StreamCancelMessage, _: &mut Context<Self>) -> KeepRunning {
-        KeepRunning::Yes
-    }
-}
-
-#[tokio::test]
-async fn test_stream_cancel_join() {
-    let addr = StreamCancelTester {}.create(None).spawn_global();
-    let jh = addr.join();
-    let addr2 = addr.clone().downgrade();
-    // attach a stream that blocks forever
-    let handle = tokio::spawn(async move {
-        addr2
-            .attach_stream(stream::pending::<StreamCancelMessage>())
-            .await
-    });
-    drop(addr); // stop the actor
-
-    // Attach stream should return immediately
-    assert!(handle.timeout(Duration::from_secs(2)).await.is_some()); // None == timeout
-
-    // Join should also return right away
-    assert!(jh.timeout(Duration::from_secs(2)).await.is_some());
-}
-
 #[tokio::test]
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
     let (address, fut) = ActorStopSelf.create(None).run();
@@ -283,7 +242,7 @@ async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self() {
     let (address, ctx) = Context::new(None);
-    tokio::spawn(ctx.attach(ActorStopSelf));
+    tokio::spawn(ctx.clone().run(ActorStopSelf));
     tokio::spawn(ctx.run(ActorStopSelf));
     address.send(StopSelf).await.unwrap();
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -298,8 +257,8 @@ async fn two_actors_on_address_with_stop_self() {
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self_context_alive() {
     let (address, ctx) = Context::new(None);
-    tokio::spawn(ctx.attach(ActorStopSelf));
-    tokio::spawn(ctx.attach(ActorStopSelf)); // Context not dropped here
+    tokio::spawn(ctx.clone().run(ActorStopSelf));
+    tokio::spawn(ctx.clone().run(ActorStopSelf)); // Context not dropped here
     address.send(StopSelf).await.unwrap();
     tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -600,7 +559,7 @@ async fn broadcast_tail_advances_bound_1() {
         msgs: vec![],
     };
 
-    let mut indlovu = Box::pin(ctx.attach(Elephant::default()));
+    let mut indlovu = Box::pin(ctx.clone().run(Elephant::default()));
 
     addr.broadcast(Message::Broadcast { priority: 0 })
         .priority(0)
@@ -706,7 +665,7 @@ async fn broadcast_tail_advances_bound_2() {
         msgs: vec![],
     };
 
-    tokio::spawn(ctx.attach(Elephant::default()));
+    tokio::spawn(ctx.clone().run(Elephant::default()));
 
     let _ = addr
         .broadcast(Message::Broadcast { priority: 0 })
@@ -737,7 +696,7 @@ async fn broadcast_tail_does_not_advance_unless_both_handle() {
         msgs: vec![],
     };
 
-    let _fut = ctx.attach(Elephant::default());
+    let _fut = ctx.clone().run(Elephant::default());
 
     let _ = addr
         .broadcast(Message::Broadcast { priority: 0 })
@@ -1001,11 +960,11 @@ impl Actor for StopInStarted {
 async fn stop_all_stops_immediately() {
     let (_address, ctx) = Context::new(None);
 
-    let fut1 = ctx.attach(InstantShutdownAll {
+    let fut1 = ctx.clone().run(InstantShutdownAll {
         stop_all: true,
         number: 1,
     });
-    let fut2 = ctx.attach(InstantShutdownAll {
+    let fut2 = ctx.clone().run(InstantShutdownAll {
         stop_all: false,
         number: 2,
     });

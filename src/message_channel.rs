@@ -7,8 +7,6 @@ use std::fmt;
 use futures_sink::Sink;
 
 use crate::address::{ActorJoinHandle, Address};
-use crate::envelope::ReturningEnvelope;
-use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture};
 use crate::{Error, Handler};
@@ -54,7 +52,7 @@ use crate::{Error, Handler};
 /// }
 ///
 /// fn main() {
-/// # #[cfg(feature = "with-smol-1")]
+/// # #[cfg(feature = "smol")]
 /// smol::block_on(async {
 ///         let alice = Alice.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///         let bob = Bob.create(None).spawn(&mut xtra::spawn::Smol::Global);
@@ -296,11 +294,7 @@ where
         &self,
         message: M,
     ) -> SendFuture<R, ActorErasedSending<Self::Return>, ResolveToHandlerReturn> {
-        let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
-        let msg = PriorityMessageToOne::new(0, Box::new(envelope));
-        let sending = self.0.send(SentMessage::msg_to_one::<M>(msg));
-
-        SendFuture::sending_erased(sending, rx)
+        SendFuture::sending_erased(message, self.0.clone())
     }
 
     fn clone_channel(

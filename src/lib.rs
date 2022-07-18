@@ -1,6 +1,6 @@
 //! xtra is a tiny, fast, and safe actor system.
 
-#![cfg_attr(docsrs, feature(doc_cfg, external_doc))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(unsafe_code, missing_docs)]
 
 use std::fmt;
@@ -71,7 +71,7 @@ pub mod refcount {
 /// }
 ///
 /// fn main() {
-/// #   #[cfg(feature = "with-smol-1")]
+/// #   #[cfg(feature = "smol")]
 ///     smol::block_on(async {
 ///         let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///         assert_eq!(addr.send(Msg).await, Ok(20));
@@ -101,7 +101,7 @@ pub trait Handler<M>: Actor {
 /// # Example
 ///
 /// ```rust
-/// # use xtra::{KeepRunning, prelude::*};
+/// # use xtra::prelude::*;
 /// # use std::time::Duration;
 /// struct MyActor;
 ///
@@ -130,7 +130,7 @@ pub trait Handler<M>: Actor {
 /// }
 ///
 /// // Will print "Started!", "Goodbye!", and then "Finally stopping."
-/// # #[cfg(feature = "with-smol-1")]
+/// # #[cfg(feature = "smol")]
 /// smol::block_on(async {
 ///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
 ///     addr.send(Goodbye).await;
@@ -166,7 +166,7 @@ pub trait Actor: 'static + Send + Sized {
     /// # Example
     ///
     /// ```rust
-    /// # use xtra::{KeepRunning, prelude::*};
+    /// # use xtra::prelude::*;
     /// # use std::time::Duration;
     /// # use smol::Timer;
     /// # struct MyActor;
@@ -211,29 +211,3 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
-
-/// Whether or not to keep an attached stream forwarding.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum KeepRunning {
-    /// Keep forwarding
-    Yes,
-    /// Stop the forwarding task
-    No,
-}
-
-/// True is converted to yes, and false is converted to no.
-impl From<bool> for KeepRunning {
-    fn from(b: bool) -> Self {
-        if b {
-            KeepRunning::Yes
-        } else {
-            KeepRunning::No
-        }
-    }
-}
-
-impl From<()> for KeepRunning {
-    fn from(_: ()) -> KeepRunning {
-        KeepRunning::Yes
-    }
-}

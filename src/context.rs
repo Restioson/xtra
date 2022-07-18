@@ -9,8 +9,6 @@ use futures_core::future::BoxFuture;
 use futures_core::FusedFuture;
 use futures_util::future::{self, Either};
 use futures_util::FutureExt;
-#[cfg(feature = "timing")]
-use {crate::Handler, futures_timer::Delay, std::time::Duration};
 
 use crate::envelope::{Shutdown, Span};
 use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
@@ -19,9 +17,9 @@ use crate::{inbox, Actor, Address, Error, WeakAddress};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
-/// [`Context::run`] or [`Context::attach`]) exists, **it will prevent the actor's channel from being
-/// closed**, as more actors that could still then be added to the address, so closing early, while
-/// maybe intuitive, would be subtly wrong.
+/// [`Context::run`] exists, **it will prevent the actor's channel from being closed**, as more
+/// actors that could still then be added to the address, so closing early, while maybe intuitive,
+/// would be subtly wrong.
 pub struct Context<A> {
     /// Whether this actor is running. If set to `false`, [`Context::tick`] will return
     /// `ControlFlow::Break` and [`Context::run`] will shut down the actor. This will not result
@@ -34,28 +32,31 @@ pub struct Context<A> {
 
 impl<A: Actor> Context<A> {
     /// Creates a new actor context with a given mailbox capacity, returning an address to the actor
-    /// and the context. This can be used as a builder to add more actors to an address before
-    /// any have started.
+    /// and the context.
+    ///
+    /// This can be used to e.g. construct actors with cyclic dependencies.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use xtra::prelude::*;
     /// #
-    /// # struct MyActor;
-    /// #
-    /// # impl MyActor {
-    /// #     fn new(_: usize) -> Self {
-    /// #         MyActor
-    /// #     }
-    /// # }
-    /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
-    /// # async { // This does not actually run because there is nothing to assert
-    /// let (addr, mut ctx) = Context::new(Some(32));
-    /// for n in 0..3 {
-    ///     smol::spawn(ctx.attach(MyActor::new(n))).detach();
+    /// struct ActorA {
+    ///     address: Address<ActorB>
     /// }
-    /// ctx.run(MyActor::new(4)).await;
+    ///
+    /// struct ActorB {
+    ///     address: Address<ActorA>
+    /// }
+    ///
+    /// # #[async_trait] impl Actor for ActorA {type Stop = (); async fn stopped(self) -> Self::Stop {} }
+    /// # #[async_trait] impl Actor for ActorB {type Stop = (); async fn stopped(self) -> Self::Stop {} }
+    /// # async { // This does not actually run because there is nothing to assert
+    /// let (addr_a, ctx_a) = Context::<ActorA>::new(Some(5));
+    /// let (addr_b, ctx_b) = Context::<ActorB>::new(Some(5));
+    ///
+    /// smol::spawn(ctx_a.run(ActorA { address: addr_b })).detach();
+    /// smol::spawn(ctx_b.run(ActorB { address: addr_a })).detach();
     /// # };
     ///
     /// ```
@@ -68,16 +69,6 @@ impl<A: Actor> Context<A> {
         };
 
         (Address(tx), context)
-    }
-
-    /// Attaches an actor of the same type listening to the same address as this actor is.
-    /// They will operate in a message-stealing fashion, with no message handled by two actors.
-    pub fn attach(&self, actor: A) -> impl Future<Output = A::Stop> {
-        let ctx = Context {
-            running: true,
-            mailbox: self.mailbox.cloned_new_broadcast_mailbox(),
-        };
-        ctx.run(actor)
     }
 
     /// Stop this actor as soon as it has finished processing current message. This means that the
@@ -150,8 +141,14 @@ impl<A: Actor> Context<A> {
     /// Joins on a future by handling all incoming messages whilst polling it. The future will
     /// always be polled to completion, even if the actor is stopped. If the actor is stopped,
     /// handling of messages will cease, and only the future will be polled. It is somewhat
-    /// analagous to [`futures::join`](futures_util::future::join), but it will not wait for the incoming stream of messages
-    /// from addresses to end before returning - it will return as soon as the provided future does.
+    /// analagous to [`futures::join`](futures_util::future::join), but it will not wait for the
+    /// incoming stream of messages from addresses to end before returning - it will return as soon
+    /// as the provided future does. It will never cancel the handling of a message, even if the
+    /// provided future completes first.
+    ///
+    /// This function explicitly breaks the invariant that an actor only handles one message at a
+    /// time, as it lets other messages be handled inside of a handler. It is recommended to make
+    /// sure that all internal state is finalised and consistent before calling this method.
     ///
     /// ## Example
     ///
@@ -189,15 +186,12 @@ impl<A: Actor> Context<A> {
     ///     }
     /// }
     ///
-    /// # #[cfg(feature = "with-smol-1")]
+    /// # #[cfg(feature = "smol")]
     /// # smol::block_on(async {
     /// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
     /// assert!(addr.is_connected());
     /// assert_eq!(addr.send(Joining).await, Ok(true)); // Assert that the join did evaluate the future
     /// # })
-    #[cfg_attr(docsrs, doc("```"))]
-    #[cfg_attr(docsrs, doc(include = "../examples/interleaved_messages.rs"))]
-    #[cfg_attr(docsrs, doc("```"))]
     pub async fn join<F, R>(&mut self, actor: &mut A, fut: F) -> R
     where
         F: Future<Output = R>,
@@ -212,8 +206,14 @@ impl<A: Actor> Context<A> {
     /// Handle any incoming messages for the actor while running a given future. This is similar to
     /// [`Context::join`], but will exit if the actor is stopped, returning the future. Returns
     /// `Ok` with the result of the future if it was successfully completed, or `Err` with the
-    /// future if the actor was stopped before it could complete. It is analagous to
-    /// [`futures::select`](futures_util::future::select).
+    /// future if the actor was stopped before it could complete. In this way it is analagous to
+    /// [`futures::select`](futures_util::future::select). However, it will never cancel the current
+    /// message it is handling whilst waiting for the provided future, even if the provided future
+    /// completes first.
+    ///
+    /// This function explicitly breaks the invariant that an actor only handles one message at a
+    /// time, as it lets other messages be handled inside of a handler. It is recommended to make
+    /// sure that all internal state is finalised and consistent before calling this method.
     ///
     /// ## Example
     ///
@@ -258,7 +258,7 @@ impl<A: Actor> Context<A> {
     ///     }
     /// }
     ///
-    /// # #[cfg(feature = "with-smol-1")]
+    /// # #[cfg(feature = "smol")]
     /// # smol::block_on(async {
     /// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
     /// assert!(addr.is_connected());
@@ -292,84 +292,21 @@ impl<A: Actor> Context<A> {
         Either::Right(fut)
     }
 
-    /// Notify the actor with a message every interval until it is stopped (either directly with
-    /// [`Context::stop_self`], or for a lack of strong [`Address`]es. This does not take priority over other messages.
-    ///
-    /// This function is subject to back-pressure by the actor's mailbox. Thus, if the mailbox is full
-    /// the loop will wait until a slot is available. It is therefore not guaranteed that a message
-    /// will be delivered at exactly `duration` intervals.
-    #[cfg(feature = "timing")]
-    pub fn notify_interval<F, M>(
-        &mut self,
-        duration: Duration,
-        constructor: F,
-    ) -> Result<impl Future<Output = ()>, Error>
-    where
-        F: Send + 'static + Fn() -> M,
-        M: Send + 'static,
-        A: Handler<M>,
-    {
-        let addr = self.address()?.downgrade();
-        let mut stopped = addr.join();
-
-        let fut = async move {
-            loop {
-                let delay = Delay::new(duration);
-                match future::select(delay, &mut stopped).await {
-                    Either::Left(_) => {
-                        if addr.send(constructor()).await.is_err() {
-                            break;
-                        }
-                    }
-                    Either::Right(_) => {
-                        // Context stopped before the end of the delay was reached
-                        break;
-                    }
-                }
-            }
-        };
-
-        Ok(fut)
-    }
-
-    /// Notify the actor with a message after a certain duration has elapsed. This does not take
-    /// priority over other messages.
-    ///
-    /// This function is subject to back-pressure by the actor's mailbox. If the mailbox is full once
-    /// the timer expires, the future will continue to block until the message is delivered.
-    #[cfg(feature = "timing")]
-    pub fn notify_after<M>(
-        &mut self,
-        duration: Duration,
-        notification: M,
-    ) -> Result<impl Future<Output = ()>, Error>
-    where
-        M: Send + 'static,
-        A: Handler<M>,
-    {
-        let addr = self.address()?.downgrade();
-        let mut stopped = addr.join();
-
-        let fut = async move {
-            let delay = Delay::new(duration);
-            match future::select(delay, &mut stopped).await {
-                Either::Left(_) => {
-                    let _ = addr.send(notification).await;
-                }
-                Either::Right(_) => {
-                    // Context stopped before the end of the delay was reached
-                }
-            }
-        };
-
-        Ok(fut)
-    }
-
     pub(crate) fn flow(&self) -> ControlFlow<()> {
         if self.running {
             ControlFlow::Continue(())
         } else {
             ControlFlow::Break(())
+        }
+    }
+}
+
+// Need this manual impl to avoid `A: Clone` bound.
+impl<A> Clone for Context<A> {
+    fn clone(&self) -> Self {
+        Self {
+            running: self.running,
+            mailbox: self.mailbox.clone(),
         }
     }
 }
@@ -409,6 +346,7 @@ impl<A> FusedFuture for ReceiveFuture<A> {
     }
 }
 
+#[must_use = "Futures do nothing unless polled"]
 pub struct TickFuture<'a, A> {
     state: TickState<'a, A>,
     span: Span,

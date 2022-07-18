@@ -2,7 +2,7 @@
 
 ## 0.6.0
 
-- Sealed `RefCounter` and `MessageChannel` traits
+- Sealed `RefCounter` trait
 - `Message` no longer exists - `Return` is now specified on the `Handler` trait itself.
 - `Context::notify_interval` and `Context::notify_after` are now subject to back-pressure, in case the address mailbox
   is full. These aren't API breaking but a semantic changes.
@@ -14,8 +14,18 @@
 - `MessageChannel` is now a `struct` that can be constructed from an `Address` via `MessageChannel::new` or using
   `From`/`Into`.
 - `AddressSink` was removed in favor of using `impl Trait` for the `Address::into_sink` method.
+- `Context::attach_stream` was removed in favor of composing `Stream::forward` and `Address::into_sink`.
+- `KeepRunning` was removed as `Context::attach_stream` was its last usage.
 - `InstrumentedExt` was removed. All messages are now instrumented automatically when `instrumentation` is enabled.
 - `stop_all` now does not drain all messages when called, and acts just like `stop_self` on all active actors.
+- `Context::attach` is removed in favor of implementing `Clone` for `Context`. If you want to run multiple actors on a
+  `Context`, simply clone it before calling `run`.
+- Remove `Context::notify_after` without a direct replacement. To delay the sending of a message, users are encouraged
+  to use the `sleep` function of their executor of choice and combine it with `Address::send` into a new future. To
+  cancel the sleeping early in case the actor stops, use `xtra::scoped`.
+- Remove `Context::notify_interval` without a direct replacement. Users are encouraged to write their own loop within
+  which they call `Address:send`.
+- Rename features from `with-crate-version` to just `crate`. For example, `with-tokio-1` has been renamed to `tokio`. 
 
 ## 0.5.0
 
