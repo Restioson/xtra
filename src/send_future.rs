@@ -8,7 +8,7 @@ use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use crate::envelope::{BroadcastEnvelopeConcrete, ReturningEnvelope};
-use crate::inbox::{SentMessage, Spinlock, TrySendFail, WaitingSender};
+use crate::inbox::{MailboxFull, SentMessage, Spinlock, WaitingSender};
 use crate::refcount::RefCounter;
 use crate::{inbox, Error, Handler};
 
@@ -193,10 +193,9 @@ where
 
         loop {
             match mem::replace(this, Sending::Done) {
-                Sending::New { msg, sender } => match sender.inner.try_send(msg) {
+                Sending::New { msg, sender } => match sender.inner.try_send(msg)? {
                     Ok(()) => return Poll::Ready(Ok(())),
-                    Err(TrySendFail::Disconnected) => return Poll::Ready(Err(Error::Disconnected)),
-                    Err(TrySendFail::Full(waiting)) => {
+                    Err(MailboxFull(waiting)) => {
                         *this = Sending::WaitingToSend(waiting);
                     }
                 },

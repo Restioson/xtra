@@ -68,16 +68,19 @@ impl<A> Chan<A> {
         mailbox
     }
 
-    pub fn try_send(&self, mut message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
+    pub fn try_send(
+        &self,
+        mut message: SentMessage<A>,
+    ) -> Result<Result<(), MailboxFull<A>>, Error> {
         if !self.is_connected() {
-            return Err(TrySendFail::Disconnected);
+            return Err(Error::Disconnected);
         }
 
         message.start_span();
 
         let mut inner = self.chan.lock().unwrap();
 
-        match message.msg {
+        let result = match message.msg {
             MessageKind::ToAllActors(m) if !self.is_full(inner.broadcast_tail) => {
                 inner.send_broadcast(m);
                 Ok(())
@@ -86,7 +89,7 @@ impl<A> Chan<A> {
                 // on_shutdown is only notified with inner locked, and it's locked here, so no race
                 let waiting = WaitingSender::new(MessageKind::ToAllActors(m));
                 inner.waiting_senders.push_back(Arc::downgrade(&waiting));
-                Err(TrySendFail::Full(waiting))
+                Err(MailboxFull(waiting))
             }
             msg => {
                 let res = inner.try_fulfill_receiver(msg.into());
@@ -109,12 +112,14 @@ impl<A> Chan<A> {
                     Err(WakeReason::MessageToOneActor(m)) => {
                         let waiting = WaitingSender::new(m.into());
                         inner.waiting_senders.push_back(Arc::downgrade(&waiting));
-                        Err(TrySendFail::Full(waiting))
+                        Err(MailboxFull(waiting))
                     }
                     _ => unreachable!(),
                 }
             }
-        }
+        };
+
+        Ok(result)
     }
 
     fn try_recv(
@@ -508,10 +513,8 @@ impl<A> From<Box<dyn MessageEnvelope<Actor = A>>> for MessageKind<A> {
     }
 }
 
-pub enum TrySendFail<A> {
-    Full(Arc<Spinlock<WaitingSender<A>>>),
-    Disconnected,
-}
+/// An error returned in case the mailbox of an actor is full.
+pub struct MailboxFull<A>(pub Arc<Spinlock<WaitingSender<A>>>);
 
 pub enum ActorMessage<A> {
     ToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
