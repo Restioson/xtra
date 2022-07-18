@@ -132,7 +132,7 @@ async fn assert_send_is_child_of_span() {
     let _ = addr
         .send(Hello("hi"))
         .split_receiver()
-        .instrument(tracing::info_span!("test_span"))
+        .instrument(tracing::info_span!("user_span"))
         .await;
     ctx.yield_once(&mut Tracer).await;
 
@@ -140,7 +140,7 @@ async fn assert_send_is_child_of_span() {
         assert_eq!(
             lines,
             [
-                r#" INFO test_span:xtra_actor_request{actor="tracing::Tracer" tracing::Hello}:xtra_message_handler{actor="tracing::Tracer" tracing::Hello}: tracing: Hi hi"#
+                r#" INFO user_span:xtra_actor_request{actor="tracing::Tracer" tracing::Hello}:xtra_message_handler{actor="tracing::Tracer" tracing::Hello}: tracing: Hi hi"#
             ]
         );
     });
