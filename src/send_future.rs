@@ -122,7 +122,7 @@ impl<R> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
         Self {
             sending: ActorErasedSending(Box::new(Sending::New {
                 msg: SentMessage::msg_to_one::<M>(Box::new(envelope)),
-                sender: sender.clone(),
+                sender,
             })),
             state: ResolveToHandlerReturn {
                 receiver: Receiver::new(receiver),
@@ -145,7 +145,7 @@ where
         Self {
             sending: ActorNamedSending(Sending::New {
                 msg: SentMessage::msg_to_all::<M>(Arc::new(envelope)),
-                sender: sender.clone(),
+                sender,
             }),
             state: Broadcast(()),
         }
@@ -165,7 +165,7 @@ impl SendFuture<ActorErasedSending, Broadcast> {
         Self {
             sending: ActorErasedSending(Box::new(Sending::New {
                 msg: SentMessage::msg_to_all::<M>(Arc::new(envelope)),
-                sender: sender.clone(),
+                sender,
             })),
             state: Broadcast(()),
         }
@@ -210,9 +210,7 @@ where
                         }
                     };
                 }
-                Sending::Done => {
-                    panic!("Polled after completion")
-                }
+                Sending::Done => panic!("Polled after completion"),
             }
         }
     }
@@ -269,15 +267,13 @@ where
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
 
-        loop {
-            if !this.sending.is_terminated() {
-                futures_util::ready!(this.sending.poll_unpin(ctx))?;
-            }
+        if !this.sending.is_terminated() {
+            futures_util::ready!(this.sending.poll_unpin(ctx))?;
+        }
 
-            return match this.state.receiver.take() {
-                None => Poll::Pending,
-                Some(receiver) => Poll::Ready(Ok(receiver)),
-            };
+        match this.state.receiver.take() {
+            None => Poll::Pending,
+            Some(receiver) => Poll::Ready(Ok(receiver)),
         }
     }
 }
@@ -291,15 +287,13 @@ where
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
 
-        loop {
-            if !this.sending.is_terminated() {
-                futures_util::ready!(this.sending.poll_unpin(ctx))?;
-            }
-
-            let r = futures_util::ready!(this.state.receiver.poll_unpin(ctx))?;
-
-            return Poll::Ready(Ok(r));
+        if !this.sending.is_terminated() {
+            futures_util::ready!(this.sending.poll_unpin(ctx))?;
         }
+
+        let r = futures_util::ready!(this.state.receiver.poll_unpin(ctx))?;
+
+        Poll::Ready(Ok(r))
     }
 }
 impl<F> Future for SendFuture<F, Broadcast>
