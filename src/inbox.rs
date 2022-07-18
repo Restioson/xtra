@@ -65,21 +65,23 @@ impl<A> Chan<A> {
         mailbox
     }
 
-    fn try_send(&self, message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
+    fn try_send(&self, mut message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
         if !self.is_connected() {
             return Err(TrySendFail::Disconnected);
         }
 
+        message.start_span();
+
         let mut inner = self.chan.lock().unwrap();
 
-        match message {
-            SentMessage::ToAllActors(m) if !self.is_full(inner.broadcast_tail) => {
+        match message.msg {
+            MessageKind::ToAllActors(m) if !self.is_full(inner.broadcast_tail) => {
                 inner.send_broadcast(m);
                 Ok(())
             }
-            SentMessage::ToAllActors(m) => {
+            MessageKind::ToAllActors(m) => {
                 // on_shutdown is only notified with inner locked, and it's locked here, so no race
-                let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
+                let waiting = WaitingSender::new(MessageKind::ToAllActors(m));
                 inner.waiting_senders.push_back(Arc::downgrade(&waiting));
                 Err(TrySendFail::Full(waiting))
             }
@@ -322,7 +324,7 @@ impl<A> ChanInner<A> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
         if capacity.map_or(false, |cap| cap == self.priority_queue.len()) {
             match self.try_fulfill_sender(MessageType::Priority) {
-                Some(SentMessage::ToOneActor(msg)) => self.priority_queue.push(ByPriority(msg)),
+                Some(MessageKind::ToOneActor(msg)) => self.priority_queue.push(ByPriority(msg)),
                 Some(_) => unreachable!(),
                 None => {}
             }
@@ -338,7 +340,7 @@ impl<A> ChanInner<A> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
         if capacity.map_or(false, |cap| cap == self.ordered_queue.len()) {
             match self.try_fulfill_sender(MessageType::Ordered) {
-                Some(SentMessage::ToOneActor(msg)) => self.ordered_queue.push_back(msg),
+                Some(MessageKind::ToOneActor(msg)) => self.ordered_queue.push_back(msg),
                 Some(_) => unreachable!(),
                 None => {}
             }
@@ -360,7 +362,7 @@ impl<A> ChanInner<A> {
         // If len < cap, try fulfill a waiting sender
         if capacity.map_or(false, |cap| longest < cap) {
             match self.try_fulfill_sender(MessageType::Broadcast) {
-                Some(SentMessage::ToAllActors(m)) => self.send_broadcast(m),
+                Some(MessageKind::ToAllActors(m)) => self.send_broadcast(m),
                 Some(_) => unreachable!(),
                 None => {}
             }
@@ -397,7 +399,7 @@ impl<A> ChanInner<A> {
         Err(reason)
     }
 
-    fn try_fulfill_sender(&mut self, for_type: MessageType) -> Option<SentMessage<A>> {
+    fn try_fulfill_sender(&mut self, for_type: MessageType) -> Option<MessageKind<A>> {
         self.waiting_senders
             .retain(|tx| Weak::strong_count(tx) != 0);
 
@@ -406,7 +408,7 @@ impl<A> ChanInner<A> {
                 self.waiting_senders
                     .iter()
                     .position(|tx| match tx.upgrade() {
-                        Some(tx) => matches!(tx.lock().peek(), SentMessage::ToOneActor(m) if m.priority() == Priority::default()),
+                        Some(tx) => matches!(tx.lock().peek(), MessageKind::ToOneActor(m) if m.priority() == Priority::default()),
                         None => false,
                     })?
             } else {
@@ -415,13 +417,13 @@ impl<A> ChanInner<A> {
                     .enumerate()
                     .max_by_key(|(_idx, tx)| match tx.upgrade() {
                         Some(tx) => match tx.lock().peek() {
-                            SentMessage::ToOneActor(m)
+                            MessageKind::ToOneActor(m)
                                 if for_type == MessageType::Priority
                                     && m.priority() > Priority::default() =>
                             {
                                 Some(m.priority())
                             }
-                            SentMessage::ToAllActors(m) if for_type == MessageType::Broadcast => {
+                            MessageKind::ToAllActors(m) if for_type == MessageType::Broadcast => {
                                 Some(m.priority())
                             }
                             _ => None,
@@ -445,23 +447,61 @@ enum MessageType {
     Priority,
 }
 
-pub enum SentMessage<A> {
+pub struct SentMessage<A> {
+    #[cfg(feature = "instrumentation")]
+    msg_type: &'static str,
+    pub msg: MessageKind<A>,
+}
+
+pub enum MessageKind<A> {
     ToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
     ToAllActors(Arc<dyn BroadcastEnvelope<Actor = A>>),
 }
 
-impl<A> From<SentMessage<A>> for WakeReason<A> {
-    fn from(msg: SentMessage<A>) -> Self {
+impl<A> SentMessage<A> {
+    pub fn msg_to_one<M>(msg: Box<dyn MessageEnvelope<Actor = A>>) -> Self {
+        SentMessage {
+            #[cfg(feature = "instrumentation")]
+            msg_type: std::any::type_name::<M>(),
+            msg: MessageKind::ToOneActor(msg),
+        }
+    }
+
+    pub fn msg_to_all<M>(msg: Arc<dyn BroadcastEnvelope<Actor = A>>) -> Self {
+        SentMessage {
+            #[cfg(feature = "instrumentation")]
+            msg_type: std::any::type_name::<M>(),
+            msg: MessageKind::ToAllActors(msg),
+        }
+    }
+
+    pub fn start_span(&mut self) {
+        #[cfg(feature = "instrumentation")]
+        match &mut self.msg {
+            MessageKind::ToOneActor(m) => {
+                m.start_span(self.msg_type);
+            }
+            MessageKind::ToAllActors(m) => {
+                Arc::get_mut(m)
+                    .expect("calling after try_send not supported")
+                    .start_span(self.msg_type);
+            }
+        };
+    }
+}
+
+impl<A> From<MessageKind<A>> for WakeReason<A> {
+    fn from(msg: MessageKind<A>) -> Self {
         match msg {
-            SentMessage::ToOneActor(m) => WakeReason::MessageToOneActor(m),
-            SentMessage::ToAllActors(_) => WakeReason::MessageToAllActors,
+            MessageKind::ToOneActor(m) => WakeReason::MessageToOneActor(m),
+            MessageKind::ToAllActors(_) => WakeReason::MessageToAllActors,
         }
     }
 }
 
-impl<A> From<Box<dyn MessageEnvelope<Actor = A>>> for SentMessage<A> {
+impl<A> From<Box<dyn MessageEnvelope<Actor = A>>> for MessageKind<A> {
     fn from(msg: Box<dyn MessageEnvelope<Actor = A>>) -> Self {
-        SentMessage::ToOneActor(msg)
+        MessageKind::ToOneActor(msg)
     }
 }
 

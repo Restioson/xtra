@@ -100,7 +100,7 @@ impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
 
         Self {
             inner: SendFutureInner::Sending(ActorErasedSending {
-                future: Box::new(sender.send(SentMessage::ToOneActor(Box::new(envelope)))),
+                future: Box::new(sender.send(SentMessage::msg_to_one::<M>(Box::new(envelope)))),
                 rx: Some(rx),
             }),
             phantom: PhantomData,
@@ -122,7 +122,7 @@ impl<A, R, Rc: RefCounter> SendFuture<R, NameableSending<A, R, Rc>, ResolveToHan
 
         Self {
             inner: SendFutureInner::Sending(NameableSending {
-                inner: sender.send(SentMessage::ToOneActor(Box::new(envelope))),
+                inner: sender.send(SentMessage::msg_to_one::<M>(Box::new(envelope))),
                 receiver: Some(Receiver::new(rx)),
             }),
             phantom: PhantomData,

@@ -130,11 +130,19 @@ impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
     fn set_priority(&mut self, priority: u32) {
         match self {
             SendFuture::New {
-                msg: SentMessage::ToOneActor(ref mut m),
+                msg:
+                    SentMessage {
+                        msg: MessageKind::ToOneActor(ref mut m),
+                        ..
+                    },
                 ..
             } => m.set_priority(priority),
             SendFuture::New {
-                msg: SentMessage::ToAllActors(ref mut m),
+                msg:
+                    SentMessage {
+                        msg: MessageKind::ToAllActors(ref mut m),
+                        ..
+                    },
                 ..
             } => Arc::get_mut(m)
                 .expect("envelope is not cloned until here")
@@ -192,14 +200,14 @@ impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
 pub enum WaitingSender<A> {
     Active {
         waker: Option<Waker>,
-        message: SentMessage<A>,
+        message: MessageKind<A>,
     },
     Delivered,
     Closed,
 }
 
 impl<A> WaitingSender<A> {
-    pub fn new(message: SentMessage<A>) -> Arc<Spinlock<Self>> {
+    pub fn new(message: MessageKind<A>) -> Arc<Spinlock<Self>> {
         let sender = WaitingSender::Active {
             waker: None,
             message,
@@ -207,14 +215,14 @@ impl<A> WaitingSender<A> {
         Arc::new(Spinlock::new(sender))
     }
 
-    pub fn peek(&self) -> &SentMessage<A> {
+    pub fn peek(&self) -> &MessageKind<A> {
         match self {
             WaitingSender::Active { message, .. } => message,
             _ => panic!("WaitingSender should have message"),
         }
     }
 
-    pub fn fulfill(&mut self) -> SentMessage<A> {
+    pub fn fulfill(&mut self) -> MessageKind<A> {
         match mem::replace(self, Self::Delivered) {
             WaitingSender::Active { mut waker, message } => {
                 if let Some(waker) = waker.take() {
