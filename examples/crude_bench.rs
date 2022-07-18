@@ -152,7 +152,7 @@ async fn do_channel_benchmark<M, RM>(
     f: impl Fn(&MessageChannel<M, ()>) -> SendFuture<ActorErasedSending, RM>,
 ) where
     Counter: Handler<M, Return = ()> + Send,
-    M: Send + Sync + Unpin + 'static,
+    M: Send + 'static,
     SendFuture<ActorErasedSending, RM>: Future,
 {
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);

@@ -8,7 +8,7 @@ use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use crate::envelope::{BroadcastEnvelopeConcrete, ReturningEnvelope};
-use crate::inbox::{MailboxFull, SentMessage, Spinlock, WaitingSender};
+use crate::inbox::{MailboxFull, SentMessage, WaitingSender};
 use crate::refcount::RefCounter;
 use crate::{inbox, Error, Handler};
 
@@ -106,7 +106,7 @@ impl<R> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
     where
         Rc: RefCounter,
         A: Handler<M, Return = R>,
-        M: Send + Sync + 'static,
+        M: Send + 'static,
         R: Send + 'static,
     {
         let (envelope, receiver) = ReturningEnvelope::<A, M, R>::new(message, 0);
@@ -168,7 +168,7 @@ enum Sending<A, Rc: RefCounter> {
         msg: SentMessage<A>,
         sender: inbox::Sender<A, Rc>,
     },
-    WaitingToSend(Arc<Spinlock<WaitingSender<A>>>),
+    WaitingToSend(Arc<spin::Mutex<WaitingSender<A>>>),
     Done,
 }
 

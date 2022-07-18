@@ -22,7 +22,7 @@ use crate::inbox::rx::{RxStrong, WaitingReceiver};
 use crate::inbox::tx::TxStrong;
 use crate::{Actor, Error};
 
-pub type Spinlock<T> = spin::Mutex<T>;
+type Spinlock<T> = spin::Mutex<T>;
 type BroadcastQueue<A> = Spinlock<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelope<Actor = A>>>>>;
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
