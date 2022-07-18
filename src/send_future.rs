@@ -203,7 +203,7 @@ where
                     let poll = { waiting.lock().poll_unpin(cx) }?; // Scoped separately to drop mutex guard asap.
 
                     return match poll {
-                        Poll::Ready(()) => return Poll::Ready(Ok(())),
+                        Poll::Ready(()) => Poll::Ready(Ok(())),
                         Poll::Pending => {
                             *this = Sending::WaitingToSend(waiting);
                             Poll::Pending
