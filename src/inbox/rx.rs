@@ -108,9 +108,6 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                     let actor_message = match waiting.poll_unpin(cx) {
                         Poll::Ready(WakeReason::MessageToOneActor(msg)) => msg.into(),
                         Poll::Ready(WakeReason::Shutdown) => ActorMessage::Shutdown,
-                        Poll::Ready(WakeReason::Cancelled) => {
-                            unreachable!("Waiting receive future cannot be interrupted")
-                        }
                         Poll::Ready(WakeReason::MessageToAllActors) => {
                             match rx.inner.pop_broadcast_message(&rx.broadcast_mailbox) {
                                 Some(msg) => ActorMessage::ToAllActors(msg),
@@ -214,9 +211,11 @@ impl<A> FulfillHandle<A> {
 
         let mut this = this.lock();
 
+        if this.cancelled {
+            return Err(reason);
+        }
+
         match this.wake_reason {
-            // Receive was interrupted, so this cannot be fulfilled
-            Some(WakeReason::Cancelled) => return Err(reason),
             Some(_) => unreachable!("Waiting receiver was fulfilled but not popped!"),
             None => this.wake_reason = Some(reason),
         }
@@ -249,10 +248,11 @@ impl<A> WaitingReceiver<A> {
     /// It is important to call this message over just dropping the [`WaitingReceiver`] as this
     /// message would otherwise be dropped.
     fn cancel(&self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
-        match mem::replace(
-            &mut self.state.lock().wake_reason,
-            Some(WakeReason::Cancelled),
-        )? {
+        let mut state = self.state.lock();
+
+        state.cancelled = true;
+
+        match state.wake_reason.take()? {
             WakeReason::MessageToOneActor(msg) => Some(msg),
             _ => None,
         }
@@ -279,6 +279,7 @@ impl<A> Future for WaitingReceiver<A> {
 struct WaitingState<A> {
     waker: Option<Waker>,
     wake_reason: Option<WakeReason<A>>,
+    cancelled: bool,
 }
 
 impl<A> Default for WaitingState<A> {
@@ -286,6 +287,7 @@ impl<A> Default for WaitingState<A> {
         WaitingState {
             waker: None,
             wake_reason: None,
+            cancelled: false,
         }
     }
 }
@@ -295,8 +297,6 @@ pub enum WakeReason<A> {
     // should be fetched from own receiver
     MessageToAllActors,
     Shutdown,
-    // ReceiveFuture::cancel was called
-    Cancelled,
 }
 
 pub trait RxRefCounter: Unpin {
