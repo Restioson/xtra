@@ -175,7 +175,7 @@ impl<A> Chan<A> {
         self.capacity.map_or(false, |cap| len >= cap)
     }
 
-    /// Shutdown all [`WaitingReceiver`](crate::inbox::rx::WaitingReceiver)s in this channel.
+    /// Shutdown all [`WaitingReceiver`]s in this channel.
     fn shutdown_waiting_receivers(&self) {
         let waiting_rx = {
             let mut inner = match self.chan.lock() {

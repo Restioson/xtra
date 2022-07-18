@@ -6,9 +6,9 @@ use crate::inbox::rx::Receiver;
 use crate::inbox::rx::RxRefCounter;
 use crate::inbox::ActorMessage;
 
-/// A [`WaitingReceiver`] is handed out by the channel any time [`Chan::try_recv`] is called on an empty mailbox.
+/// A [`WaitingReceiver`] is handed out by the channel any time [`Chan::try_recv`](crate::inbox::Chan::try_recv) is called on an empty mailbox.
 ///
-/// [`WaitingReceiver`] implements [`Future`] which will resolve once a message lands in the mailbox.
+/// [`WaitingReceiver`] implements [`Future`](std::future::Future) which will resolve once a message lands in the mailbox.
 pub struct WaitingReceiver<A> {
     state: Arc<spin::Mutex<WaitingState<A>>>,
 }
