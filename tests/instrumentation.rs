@@ -140,9 +140,7 @@ async fn assert_send_is_child_of_span() {
             lines,
             [" INFO user_span:xtra_actor_request\
                 {actor_type=instrumentation::Tracer message_type=instrumentation::Hello}:\
-                xtra_message_handler\
-                {actor_type=instrumentation::Tracer message_type=instrumentation::Hello}: \
-                instrumentation: Hello world"]
+                xtra_message_handler: instrumentation: Hello world"]
         );
     });
 }
