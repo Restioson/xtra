@@ -30,6 +30,7 @@ use tracing::{Dispatch, Instrument};
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::FmtSubscriber;
 use xtra::prelude::*;
+use xtra::spawn::TokioGlobalSpawnExt;
 
 #[derive(Debug)]
 pub struct MockWriter {
@@ -128,13 +129,11 @@ async fn assert_send_is_child_of_span() {
     let subscriber = get_subscriber(mock_writer, "instrumentation=trace,xtra=trace");
     let _g = tracing::dispatcher::set_default(&subscriber);
 
-    let (addr, mut ctx) = Context::<Tracer>::new(None);
+    let addr = Tracer.create(None).spawn_global();
     let _ = addr
         .send(Hello("world"))
-        .split_receiver()
         .instrument(tracing::info_span!("user_span"))
         .await;
-    ctx.yield_once(&mut Tracer).await;
 
     with_logs(&buf, |lines: &[&str]| {
         assert_eq!(
