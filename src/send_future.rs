@@ -10,7 +10,6 @@ use futures_util::FutureExt;
 use crate::envelope::{BroadcastEnvelopeConcrete, ReturningEnvelope};
 use crate::inbox::{SentMessage, Spinlock, TrySendFail, WaitingSender};
 use crate::refcount::RefCounter;
-use crate::send_future::private::SetPriority;
 use crate::{inbox, Error, Handler};
 
 /// A [`Future`] that represents the state of sending a message to an actor.
@@ -25,7 +24,7 @@ use crate::{inbox, Error, Handler};
 /// This allows an actor to exercise backpressure on its users.
 #[must_use = "Futures do nothing unless polled"]
 pub struct SendFuture<F, TState> {
-    inner: F,
+    sending: F,
     state: TState,
 }
 
@@ -55,7 +54,7 @@ where
     /// Calling this function will change the [`Output`](Future::Output) of this [`Future`] from [`Handler::Return`](crate::Handler::Return) to [`Receiver<Handler::Return>`](Receiver<crate::Handler::Return>).
     pub fn split_receiver(self) -> SendFuture<F, ResolveToReceiver<R>> {
         SendFuture {
-            inner: self.inner,
+            sending: self.sending,
             state: ResolveToReceiver {
                 receiver: Some(self.state.receiver),
             },
@@ -65,17 +64,23 @@ where
 
 impl<F, TState> SendFuture<F, TState>
 where
-    F: SetPriority,
+    F: private::SetPriority,
 {
     /// Set the priority of a given message. See [`Address`](crate::Address) documentation for more info.
     ///
     /// Panics if this future has already been polled.
     pub fn priority(mut self, new_priority: u32) -> Self {
-        self.inner.set_priority(new_priority);
+        self.sending.set_priority(new_priority);
 
         self
     }
 }
+
+/// "Sending" state of [`SendFuture`] for cases where the actor type is named.
+pub struct ActorNamedSending<A, Rc: RefCounter>(Sending<A, Rc>);
+
+/// "Sending" state of [`SendFuture`] for cases where the actor type is erased.
+pub struct ActorErasedSending(Box<dyn private::ErasedSending>);
 
 impl<A, R, Rc> SendFuture<ActorNamedSending<A, Rc>, ResolveToHandlerReturn<R>>
 where
@@ -93,12 +98,10 @@ where
         let (envelope, receiver) = ReturningEnvelope::<A, M, R>::new(message, 0);
 
         Self {
-            inner: ActorNamedSending {
-                future: Sending::New {
-                    msg: SentMessage::msg_to_one::<M>(Box::new(envelope)),
-                    sender,
-                },
-            },
+            sending: ActorNamedSending(Sending::New {
+                msg: SentMessage::msg_to_one::<M>(Box::new(envelope)),
+                sender,
+            }),
             state: ResolveToHandlerReturn {
                 receiver: Receiver::new(receiver),
             },
@@ -117,12 +120,10 @@ impl<R> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
         let (envelope, receiver) = ReturningEnvelope::<A, M, R>::new(message, 0);
 
         Self {
-            inner: ActorErasedSending {
-                future: Box::new(Sending::New {
-                    msg: SentMessage::msg_to_one::<M>(Box::new(envelope)),
-                    sender: sender.clone(),
-                }),
-            },
+            sending: ActorErasedSending(Box::new(Sending::New {
+                msg: SentMessage::msg_to_one::<M>(Box::new(envelope)),
+                sender: sender.clone(),
+            })),
             state: ResolveToHandlerReturn {
                 receiver: Receiver::new(receiver),
             },
@@ -142,12 +143,10 @@ where
         let envelope = BroadcastEnvelopeConcrete::new(msg, 0);
 
         Self {
-            inner: ActorNamedSending {
-                future: Sending::New {
-                    msg: SentMessage::msg_to_all::<M>(Arc::new(envelope)),
-                    sender: sender.clone(),
-                },
-            },
+            sending: ActorNamedSending(Sending::New {
+                msg: SentMessage::msg_to_all::<M>(Arc::new(envelope)),
+                sender: sender.clone(),
+            }),
             state: Broadcast(()),
         }
     }
@@ -164,27 +163,16 @@ impl SendFuture<ActorErasedSending, Broadcast> {
         let envelope = BroadcastEnvelopeConcrete::new(msg, 0);
 
         Self {
-            inner: ActorErasedSending {
-                future: Box::new(Sending::New {
-                    msg: SentMessage::msg_to_all::<M>(Arc::new(envelope)),
-                    sender: sender.clone(),
-                }),
-            },
+            sending: ActorErasedSending(Box::new(Sending::New {
+                msg: SentMessage::msg_to_all::<M>(Arc::new(envelope)),
+                sender: sender.clone(),
+            })),
             state: Broadcast(()),
         }
     }
 }
 
-/// "Sending" state of [`SendFuture`] for cases where the actor type is named.
-pub struct ActorNamedSending<A, Rc: RefCounter> {
-    future: Sending<A, Rc>,
-}
-
-/// "Sending" state of [`SendFuture`] for cases where the actor type is erased.
-pub struct ActorErasedSending {
-    future: Box<dyn private::ErasedSending>,
-}
-
+/// The core state machine around sending a message to an actor's mailbox.
 enum Sending<A, Rc: RefCounter> {
     New {
         msg: SentMessage<A>,
@@ -248,7 +236,7 @@ impl<A, Rc: RefCounter> Future for ActorNamedSending<A, Rc> {
     type Output = Result<(), Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.get_mut().future.poll_unpin(cx)
+        self.get_mut().0.poll_unpin(cx)
     }
 }
 
@@ -258,7 +246,7 @@ where
     Rc: RefCounter,
 {
     fn is_terminated(&self) -> bool {
-        self.future.is_terminated()
+        self.0.is_terminated()
     }
 }
 
@@ -266,13 +254,13 @@ impl Future for ActorErasedSending {
     type Output = Result<(), Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.get_mut().future.poll_unpin(cx)
+        self.get_mut().0.poll_unpin(cx)
     }
 }
 
 impl FusedFuture for ActorErasedSending {
     fn is_terminated(&self) -> bool {
-        self.future.is_terminated()
+        self.0.is_terminated()
     }
 }
 
@@ -286,8 +274,8 @@ where
         let this = self.get_mut();
 
         loop {
-            if !this.inner.is_terminated() {
-                futures_util::ready!(this.inner.poll_unpin(ctx))?;
+            if !this.sending.is_terminated() {
+                futures_util::ready!(this.sending.poll_unpin(ctx))?;
             }
 
             return match this.state.receiver.take() {
@@ -308,8 +296,8 @@ where
         let this = self.get_mut();
 
         loop {
-            if !this.inner.is_terminated() {
-                futures_util::ready!(this.inner.poll_unpin(ctx))?;
+            if !this.sending.is_terminated() {
+                futures_util::ready!(this.sending.poll_unpin(ctx))?;
             }
 
             let r = futures_util::ready!(this.state.receiver.poll_unpin(ctx))?;
@@ -325,7 +313,7 @@ where
     type Output = Result<(), Error>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-        self.get_mut().inner.poll_unpin(ctx)
+        self.get_mut().sending.poll_unpin(ctx)
     }
 }
 
@@ -396,13 +384,13 @@ mod private {
         Rc: RefCounter,
     {
         fn set_priority(&mut self, priority: u32) {
-            self.future.set_priority(priority)
+            self.0.set_priority(priority)
         }
     }
 
     impl SetPriority for ActorErasedSending {
         fn set_priority(&mut self, priority: u32) {
-            self.future.set_priority(priority)
+            self.0.set_priority(priority)
         }
     }
 
