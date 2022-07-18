@@ -137,9 +137,6 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                 ReceiveFuture::New(rx) => match rx.inner.try_recv(rx.broadcast_mailbox.as_ref()) {
                     Ok(message) => return Poll::Ready(message),
                     Err(waiting) => {
-                        // Start waiting. The waiting receiver should be immediately polled, in case a
-                        // send operation happened between `try_recv` and here, in which case the
-                        // WaitingReceiver would be fulfilled, but not properly woken.
                         *this = ReceiveFuture::Waiting(Waiting {
                             channel_receiver: rx,
                             waiting_receiver: waiting,
