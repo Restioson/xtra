@@ -347,6 +347,7 @@ impl<A> FusedFuture for ReceiveFuture<A> {
     }
 }
 
+#[must_use = "Futures do nothing unless polled"]
 pub struct TickFuture<'a, A> {
     state: TickState<'a, A>,
     span: HandlerSpan,
