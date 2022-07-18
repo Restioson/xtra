@@ -100,8 +100,6 @@ impl Instrumentation {
             let _waiting_for_actor = Span(tracing::debug_span!(
                 parent: &parent.0,
                 "xtra_message_waiting_for_actor",
-                actor_type = %std::any::type_name::<A>(),
-                %message_type,
             ));
 
             Instrumentation {
@@ -123,8 +121,6 @@ impl Instrumentation {
             let executing = tracing::debug_span!(
                 parent: &self.parent.0,
                 "xtra_message_handler",
-                actor_type = %std::any::type_name::<A>(),
-                message_type = %std::any::type_name::<M>(),
                 interrupted = tracing::field::Empty,
             );
 
