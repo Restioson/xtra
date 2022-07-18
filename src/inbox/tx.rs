@@ -1,21 +1,11 @@
-use std::fmt::{Debug, Formatter};
-use std::future::Future;
-use std::mem;
-use std::pin::Pin;
-use std::sync::{atomic, Arc};
-use std::task::{Context, Poll, Waker};
-
-use event_listener::EventListener;
-use futures_core::FusedFuture;
-use futures_util::FutureExt;
+use std::fmt;
 
 use super::*;
 use crate::inbox::tx::private::RefCounterInner;
-use crate::send_future::private::SetPriority;
-use crate::{Actor, Error};
+use crate::Actor;
 
 pub struct Sender<A, Rc: TxRefCounter> {
-    inner: Arc<Chan<A>>,
+    pub inner: Arc<Chan<A>>,
     rc: Rc,
 }
 
@@ -87,13 +77,6 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     pub fn disconnect_notice(&self) -> Option<EventListener> {
         self.inner.disconnect_listener()
     }
-
-    /// Send a message through with [`Sender`].
-    ///
-    /// This consumes the provided [`Sender`] but it can be cloned before it one wishes to reuse it.
-    pub fn send(self, msg: SentMessage<A>) -> SendFuture<A, Rc> {
-        SendFuture::New { msg, tx: self }
-    }
 }
 
 impl<A, Rc: TxRefCounter> Clone for Sender<A, Rc> {
@@ -113,8 +96,8 @@ impl<A, Rc: TxRefCounter> Drop for Sender<A, Rc> {
     }
 }
 
-impl<A, Rc: TxRefCounter> Debug for Sender<A, Rc> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl<A, Rc: TxRefCounter> fmt::Debug for Sender<A, Rc> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use atomic::Ordering::SeqCst;
 
         let act = std::any::type_name::<A>();
@@ -126,158 +109,11 @@ impl<A, Rc: TxRefCounter> Debug for Sender<A, Rc> {
     }
 }
 
-impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
-    fn set_priority(&mut self, priority: u32) {
-        match self {
-            SendFuture::New {
-                msg:
-                    SentMessage {
-                        msg: MessageKind::ToOneActor(ref mut m),
-                        ..
-                    },
-                ..
-            } => m.set_priority(priority),
-            SendFuture::New {
-                msg:
-                    SentMessage {
-                        msg: MessageKind::ToAllActors(ref mut m),
-                        ..
-                    },
-                ..
-            } => Arc::get_mut(m)
-                .expect("envelope is not cloned until here")
-                .set_priority(priority),
-            _ => panic!("setting priority after polling is unsupported"),
-        }
-    }
-}
-
-#[must_use = "Futures do nothing unless polled"]
-pub enum SendFuture<A, Rc: TxRefCounter> {
-    New {
-        msg: SentMessage<A>,
-        tx: Sender<A, Rc>,
-    },
-    WaitingToSend(Arc<Spinlock<WaitingSender<A>>>),
-    Complete,
-}
-
-impl<A, Rc: TxRefCounter> Future for SendFuture<A, Rc> {
-    type Output = Result<(), Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        let this = self.get_mut();
-
-        loop {
-            match mem::replace(this, SendFuture::Complete) {
-                SendFuture::New { msg, tx } => match tx.inner.try_send(msg) {
-                    Ok(()) => return Poll::Ready(Ok(())),
-                    Err(TrySendFail::Disconnected) => return Poll::Ready(Err(Error::Disconnected)),
-                    Err(TrySendFail::Full(waiting)) => {
-                        // Start waiting. The waiting sender should be immediately polled, in case a
-                        // receive operation happened between `try_send` and here, in which case the
-                        // WaitingSender would be fulfilled, but not properly woken.
-                        *this = SendFuture::WaitingToSend(waiting);
-                    }
-                },
-                SendFuture::WaitingToSend(waiting) => {
-                    let poll = { waiting.lock().poll_unpin(cx) }; // Scoped separately to drop mutex guard asap.
-
-                    return match poll {
-                        Poll::Ready(result) => Poll::Ready(result),
-                        Poll::Pending => {
-                            *this = SendFuture::WaitingToSend(waiting);
-                            Poll::Pending
-                        }
-                    };
-                }
-                SendFuture::Complete => return Poll::Pending,
-            }
-        }
-    }
-}
-
-pub enum WaitingSender<A> {
-    Active {
-        waker: Option<Waker>,
-        message: MessageKind<A>,
-    },
-    Delivered,
-    Closed,
-}
-
-impl<A> WaitingSender<A> {
-    pub fn new(message: MessageKind<A>) -> Arc<Spinlock<Self>> {
-        let sender = WaitingSender::Active {
-            waker: None,
-            message,
-        };
-        Arc::new(Spinlock::new(sender))
-    }
-
-    pub fn peek(&self) -> &MessageKind<A> {
-        match self {
-            WaitingSender::Active { message, .. } => message,
-            _ => panic!("WaitingSender should have message"),
-        }
-    }
-
-    pub fn fulfill(&mut self) -> MessageKind<A> {
-        match mem::replace(self, Self::Delivered) {
-            WaitingSender::Active { mut waker, message } => {
-                if let Some(waker) = waker.take() {
-                    waker.wake();
-                }
-
-                message
-            }
-            WaitingSender::Delivered | WaitingSender::Closed => {
-                panic!("WaitingSender is already fulfilled or closed")
-            }
-        }
-    }
-
-    /// Mark this [`WaitingSender`] as closed.
-    ///
-    /// Should be called when the last [`Receiver`](crate::inbox::Receiver) goes away.
-    pub fn set_closed(&mut self) {
-        if let WaitingSender::Active {
-            waker: Some(waker), ..
-        } = mem::replace(self, Self::Closed)
-        {
-            waker.wake();
-        }
-    }
-}
-
-impl<A> Future for WaitingSender<A> {
-    type Output = Result<(), Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
-        match this {
-            WaitingSender::Active { waker, .. } => {
-                *waker = Some(cx.waker().clone());
-                Poll::Pending
-            }
-            WaitingSender::Delivered => Poll::Ready(Ok(())),
-            WaitingSender::Closed => Poll::Ready(Err(Error::Disconnected)),
-        }
-    }
-}
-
-impl<A, Rc: TxRefCounter> FusedFuture for SendFuture<A, Rc> {
-    fn is_terminated(&self) -> bool {
-        matches!(self, SendFuture::Complete)
-    }
-}
-
 /// This trait represents the strength of an address's reference counting. It is an internal trait.
 /// There are two implementations of this trait: [`Weak`](TxWeak) and [`Strong`](TxStrong). These
 /// can be provided as the second type argument to [`Address`](crate::Address) in order to change how the address
 /// affects the actor's dropping. Read the docs of [`Address`](crate::Address) to find out more.
-pub trait TxRefCounter: RefCounterInner + Unpin + Debug + Send + Sync + 'static {}
+pub trait TxRefCounter: RefCounterInner + Unpin + fmt::Debug + Send + Sync + 'static {}
 
 impl TxRefCounter for TxStrong {}
 impl TxRefCounter for TxWeak {}

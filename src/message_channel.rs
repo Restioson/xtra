@@ -73,7 +73,7 @@ pub struct MessageChannel<M, R, Rc = Strong> {
 
 impl<M, Rc, R> MessageChannel<M, R, Rc>
 where
-    M: Send + 'static,
+    M: Send + Sync + 'static + Unpin,
     R: Send + 'static,
 {
     /// Construct a new [`MessageChannel`] from the given [`Address`].
@@ -120,7 +120,7 @@ where
     ///
     /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
     /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
-    pub fn send(&self, message: M) -> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
+    pub fn send(&self, message: M) -> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
         self.inner.send(message)
     }
 
@@ -141,7 +141,7 @@ where
 #[cfg(feature = "sink")]
 impl<M, Rc> MessageChannel<M, (), Rc>
 where
-    M: Send + 'static,
+    M: Send + Sync + 'static + Unpin,
 {
     /// Construct a [`Sink`] from this [`MessageChannel`].
     ///
@@ -164,7 +164,7 @@ impl<A, M, R, Rc> From<Address<A, Rc>> for MessageChannel<M, R, Rc>
 where
     A: Handler<M, Return = R>,
     R: Send + 'static,
-    M: Send + 'static,
+    M: Send + Sync + 'static + Unpin,
     Rc: RefCounter,
 {
     fn from(address: Address<A, Rc>) -> Self {
@@ -194,7 +194,7 @@ where
 /// counts. [`Either`] will compare as whichever reference count type it wraps.
 impl<M, R, Rc> PartialEq for MessageChannel<M, R, Rc>
 where
-    M: Send + 'static,
+    M: Send + Sync + 'static + Unpin,
     R: Send + 'static,
     Rc: Send + 'static,
 {
@@ -252,7 +252,7 @@ trait MessageChannelTrait<M, Rc> {
     fn send(
         &self,
         message: M,
-    ) -> SendFuture<Self::Return, ActorErasedSending<Self::Return>, ResolveToHandlerReturn>;
+    ) -> SendFuture<ActorErasedSending, ResolveToHandlerReturn<Self::Return>>;
 
     fn clone_channel(
         &self,
@@ -274,7 +274,7 @@ trait MessageChannelTrait<M, Rc> {
 impl<A, R, M, Rc: RefCounter> MessageChannelTrait<M, Rc> for Address<A, Rc>
 where
     A: Handler<M, Return = R>,
-    M: Send + 'static,
+    M: Send + Sync + 'static + Unpin,
     R: Send + 'static,
 {
     type Return = R;
@@ -291,10 +291,7 @@ where
         self.capacity()
     }
 
-    fn send(
-        &self,
-        message: M,
-    ) -> SendFuture<R, ActorErasedSending<Self::Return>, ResolveToHandlerReturn> {
+    fn send(&self, message: M) -> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
         SendFuture::sending_erased(message, self.0.clone())
     }
 

@@ -12,8 +12,8 @@ use event_listener::EventListener;
 use futures_util::FutureExt;
 
 use crate::refcount::{Either, RefCounter, Strong, Weak};
-use crate::send_future::ResolveToHandlerReturn;
-use crate::{inbox, BroadcastFuture, Handler, NameableSending, SendFuture};
+use crate::send_future::{Broadcast, ResolveToHandlerReturn};
+use crate::{inbox, ActorNamedSending, Handler, SendFuture};
 
 /// An [`Address`] is a reference to an actor through which messages can be
 /// sent. It can be cloned to create more addresses to the same actor.
@@ -159,11 +159,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     pub fn send<M>(
         &self,
         message: M,
-    ) -> SendFuture<
-        <A as Handler<M>>::Return,
-        NameableSending<A, <A as Handler<M>>::Return, Rc>,
-        ResolveToHandlerReturn,
-    >
+    ) -> SendFuture<ActorNamedSending<A, Rc>, ResolveToHandlerReturn<<A as Handler<M>>::Return>>
     where
         M: Send + 'static,
         A: Handler<M>,
@@ -174,12 +170,12 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// Send a message to all actors on this address.
     ///
     /// For details, please see the documentation on [`BroadcastFuture`].
-    pub fn broadcast<M>(&self, msg: M) -> BroadcastFuture<A, Rc>
+    pub fn broadcast<M>(&self, msg: M) -> SendFuture<ActorNamedSending<A, Rc>, Broadcast>
     where
-        M: Clone + Sync + Send + 'static,
+        M: Clone + Sync + Send + 'static + Unpin,
         A: Handler<M, Return = ()>,
     {
-        BroadcastFuture::new(msg, self.0.clone())
+        SendFuture::broadcast_named(msg, self.0.clone())
     }
 
     /// Waits until this address becomes disconnected. Note that if this is called on a strong
@@ -217,7 +213,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     pub fn into_sink<M>(self) -> impl futures_sink::Sink<M, Error = crate::Error>
     where
         A: Handler<M, Return = ()>,
-        M: Send + 'static,
+        M: Send + 'static + Unpin,
     {
         futures_util::sink::unfold((), move |(), message| self.send(message))
     }
