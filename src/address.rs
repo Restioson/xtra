@@ -174,7 +174,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// Send a message to all actors on this address.
     ///
     /// For details, please see the documentation on [`BroadcastFuture`].
-    pub fn broadcast<M>(&self, msg: M) -> BroadcastFuture<A, M, Rc>
+    pub fn broadcast<M>(&self, msg: M) -> BroadcastFuture<A, Rc>
     where
         M: Clone + Sync + Send + 'static,
         A: Handler<M, Return = ()>,

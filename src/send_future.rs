@@ -9,7 +9,7 @@ use futures_util::FutureExt;
 
 use crate::envelope::ReturningEnvelope;
 use crate::inbox::tx::TxRefCounter;
-use crate::inbox::{PriorityMessageToOne, SentMessage};
+use crate::inbox::SentMessage;
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Strong};
 use crate::send_future::private::SetPriority;
@@ -96,12 +96,11 @@ impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
         M: Send + 'static,
         R: Send + 'static,
     {
-        let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
-        let msg = PriorityMessageToOne::new(0, Box::new(envelope));
+        let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message, 0);
 
         Self {
             inner: SendFutureInner::Sending(ActorErasedSending {
-                future: Box::new(sender.send(SentMessage::ToOneActor(msg))),
+                future: Box::new(sender.send(SentMessage::ToOneActor(Box::new(envelope)))),
                 rx: Some(rx),
             }),
             phantom: PhantomData,
@@ -119,12 +118,11 @@ impl<A, R, Rc: RefCounter> SendFuture<R, NameableSending<A, R, Rc>, ResolveToHan
         M: Send + 'static,
         R: Send + 'static,
     {
-        let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
-        let msg = PriorityMessageToOne::new(0, Box::new(envelope));
+        let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message, 0);
 
         Self {
             inner: SendFutureInner::Sending(NameableSending {
-                inner: sender.send(SentMessage::ToOneActor(msg)),
+                inner: sender.send(SentMessage::ToOneActor(Box::new(envelope))),
                 receiver: Some(Receiver::new(rx)),
             }),
             phantom: PhantomData,

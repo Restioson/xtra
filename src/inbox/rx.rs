@@ -115,7 +115,7 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                         }
                         Poll::Ready(WakeReason::MessageToAllActors) => {
                             match rx.inner.pop_broadcast_message(&rx.broadcast_mailbox) {
-                                Some(msg) => ActorMessage::ToAllActors(msg.0),
+                                Some(msg) => ActorMessage::ToAllActors(msg),
                                 None => {
                                     // We got woken but failed to pop a message, try receiving again.
                                     this.0 = ReceiveState::New(rx);
