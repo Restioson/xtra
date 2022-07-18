@@ -170,7 +170,30 @@ impl<A> Default for WaitingReceiver<A> {
 }
 
 impl<A> WaitingReceiver<A> {
-    pub(super) fn fulfill(&mut self, reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
+    pub(crate) fn shutdown(&mut self) {
+        let _ = self.fulfill(WakeReason::Shutdown);
+    }
+
+    pub(crate) fn fulfill_message_to_all_actors(&mut self) -> Result<(), ()> {
+        match self.fulfill(WakeReason::MessageToAllActors) {
+            Ok(()) => Ok(()),
+            Err(WakeReason::MessageToAllActors) => Err(()),
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn fulfill_message_to_one_actor(
+        &mut self,
+        msg: Box<dyn MessageEnvelope<Actor = A>>,
+    ) -> Result<(), Box<dyn MessageEnvelope<Actor = A>>> {
+        match self.fulfill(WakeReason::MessageToOneActor(msg)) {
+            Ok(()) => Ok(()),
+            Err(WakeReason::MessageToOneActor(msg)) => Err(msg),
+            _ => unreachable!(),
+        }
+    }
+
+    fn fulfill(&mut self, reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
         match self.wake_reason {
             // Receive was interrupted, so this cannot be fulfilled
             Some(WakeReason::Cancelled) => return Err(reason),
@@ -206,6 +229,15 @@ impl<A> Future for WaitingReceiver<A> {
             }
         }
     }
+}
+
+pub enum WakeReason<A> {
+    MessageToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
+    // should be fetched from own receiver
+    MessageToAllActors,
+    Shutdown,
+    // ReceiveFuture::cancel was called
+    Cancelled,
 }
 
 pub trait RxRefCounter: Unpin {
