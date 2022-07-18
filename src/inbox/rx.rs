@@ -80,7 +80,7 @@ enum ReceiveState<A, Rc: RxRefCounter> {
     New(Receiver<A, Rc>),
     Waiting {
         rx: Receiver<A, Rc>,
-        waiting: Arc<Spinlock<WaitingReceiver<A>>>,
+        waiting: WaitingReceiver<A>,
     },
     Complete,
 }
@@ -104,10 +104,8 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                         }
                     }
                 }
-                ReceiveState::Waiting { rx, waiting } => {
-                    let poll = { waiting.lock().poll_unpin(cx) };
-
-                    let actor_message = match poll {
+                ReceiveState::Waiting { rx, mut waiting } => {
+                    let actor_message = match waiting.poll_unpin(cx) {
                         Poll::Ready(WakeReason::MessageToOneActor(msg)) => msg.into(),
                         Poll::Ready(WakeReason::Shutdown) => ActorMessage::Shutdown,
                         Poll::Ready(WakeReason::Cancelled) => {
@@ -142,7 +140,7 @@ impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
         if let ReceiveState::Waiting { waiting, rx } =
             mem::replace(&mut self.0, ReceiveState::Complete)
         {
-            if let Some(WakeReason::MessageToOneActor(msg)) = waiting.lock().cancel() {
+            if let Some(msg) = waiting.cancel() {
                 rx.inner.requeue_message(msg);
             }
         }
@@ -155,26 +153,34 @@ impl<A, Rc: RxRefCounter> FusedFuture for ReceiveFuture<A, Rc> {
     }
 }
 
+/// A [`WaitingReceiver`] is handed out by the channel any time [`Chan::try_recv`] is called on an empty mailbox.
+///
+/// [`WaitingReceiver`] implements [`Future`] which will resolve once a message lands in the mailbox.
 pub struct WaitingReceiver<A> {
-    waker: Option<Waker>,
-    wake_reason: Option<WakeReason<A>>,
+    state: Arc<spin::Mutex<WaitingState<A>>>,
 }
 
-impl<A> Default for WaitingReceiver<A> {
-    fn default() -> Self {
-        WaitingReceiver {
-            waker: None,
-            wake_reason: None,
-        }
-    }
+/// A [`FulfillHandle`] is the counter-part to a [`WaitingReceiver`].
+///
+/// It is stored internally in the channel and used by the channel implementation to notify a
+/// [`WaitingReceiver`] once a new message hits the mailbox.
+pub struct FulfillHandle<A> {
+    state: Weak<spin::Mutex<WaitingState<A>>>,
 }
 
-impl<A> WaitingReceiver<A> {
-    pub(crate) fn shutdown(&mut self) {
+impl<A> FulfillHandle<A> {
+    /// Shutdown the connected [`WaitingReceiver`].
+    ///
+    /// This will wake the corresponding task and notify them that the channel is shutting down.
+    pub(crate) fn shutdown(&self) {
         let _ = self.fulfill(WakeReason::Shutdown);
     }
 
-    pub(crate) fn fulfill_message_to_all_actors(&mut self) -> Result<(), ()> {
+    /// Notify the connected [`WaitingReceiver`] about a new broadcast message.
+    ///
+    /// Broadcast mailboxes are stored outside of the main channel implementation which is why this
+    /// messages does not take any arguments.
+    pub(crate) fn fulfill_message_to_all_actors(&self) -> Result<(), ()> {
         match self.fulfill(WakeReason::MessageToAllActors) {
             Ok(()) => Ok(()),
             Err(WakeReason::MessageToAllActors) => Err(()),
@@ -182,8 +188,15 @@ impl<A> WaitingReceiver<A> {
         }
     }
 
+    /// Notify the connected [`WaitingReceiver`] about a new message.
+    ///
+    /// A new message was sent into the channel and the connected [`WaitingReceiver`] is the chosen
+    /// one to handle it, likely because it has been waiting the longest.
+    ///
+    /// This function will return the message in an `Err` if the [`WaitingReceiver`] has since called
+    /// [`cancel`](WaitingReceiver::cancel) and is therefore unable to handle the message.
     pub(crate) fn fulfill_message_to_one_actor(
-        &mut self,
+        &self,
         msg: Box<dyn MessageEnvelope<Actor = A>>,
     ) -> Result<(), Box<dyn MessageEnvelope<Actor = A>>> {
         match self.fulfill(WakeReason::MessageToOneActor(msg)) {
@@ -193,24 +206,56 @@ impl<A> WaitingReceiver<A> {
         }
     }
 
-    fn fulfill(&mut self, reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
-        match self.wake_reason {
+    fn fulfill(&self, reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
+        let this = match self.state.upgrade() {
+            Some(this) => this,
+            None => return Err(reason),
+        };
+
+        let mut this = this.lock();
+
+        match this.wake_reason {
             // Receive was interrupted, so this cannot be fulfilled
             Some(WakeReason::Cancelled) => return Err(reason),
             Some(_) => unreachable!("Waiting receiver was fulfilled but not popped!"),
-            None => self.wake_reason = Some(reason),
+            None => this.wake_reason = Some(reason),
         }
 
-        if let Some(waker) = self.waker.take() {
+        if let Some(waker) = this.waker.take() {
             waker.wake();
         }
 
         Ok(())
     }
+}
 
-    /// Cancel this [`WaitingReceiver`] returning its current, internal state.
-    fn cancel(&mut self) -> Option<WakeReason<A>> {
-        mem::replace(&mut self.wake_reason, Some(WakeReason::Cancelled))
+impl<A> WaitingReceiver<A> {
+    pub fn new() -> (WaitingReceiver<A>, FulfillHandle<A>) {
+        let state = Arc::new(spin::Mutex::new(WaitingState::default()));
+
+        let handle = FulfillHandle {
+            state: Arc::downgrade(&state),
+        };
+        let receiver = WaitingReceiver { state };
+
+        (receiver, handle)
+    }
+
+    /// Cancel this [`WaitingReceiver`].
+    ///
+    /// This may return a message in case the underlying state has been fulfilled with one but this
+    /// receiver has not been polled since.
+    ///
+    /// It is important to call this message over just dropping the [`WaitingReceiver`] as this
+    /// message would otherwise be dropped.
+    fn cancel(&self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+        match mem::replace(
+            &mut self.state.lock().wake_reason,
+            Some(WakeReason::Cancelled),
+        )? {
+            WakeReason::MessageToOneActor(msg) => Some(msg),
+            _ => None,
+        }
     }
 }
 
@@ -218,7 +263,7 @@ impl<A> Future for WaitingReceiver<A> {
     type Output = WakeReason<A>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
+        let mut this = self.get_mut().state.lock();
 
         match this.wake_reason.take() {
             Some(reason) => Poll::Ready(reason),
@@ -227,6 +272,20 @@ impl<A> Future for WaitingReceiver<A> {
 
                 Poll::Pending
             }
+        }
+    }
+}
+
+struct WaitingState<A> {
+    waker: Option<Waker>,
+    wake_reason: Option<WakeReason<A>>,
+}
+
+impl<A> Default for WaitingState<A> {
+    fn default() -> Self {
+        WaitingState {
+            waker: None,
+            wake_reason: None,
         }
     }
 }

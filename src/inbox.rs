@@ -15,7 +15,7 @@ pub use rx::Receiver;
 pub use tx::{SendFuture, Sender};
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
-use crate::inbox::rx::{RxStrong, WaitingReceiver};
+use crate::inbox::rx::{FulfillHandle, RxStrong, WaitingReceiver};
 use crate::inbox::tx::{TxStrong, WaitingSender};
 use crate::Actor;
 
@@ -113,7 +113,7 @@ impl<A> Chan<A> {
     fn try_recv(
         &self,
         broadcast_mailbox: &BroadcastQueue<A>,
-    ) -> Result<ActorMessage<A>, Arc<Spinlock<WaitingReceiver<A>>>> {
+    ) -> Result<ActorMessage<A>, WaitingReceiver<A>> {
         let mut broadcast = broadcast_mailbox.lock();
 
         // Peek priorities in order to figure out which channel should be taken from
@@ -151,9 +151,10 @@ impl<A> Chan<A> {
                     return Ok(ActorMessage::Shutdown);
                 }
 
-                let waiting = Arc::new(Spinlock::new(WaitingReceiver::default()));
-                inner.waiting_receivers.push_back(Arc::downgrade(&waiting));
-                Err(waiting)
+                let (receiver, handle) = WaitingReceiver::new();
+
+                inner.waiting_receivers_handles.push_back(handle);
+                Err(receiver)
             }
         }
     }
@@ -184,11 +185,11 @@ impl<A> Chan<A> {
             // Receivers will be woken with the fulfills below, or they will realise there are
             // no senders when they check the tx refcount
 
-            mem::take(&mut inner.waiting_receivers)
+            mem::take(&mut inner.waiting_receivers_handles)
         };
 
-        for rx in waiting_rx.into_iter().flat_map(|w| w.upgrade()) {
-            rx.lock().shutdown();
+        for rx in waiting_rx {
+            rx.shutdown();
         }
     }
 
@@ -290,7 +291,7 @@ impl<A> Chan<A> {
 struct ChanInner<A> {
     ordered_queue: VecDeque<Box<dyn MessageEnvelope<Actor = A>>>,
     waiting_senders: VecDeque<Weak<Spinlock<WaitingSender<A>>>>,
-    waiting_receivers: VecDeque<Weak<Spinlock<WaitingReceiver<A>>>>,
+    waiting_receivers_handles: VecDeque<FulfillHandle<A>>,
     priority_queue: BinaryHeap<ByPriority<Box<dyn MessageEnvelope<Actor = A>>>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
     broadcast_tail: usize,
@@ -302,7 +303,7 @@ impl<A> Default for ChanInner<A> {
         Self {
             ordered_queue: VecDeque::default(),
             waiting_senders: VecDeque::default(),
-            waiting_receivers: VecDeque::default(),
+            waiting_receivers_handles: VecDeque::default(),
             priority_queue: BinaryHeap::default(),
             broadcast_queues: Vec::default(),
             broadcast_tail: 0,
@@ -372,9 +373,8 @@ impl<A> ChanInner<A> {
             None => false, // The corresponding receiver has been dropped - remove it
         });
 
-        let waiting = mem::take(&mut self.waiting_receivers);
-        for rx in waiting.into_iter().flat_map(|w| w.upgrade()) {
-            let _ = rx.lock().fulfill_message_to_all_actors();
+        for rx in mem::take(&mut self.waiting_receivers_handles) {
+            let _ = rx.fulfill_message_to_all_actors();
         }
 
         self.broadcast_tail += 1;
@@ -384,12 +384,10 @@ impl<A> ChanInner<A> {
         &mut self,
         mut msg: Box<dyn MessageEnvelope<Actor = A>>,
     ) -> Result<(), Box<dyn MessageEnvelope<Actor = A>>> {
-        while let Some(rx) = self.waiting_receivers.pop_front() {
-            if let Some(rx) = rx.upgrade() {
-                match rx.lock().fulfill_message_to_one_actor(msg) {
-                    Ok(()) => return Ok(()),
-                    Err(unfulfilled_msg) => msg = unfulfilled_msg,
-                }
+        while let Some(rx) = self.waiting_receivers_handles.pop_front() {
+            match rx.fulfill_message_to_one_actor(msg) {
+                Ok(()) => return Ok(()),
+                Err(unfulfilled_msg) => msg = unfulfilled_msg,
             }
         }
 
