@@ -214,7 +214,7 @@ impl<A> Chan<A> {
             .send_broadcast(Arc::new(Shutdown::new()));
     }
 
-    /// Shutdown all [`WaitingSender`](crate::inbox::tx::WaitingSender)s in this channel.
+    /// Shutdown all [`WaitingSender`]s in this channel.
     fn shutdown_waiting_senders(&self) {
         let waiting_tx = {
             let mut inner = match self.chan.lock() {

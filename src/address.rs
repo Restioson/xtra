@@ -167,12 +167,14 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         SendFuture::sending_named(message, self.0.clone())
     }
 
-    /// Send a message to all actors on this address.
+    /// Send a message to all actors on this address. The message will, by default, have a priority
+    /// of 0. This can be configured through [`SendFuture::priority`].
     ///
-    /// For details, please see the documentation on [`BroadcastFuture`].
+    /// The actor must implement [`Handler<Message>`] for this to work where [`Handler::Return`] is
+    /// set to `()`.
     pub fn broadcast<M>(&self, msg: M) -> SendFuture<ActorNamedSending<A, Rc>, Broadcast>
     where
-        M: Clone + Sync + Send + 'static,
+        M: Clone + Send + 'static,
         A: Handler<M, Return = ()>,
     {
         SendFuture::broadcast_named(msg, self.0.clone())
