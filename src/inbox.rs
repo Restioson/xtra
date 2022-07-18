@@ -448,8 +448,6 @@ enum MessageType {
 }
 
 pub struct SentMessage<A> {
-    #[cfg(feature = "instrumentation")]
-    msg_type: &'static str,
     pub msg: MessageKind<A>,
 }
 
@@ -461,16 +459,12 @@ pub enum MessageKind<A> {
 impl<A> SentMessage<A> {
     pub fn msg_to_one<M>(msg: Box<dyn MessageEnvelope<Actor = A>>) -> Self {
         SentMessage {
-            #[cfg(feature = "instrumentation")]
-            msg_type: std::any::type_name::<M>(),
             msg: MessageKind::ToOneActor(msg),
         }
     }
 
     pub fn msg_to_all<M>(msg: Arc<dyn BroadcastEnvelope<Actor = A>>) -> Self {
         SentMessage {
-            #[cfg(feature = "instrumentation")]
-            msg_type: std::any::type_name::<M>(),
             msg: MessageKind::ToAllActors(msg),
         }
     }
@@ -479,12 +473,12 @@ impl<A> SentMessage<A> {
         #[cfg(feature = "instrumentation")]
         match &mut self.msg {
             MessageKind::ToOneActor(m) => {
-                m.start_span(self.msg_type);
+                m.start_span();
             }
             MessageKind::ToAllActors(m) => {
                 Arc::get_mut(m)
                     .expect("calling after try_send not supported")
-                    .start_span(self.msg_type);
+                    .start_span();
             }
         };
     }

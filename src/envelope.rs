@@ -24,7 +24,7 @@ pub trait MessageEnvelope: HasPriority + Send {
     fn set_priority(&mut self, new_priority: u32);
 
     /// Starts the instrumentation of this message request. This will create the request span.
-    fn start_span(&mut self, msg_name: &'static str);
+    fn start_span(&mut self);
 
     /// Handle the message inside of the box by calling the relevant [`Handler::handle`] method,
     /// returning its result over a return channel if applicable. This also takes `Box<Self>` as the
@@ -88,13 +88,13 @@ impl Instrumentation {
     }
 
     #[cfg_attr(not(feature = "instrumentation"), allow(unused_variables))]
-    fn started<A>(message_type: &'static str) -> Self {
+    fn started<A, M>() -> Self {
         #[cfg(feature = "instrumentation")]
         {
             let parent = Span(tracing::debug_span!(
                 "xtra_actor_request",
                 actor_type = %std::any::type_name::<A>(),
-                %message_type,
+                message_type = %std::any::type_name::<M>(),
             ));
 
             let _waiting_for_actor = Span(tracing::debug_span!(
@@ -183,9 +183,9 @@ where
         self.priority = new_priority;
     }
 
-    fn start_span(&mut self, msg_name: &'static str) {
+    fn start_span(&mut self) {
         assert!(self.instrumentation.parent.is_none());
-        self.instrumentation = Instrumentation::started::<A>(msg_name);
+        self.instrumentation = Instrumentation::started::<A, M>();
     }
 
     fn handle<'a>(
@@ -222,7 +222,7 @@ pub trait BroadcastEnvelope: HasPriority + Send + Sync {
 
     /// Starts the instrumentation of this message request, if this arc is unique. This will create
     /// the request span
-    fn start_span(&mut self, msg_name: &'static str);
+    fn start_span(&mut self);
 
     fn handle<'a>(
         self: Arc<Self>,
@@ -266,9 +266,9 @@ where
         self.priority = new_priority;
     }
 
-    fn start_span(&mut self, msg_name: &'static str) {
+    fn start_span(&mut self) {
         assert!(self.instrumentation.parent.is_none());
-        self.instrumentation = Instrumentation::started::<A>(msg_name);
+        self.instrumentation = Instrumentation::started::<A, M>();
     }
 
     fn handle<'a>(
@@ -326,7 +326,7 @@ where
     fn set_priority(&mut self, _: u32) {}
 
     // This message is not instrumented
-    fn start_span(&mut self, _msg_name: &'static str) {}
+    fn start_span(&mut self) {}
 
     fn handle<'a>(
         self: Arc<Self>,
