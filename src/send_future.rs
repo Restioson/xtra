@@ -156,6 +156,28 @@ where
     }
 }
 
+#[allow(dead_code)] // This will useful later.
+impl SendFuture<ActorErasedSending, Broadcast> {
+    pub(crate) fn broadcast_erased<A, M, Rc>(msg: M, sender: inbox::Sender<A, Rc>) -> Self
+    where
+        Rc: RefCounter,
+        A: Handler<M, Return = ()>,
+        M: Clone + Send + Sync + 'static + Unpin,
+    {
+        let envelope = BroadcastEnvelopeConcrete::new(msg, 0);
+
+        Self {
+            inner: ActorErasedSending {
+                future: Box::new(Sending::New {
+                    msg: SentMessage::msg_to_all::<M>(Arc::new(envelope)),
+                    sender: sender.clone(),
+                }),
+            },
+            state: Broadcast(()),
+        }
+    }
+}
+
 pin_project_lite::pin_project! {
     /// "Sending" state of [`SendFuture`] for cases where the actor type is named.
     pub struct ActorNamedSending<A, Rc: RefCounter> {
