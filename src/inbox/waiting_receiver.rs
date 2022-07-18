@@ -25,7 +25,7 @@ impl<A> FulfillHandle<A> {
     /// Shutdown the connected [`WaitingReceiver`].
     ///
     /// This will wake the corresponding task and notify them that the channel is shutting down.
-    pub(crate) fn shutdown(&self) {
+    pub fn shutdown(&self) {
         let _ = self.fulfill(WakeReason::Shutdown);
     }
 
@@ -33,7 +33,7 @@ impl<A> FulfillHandle<A> {
     ///
     /// Broadcast mailboxes are stored outside of the main channel implementation which is why this
     /// messages does not take any arguments.
-    pub(crate) fn fulfill_message_to_all_actors(&self) -> Result<(), ()> {
+    pub fn fulfill_message_to_all_actors(&self) -> Result<(), ()> {
         match self.fulfill(WakeReason::MessageToAllActors) {
             Ok(()) => Ok(()),
             Err(WakeReason::MessageToAllActors) => Err(()),
@@ -48,7 +48,7 @@ impl<A> FulfillHandle<A> {
     ///
     /// This function will return the message in an `Err` if the [`WaitingReceiver`] has since called
     /// [`cancel`](WaitingReceiver::cancel) and is therefore unable to handle the message.
-    pub(crate) fn fulfill_message_to_one_actor(
+    pub fn fulfill_message_to_one_actor(
         &self,
         msg: Box<dyn MessageEnvelope<Actor = A>>,
     ) -> Result<(), Box<dyn MessageEnvelope<Actor = A>>> {
