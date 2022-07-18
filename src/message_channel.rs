@@ -7,8 +7,6 @@ use std::fmt;
 use futures_sink::Sink;
 
 use crate::address::{ActorJoinHandle, Address};
-use crate::envelope::ReturningEnvelope;
-use crate::inbox::SentMessage;
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture};
 use crate::{Error, Handler};
@@ -296,10 +294,7 @@ where
         &self,
         message: M,
     ) -> SendFuture<R, ActorErasedSending<Self::Return>, ResolveToHandlerReturn> {
-        let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message, 0);
-        let sending = self.0.send(SentMessage::ToOneActor(Box::new(envelope)));
-
-        SendFuture::sending_erased(sending, rx)
+        SendFuture::sending_erased(message, self.0.clone())
     }
 
     fn clone_channel(

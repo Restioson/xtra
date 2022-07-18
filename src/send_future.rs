@@ -7,10 +7,13 @@ use std::task::{Context, Poll};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
+use crate::envelope::ReturningEnvelope;
+use crate::inbox::tx::TxRefCounter;
+use crate::inbox::SentMessage;
 use crate::receiver::Receiver;
 use crate::refcount::{RefCounter, Strong};
 use crate::send_future::private::SetPriority;
-use crate::{inbox, Error};
+use crate::{inbox, Error, Handler};
 
 /// A [`Future`] that represents the state of sending a message to an actor.
 ///
@@ -86,13 +89,18 @@ where
 }
 
 impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
-    pub(crate) fn sending_erased<F>(sending: F, rx: catty::Receiver<R>) -> Self
+    pub(crate) fn sending_erased<M, A, Rc>(message: M, sender: inbox::Sender<A, Rc>) -> Self
     where
-        F: SendingWithSetPriority<Result<(), Error>>,
+        Rc: TxRefCounter,
+        A: Handler<M, Return = R>,
+        M: Send + 'static,
+        R: Send + 'static,
     {
+        let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message, 0);
+
         Self {
             inner: SendFutureInner::Sending(ActorErasedSending {
-                future: Box::new(sending),
+                future: Box::new(sender.send(SentMessage::ToOneActor(Box::new(envelope)))),
                 rx: Some(rx),
             }),
             phantom: PhantomData,
@@ -101,14 +109,21 @@ impl<R> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
 }
 
 impl<A, R, Rc: RefCounter> SendFuture<R, NameableSending<A, R, Rc>, ResolveToHandlerReturn> {
-    pub(crate) fn sending_named(
-        send_fut: inbox::SendFuture<A, Rc>,
-        receiver: catty::Receiver<R>,
-    ) -> Self {
+    /// Construct a [`SendFuture`] that contains the actor's name in its type.
+    ///
+    /// Compared to [`SendFuture::sending_erased`], this function avoids one allocation.
+    pub(crate) fn sending_named<M>(message: M, sender: inbox::Sender<A, Rc>) -> Self
+    where
+        A: Handler<M, Return = R>,
+        M: Send + 'static,
+        R: Send + 'static,
+    {
+        let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message, 0);
+
         Self {
             inner: SendFutureInner::Sending(NameableSending {
-                inner: send_fut,
-                receiver: Some(Receiver::new(receiver)),
+                inner: sender.send(SentMessage::ToOneActor(Box::new(envelope))),
+                receiver: Some(Receiver::new(rx)),
             }),
             phantom: PhantomData,
         }
