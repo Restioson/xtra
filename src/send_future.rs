@@ -178,9 +178,7 @@ enum Sending<A, Rc: RefCounter> {
         msg: SentMessage<A>,
         sender: inbox::Sender<A, Rc>,
     },
-    WaitingToSend {
-        waiting: Arc<Spinlock<WaitingSender<A>>>,
-    },
+    WaitingToSend(Arc<Spinlock<WaitingSender<A>>>),
     Done,
 }
 
@@ -199,17 +197,17 @@ where
                     Ok(()) => return Poll::Ready(Ok(())),
                     Err(TrySendFail::Disconnected) => return Poll::Ready(Err(Error::Disconnected)),
                     Err(TrySendFail::Full(waiting)) => {
-                        *this = Sending::WaitingToSend { waiting };
+                        *this = Sending::WaitingToSend(waiting);
                     }
                 },
-                Sending::WaitingToSend { waiting } => {
+                Sending::WaitingToSend(waiting) => {
                     let poll = { waiting.lock().poll_unpin(cx) }; // Scoped separately to drop mutex guard asap.
 
                     return match poll {
                         Poll::Ready(Ok(())) => return Poll::Ready(Ok(())),
                         Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
                         Poll::Pending => {
-                            *this = Sending::WaitingToSend { waiting };
+                            *this = Sending::WaitingToSend(waiting);
                             Poll::Pending
                         }
                     };
