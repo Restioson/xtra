@@ -130,7 +130,11 @@ impl<A, Rc: TxRefCounter> SetPriority for SendFuture<A, Rc> {
     fn set_priority(&mut self, priority: u32) {
         match self {
             SendFuture::New {
-                msg: SentMessage { msg: MessageKind::ToOneActor(ref mut m), .. },
+                msg:
+                    SentMessage {
+                        msg: MessageKind::ToOneActor(ref mut m),
+                        ..
+                    },
                 ..
             } => m.priority = priority,
             _ => panic!("setting priority after polling is unsupported"),
