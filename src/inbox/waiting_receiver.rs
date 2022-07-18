@@ -114,6 +114,11 @@ impl<A> WaitingReceiver<A> {
         }
     }
 
+    /// Tell the [`WaitingReceiver`] to make progress.
+    ///
+    /// In case we have been woken with a reason, we will attempt to produce an [`ActorMessage`].
+    /// Wake-ups can be false-positives in the case of a broadcast message which is why this
+    /// function returns only [`Option<ActorMessage>`].
     pub fn poll<Rc>(
         &self,
         receiver: &Receiver<A, Rc>,
