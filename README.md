@@ -91,6 +91,7 @@ Keep in mind that `xtra` has a MSRV of 1.60.0.
 - `with-tracing-0_1`: enables the `Instrumented` wrapper and `InstrumentedExt` traits, to integrate with
   [tracing](https://tracing.rs). This allows a tracing span to follow through execution of a message, either as a child
   of the sending span, or as a separate span marked as `follows_from` the sending span.
+- `sink`: Adds `Address::into_sink` and `MessageChannel::into_sink`.
 
 ## Latest Breaking Changes
 To see the breaking changes for each version, see [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md).
