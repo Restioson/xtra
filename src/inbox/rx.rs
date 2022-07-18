@@ -300,7 +300,7 @@ impl<A> Default for WaitingState<A> {
     }
 }
 
-pub enum WakeReason<A> {
+enum WakeReason<A> {
     MessageToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
     // should be fetched from own receiver
     MessageToAllActors,
