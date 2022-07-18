@@ -271,10 +271,9 @@ where
             futures_util::ready!(this.sending.poll_unpin(ctx))?;
         }
 
-        match this.state.receiver.take() {
-            None => Poll::Pending,
-            Some(receiver) => Poll::Ready(Ok(receiver)),
-        }
+        let receiver = this.state.receiver.take().expect("polled after completion");
+
+        Poll::Ready(Ok(receiver))
     }
 }
 
@@ -291,9 +290,7 @@ where
             futures_util::ready!(this.sending.poll_unpin(ctx))?;
         }
 
-        let r = futures_util::ready!(this.state.receiver.poll_unpin(ctx))?;
-
-        Poll::Ready(Ok(r))
+        this.state.receiver.poll_unpin(ctx)
     }
 }
 impl<F> Future for SendFuture<F, Broadcast>
