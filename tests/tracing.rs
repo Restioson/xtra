@@ -117,7 +117,7 @@ impl Handler<Hello> for Tracer {
     type Return = ();
 
     async fn handle(&mut self, message: Hello, _ctx: &mut Context<Self>) {
-        tracing::info!("Hi {}", message.0)
+        tracing::info!("Hello {}", message.0)
     }
 }
 
@@ -130,7 +130,7 @@ async fn assert_send_is_child_of_span() {
 
     let (addr, mut ctx) = Context::<Tracer>::new(None);
     let _ = addr
-        .send(Hello("hi"))
+        .send(Hello("world"))
         .split_receiver()
         .instrument(tracing::info_span!("user_span"))
         .await;
@@ -140,7 +140,7 @@ async fn assert_send_is_child_of_span() {
         assert_eq!(
             lines,
             [
-                r#" INFO user_span:xtra_actor_request{actor="tracing::Tracer" tracing::Hello}:xtra_message_handler{actor="tracing::Tracer" tracing::Hello}: tracing: Hi hi"#
+                r#" INFO user_span:xtra_actor_request{actor="tracing::Tracer" tracing::Hello}:xtra_message_handler{actor="tracing::Tracer" tracing::Hello}: tracing: Hello world"#
             ]
         );
     });
