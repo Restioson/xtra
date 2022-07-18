@@ -201,11 +201,10 @@ where
                     }
                 },
                 Sending::WaitingToSend(waiting) => {
-                    let poll = { waiting.lock().poll_unpin(cx) }; // Scoped separately to drop mutex guard asap.
+                    let poll = { waiting.lock().poll_unpin(cx) }?; // Scoped separately to drop mutex guard asap.
 
                     return match poll {
-                        Poll::Ready(Ok(())) => return Poll::Ready(Ok(())),
-                        Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                        Poll::Ready(()) => return Poll::Ready(Ok(())),
                         Poll::Pending => {
                             *this = Sending::WaitingToSend(waiting);
                             Poll::Pending
