@@ -39,7 +39,7 @@ where
         let envelope = BroadcastEnvelopeConcrete::<A, M>::new(message, 0);
 
         Self {
-            inner: sender.send(SentMessage::msg_to_all::<M>(Arc::new(envelope))),
+            inner: sender.send(SentMessage::ToAllActors(Arc::new(envelope))),
         }
     }
 
