@@ -243,7 +243,7 @@ impl<A> HasPriority for Arc<dyn BroadcastEnvelope<Actor = A>> {
 
 pub struct BroadcastEnvelopeConcrete<A, M> {
     message: M,
-    pub priority: u32,
+    priority: u32,
     phantom: PhantomData<for<'a> fn(&'a A)>,
     instrumentation: Instrumentation,
 }
