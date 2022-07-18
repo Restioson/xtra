@@ -172,7 +172,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// For details, please see the documentation on [`BroadcastFuture`].
     pub fn broadcast<M>(&self, msg: M) -> SendFuture<ActorNamedSending<A, Rc>, Broadcast>
     where
-        M: Clone + Sync + Send + 'static + Unpin,
+        M: Clone + Sync + Send + 'static,
         A: Handler<M, Return = ()>,
     {
         SendFuture::broadcast_named(msg, self.0.clone())
@@ -213,7 +213,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     pub fn into_sink<M>(self) -> impl futures_sink::Sink<M, Error = crate::Error>
     where
         A: Handler<M, Return = ()>,
-        M: Send + 'static + Unpin,
+        M: Send + 'static,
     {
         futures_util::sink::unfold((), move |(), message| self.send(message))
     }

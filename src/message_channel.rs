@@ -73,7 +73,7 @@ pub struct MessageChannel<M, R, Rc = Strong> {
 
 impl<M, Rc, R> MessageChannel<M, R, Rc>
 where
-    M: Send + Sync + 'static + Unpin,
+    M: Send + Sync + 'static,
     R: Send + 'static,
 {
     /// Construct a new [`MessageChannel`] from the given [`Address`].
@@ -141,7 +141,7 @@ where
 #[cfg(feature = "sink")]
 impl<M, Rc> MessageChannel<M, (), Rc>
 where
-    M: Send + Sync + 'static + Unpin,
+    M: Send + Sync + 'static,
 {
     /// Construct a [`Sink`] from this [`MessageChannel`].
     ///
@@ -164,7 +164,7 @@ impl<A, M, R, Rc> From<Address<A, Rc>> for MessageChannel<M, R, Rc>
 where
     A: Handler<M, Return = R>,
     R: Send + 'static,
-    M: Send + Sync + 'static + Unpin,
+    M: Send + Sync + 'static,
     Rc: RefCounter,
 {
     fn from(address: Address<A, Rc>) -> Self {
@@ -194,7 +194,7 @@ where
 /// counts. [`Either`] will compare as whichever reference count type it wraps.
 impl<M, R, Rc> PartialEq for MessageChannel<M, R, Rc>
 where
-    M: Send + Sync + 'static + Unpin,
+    M: Send + Sync + 'static,
     R: Send + 'static,
     Rc: Send + 'static,
 {
@@ -274,7 +274,7 @@ trait MessageChannelTrait<M, Rc> {
 impl<A, R, M, Rc: RefCounter> MessageChannelTrait<M, Rc> for Address<A, Rc>
 where
     A: Handler<M, Return = R>,
-    M: Send + Sync + 'static + Unpin,
+    M: Send + Sync + 'static,
     R: Send + 'static,
 {
     type Return = R;

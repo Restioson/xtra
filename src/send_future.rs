@@ -13,38 +13,35 @@ use crate::refcount::RefCounter;
 use crate::send_future::private::SetPriority;
 use crate::{inbox, Error, Handler};
 
-pin_project_lite::pin_project! {
-    /// A [`Future`] that represents the state of sending a message to an actor.
-    ///
-    /// By default, a [`SendFuture`] will resolve to the return value of the handler (see [`Handler::Return`](crate::Handler::Return)).
-    /// This behaviour can be changed by calling [`split_receiver`](SendFuture::split_receiver).
-    ///
-    /// A [`SendFuture`] whose [`Receiver`] has been split off will resolve once the message is successfully queued into the actor's mailbox and resolve to the [`Receiver`].
-    /// The [`Receiver`] itself is a future that will resolve to the return value of the [`Handler`](crate::Handler).
-    ///
-    /// In case an actor's mailbox is bounded, [`SendFuture`] will yield `Pending` until the message is queued successfully.
-    /// This allows an actor to exercise backpressure on its users.
-    #[must_use = "Futures do nothing unless polled"]
-    pub struct SendFuture<F, TState> {
-        #[pin]
-        inner: F,
-        state: TState,
-    }
+/// A [`Future`] that represents the state of sending a message to an actor.
+///
+/// By default, a [`SendFuture`] will resolve to the return value of the handler (see [`Handler::Return`](crate::Handler::Return)).
+/// This behaviour can be changed by calling [`split_receiver`](SendFuture::split_receiver).
+///
+/// A [`SendFuture`] whose [`Receiver`] has been split off will resolve once the message is successfully queued into the actor's mailbox and resolve to the [`Receiver`].
+/// The [`Receiver`] itself is a future that will resolve to the return value of the [`Handler`](crate::Handler).
+///
+/// In case an actor's mailbox is bounded, [`SendFuture`] will yield `Pending` until the message is queued successfully.
+/// This allows an actor to exercise backpressure on its users.
+#[must_use = "Futures do nothing unless polled"]
+pub struct SendFuture<F, TState> {
+    inner: F,
+    state: TState,
 }
 
-/// Marker type for resolving the [`SendFuture`] to the return value of the [`Handler`](crate::Handler).
+/// State-type for [`SendFuture`] to declare that it should resolve to the return value of the [`Handler`](crate::Handler).
 pub struct ResolveToHandlerReturn<R> {
     receiver: Receiver<R>,
 }
 
-/// Marker type for resolving the [`SendFuture`] to a [`Receiver`] once the message is queued into the actor's mailbox.
+/// State-type for [`SendFuture`] to declare that it should resolve to a [`Receiver`] once the message is queued into the actor's mailbox.
 ///
 /// The [`Receiver`] can be used to await the completion of the handler separately.
 pub struct ResolveToReceiver<R> {
     receiver: Option<Receiver<R>>,
 }
 
-/// Marker type for a [`SendFuture`] that broadcasts messages.
+/// State-type for [`SendFuture`] to declare that it is a broadcast.
 pub struct Broadcast(());
 
 impl<F, R> SendFuture<F, ResolveToHandlerReturn<R>>
@@ -66,7 +63,7 @@ where
     }
 }
 
-impl<F, TResolve> SendFuture<F, TResolve>
+impl<F, TState> SendFuture<F, TState>
 where
     F: SetPriority,
 {
@@ -114,7 +111,7 @@ impl<R> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
     where
         Rc: RefCounter,
         A: Handler<M, Return = R>,
-        M: Send + Sync + 'static + Unpin, // TODO: Check if we can get rid of `Unpin` bound
+        M: Send + Sync + 'static,
         R: Send + 'static,
     {
         let (envelope, receiver) = ReturningEnvelope::<A, M, R>::new(message, 0);
@@ -140,7 +137,7 @@ where
     pub(crate) fn broadcast_named<M>(msg: M, sender: inbox::Sender<A, Rc>) -> Self
     where
         A: Handler<M, Return = ()>,
-        M: Clone + Send + Sync + 'static + Unpin,
+        M: Clone + Send + Sync + 'static,
     {
         let envelope = BroadcastEnvelopeConcrete::new(msg, 0);
 
@@ -162,7 +159,7 @@ impl SendFuture<ActorErasedSending, Broadcast> {
     where
         Rc: RefCounter,
         A: Handler<M, Return = ()>,
-        M: Clone + Send + Sync + 'static + Unpin,
+        M: Clone + Send + Sync + 'static,
     {
         let envelope = BroadcastEnvelopeConcrete::new(msg, 0);
 
@@ -178,20 +175,14 @@ impl SendFuture<ActorErasedSending, Broadcast> {
     }
 }
 
-pin_project_lite::pin_project! {
-    /// "Sending" state of [`SendFuture`] for cases where the actor type is named.
-    pub struct ActorNamedSending<A, Rc: RefCounter> {
-        #[pin]
-        future: Sending<A, Rc>,
-    }
+/// "Sending" state of [`SendFuture`] for cases where the actor type is named.
+pub struct ActorNamedSending<A, Rc: RefCounter> {
+    future: Sending<A, Rc>,
 }
 
-pin_project_lite::pin_project! {
-    /// "Sending" state of [`SendFuture`] for cases where the actor type is erased.
-    pub struct ActorErasedSending {
-        #[pin]
-        future: Box<dyn private::ErasedSending>,
-    }
+/// "Sending" state of [`SendFuture`] for cases where the actor type is erased.
+pub struct ActorErasedSending {
+    future: Box<dyn private::ErasedSending>,
 }
 
 enum Sending<A, Rc: RefCounter> {
@@ -257,7 +248,7 @@ impl<A, Rc: RefCounter> Future for ActorNamedSending<A, Rc> {
     type Output = Result<(), Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.project().future.poll(cx)
+        self.get_mut().future.poll_unpin(cx)
     }
 }
 
@@ -275,7 +266,7 @@ impl Future for ActorErasedSending {
     type Output = Result<(), Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.project().future.poll(cx)
+        self.get_mut().future.poll_unpin(cx)
     }
 }
 
@@ -287,16 +278,16 @@ impl FusedFuture for ActorErasedSending {
 
 impl<R, F> Future for SendFuture<F, ResolveToReceiver<R>>
 where
-    F: Future<Output = Result<(), Error>> + FusedFuture,
+    F: Future<Output = Result<(), Error>> + FusedFuture + Unpin,
 {
     type Output = Result<Receiver<R>, Error>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-        let this = self.project();
+        let this = self.get_mut();
 
         loop {
             if !this.inner.is_terminated() {
-                futures_util::ready!(this.inner.poll(ctx))?;
+                futures_util::ready!(this.inner.poll_unpin(ctx))?;
             }
 
             return match this.state.receiver.take() {
@@ -309,16 +300,16 @@ where
 
 impl<R, F> Future for SendFuture<F, ResolveToHandlerReturn<R>>
 where
-    F: Future<Output = Result<(), Error>> + FusedFuture,
+    F: Future<Output = Result<(), Error>> + FusedFuture + Unpin,
 {
     type Output = Result<R, Error>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-        let this = self.project();
+        let this = self.get_mut();
 
         loop {
             if !this.inner.is_terminated() {
-                futures_util::ready!(this.inner.poll(ctx))?;
+                futures_util::ready!(this.inner.poll_unpin(ctx))?;
             }
 
             let r = futures_util::ready!(this.state.receiver.poll_unpin(ctx))?;
@@ -334,19 +325,16 @@ where
     type Output = Result<(), Error>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-        self.project().inner.poll(ctx)
+        self.get_mut().inner.poll_unpin(ctx)
     }
 }
 
-pin_project_lite::pin_project! {
-    /// A [`Future`] that resolves to the [`Return`](crate::Handler::Return) value of a [`Handler`](crate::Handler).
-    ///
-    /// In case the actor becomes disconnected during the execution of the handler, this future will resolve to [`Error::Disconnected`].
-    #[must_use = "Futures do nothing unless polled"]
-    pub struct Receiver<R> {
-        #[pin]
-        inner: catty::Receiver<R>,
-    }
+/// A [`Future`] that resolves to the [`Return`](crate::Handler::Return) value of a [`Handler`](crate::Handler).
+///
+/// In case the actor becomes disconnected during the execution of the handler, this future will resolve to [`Error::Interrupted`].
+#[must_use = "Futures do nothing unless polled"]
+pub struct Receiver<R> {
+    inner: catty::Receiver<R>,
 }
 
 impl<R> Receiver<R> {
@@ -359,9 +347,9 @@ impl<R> Future for Receiver<R> {
     type Output = Result<R, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.project()
+        self.get_mut()
             .inner
-            .poll(cx)
+            .poll_unpin(cx)
             .map_err(|_| Error::Interrupted)
     }
 }
