@@ -334,26 +334,16 @@ mod private {
         Rc: RefCounter,
     {
         fn set_priority(&mut self, new_priority: u32) {
-            match self {
-                Sending::New {
-                    msg:
-                        SentMessage {
-                            msg: MessageKind::ToOneActor(msg),
-                            ..
-                        },
-                    ..
-                } => msg.set_priority(new_priority),
-                Sending::New {
-                    msg:
-                        SentMessage {
-                            msg: MessageKind::ToAllActors(msg),
-                            ..
-                        },
-                    ..
-                } => Arc::get_mut(msg)
+            let msg = match self {
+                Sending::New { msg, .. } => msg,
+                _ => panic!("Cannot set priority after first poll"),
+            };
+
+            match &mut msg.msg {
+                MessageKind::ToOneActor(m) => m.set_priority(new_priority),
+                MessageKind::ToAllActors(m) => Arc::get_mut(m)
                     .expect("envelope is not cloned until here")
                     .set_priority(new_priority),
-                _ => panic!("Cannot set priority after first poll"),
             }
         }
     }
