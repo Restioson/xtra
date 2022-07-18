@@ -77,38 +77,46 @@ impl<A> Chan<A> {
         let mut inner = self.chan.lock().unwrap();
 
         match message {
-            SentMessage::ToAllActors(m) if !self.is_full(inner.broadcast_tail) => {
+            SentMessage::ToAllActors(m) => {
+                if self.is_full(inner.broadcast_tail) {
+                    // on_shutdown is only notified with inner locked, and it's locked here, so no race
+                    let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
+                    inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+
+                    return Err(TrySendFail::Full(waiting));
+                }
+
                 inner.send_broadcast(m);
                 Ok(())
             }
-            SentMessage::ToAllActors(m) => {
-                // on_shutdown is only notified with inner locked, and it's locked here, so no race
-                let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
-                inner.waiting_senders.push_back(Arc::downgrade(&waiting));
-                Err(TrySendFail::Full(waiting))
-            }
-            SentMessage::ToOneActor(msg) => match inner.try_fulfill_receiver(msg) {
-                Ok(()) => Ok(()),
-                Err(unfulfilled_msg)
-                    if unfulfilled_msg.priority() == Priority::default()
+            SentMessage::ToOneActor(msg) => {
+                let unfulfilled_msg = if let Err(msg) = inner.try_fulfill_receiver(msg) {
+                    msg
+                } else {
+                    return Ok(());
+                };
+
+                match unfulfilled_msg {
+                    m if m.priority() == Priority::default()
                         && !self.is_full(inner.ordered_queue.len()) =>
-                {
-                    inner.ordered_queue.push_back(unfulfilled_msg);
-                    Ok(())
-                }
-                Err(unfulfilled_msg)
-                    if unfulfilled_msg.priority() != Priority::default()
+                    {
+                        inner.ordered_queue.push_back(m);
+                    }
+                    m if m.priority() != Priority::default()
                         && !self.is_full(inner.priority_queue.len()) =>
-                {
-                    inner.priority_queue.push(ByPriority(unfulfilled_msg));
-                    Ok(())
-                }
-                Err(unfulfilled_msg) => {
-                    let waiting = WaitingSender::new(SentMessage::ToOneActor(unfulfilled_msg));
-                    inner.waiting_senders.push_back(Arc::downgrade(&waiting));
-                    Err(TrySendFail::Full(waiting))
-                }
-            },
+                    {
+                        inner.priority_queue.push(ByPriority(m));
+                    }
+                    _ => {
+                        let waiting = WaitingSender::new(SentMessage::ToOneActor(unfulfilled_msg));
+                        inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+
+                        return Err(TrySendFail::Full(waiting));
+                    }
+                };
+
+                Ok(())
+            }
         }
     }
 
@@ -276,15 +284,12 @@ impl<A> Chan<A> {
             Err(_) => return, // If we can't lock the inner channel, there is nothing we can do.
         };
 
-        match inner.try_fulfill_receiver(msg) {
-            Ok(()) => (),
-            Err(msg) => {
-                if msg.priority() == Priority::default() {
-                    // Preserve ordering as much as possible by pushing to the front
-                    inner.ordered_queue.push_front(msg)
-                } else {
-                    inner.priority_queue.push(ByPriority(msg));
-                }
+        if let Err(msg) = inner.try_fulfill_receiver(msg) {
+            if msg.priority() == Priority::default() {
+                // Preserve ordering as much as possible by pushing to the front
+                inner.ordered_queue.push_front(msg)
+            } else {
+                inner.priority_queue.push(ByPriority(msg));
             }
         }
     }
