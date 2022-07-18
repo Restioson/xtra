@@ -3,6 +3,7 @@
 
 pub mod rx;
 pub mod tx;
+mod waiting_receiver;
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
@@ -15,8 +16,9 @@ pub use rx::Receiver;
 pub use tx::{SendFuture, Sender};
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
-use crate::inbox::rx::{FulfillHandle, RxStrong, WaitingReceiver};
+use crate::inbox::rx::RxStrong;
 use crate::inbox::tx::{TxStrong, WaitingSender};
+use crate::inbox::waiting_receiver::{FulfillHandle, WaitingReceiver};
 use crate::Actor;
 
 type Spinlock<T> = spin::Mutex<T>;
