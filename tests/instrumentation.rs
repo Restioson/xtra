@@ -125,7 +125,7 @@ impl Handler<Hello> for Tracer {
 async fn assert_send_is_child_of_span() {
     let buf = Arc::new(Mutex::new(vec![]));
     let mock_writer = MockWriter::new(buf.clone());
-    let subscriber = get_subscriber(mock_writer, "tracing=trace,xtra=trace");
+    let subscriber = get_subscriber(mock_writer, "instrumentation=trace,xtra=trace");
     let _g = tracing::dispatcher::set_default(&subscriber);
 
     let (addr, mut ctx) = Context::<Tracer>::new(None);
@@ -140,7 +140,7 @@ async fn assert_send_is_child_of_span() {
         assert_eq!(
             lines,
             [
-                r#" INFO user_span:xtra_actor_request{actor="tracing::Tracer" tracing::Hello}:xtra_message_handler{actor="tracing::Tracer" tracing::Hello}: tracing: Hello world"#
+                r#" INFO user_span:xtra_actor_request{actor="instrumentation::Tracer" instrumentation::Hello}:xtra_message_handler{actor="instrumentation::Tracer" instrumentation::Hello}: instrumentation: Hello world"#
             ]
         );
     });
