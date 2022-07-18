@@ -93,7 +93,7 @@ where
 
         Self {
             sending: ActorNamedSending(Sending::New {
-                msg: SentMessage::msg_to_one::<M>(Box::new(envelope)),
+                msg: SentMessage::ToOneActor(Box::new(envelope)),
                 sender,
             }),
             state: ResolveToHandlerReturn::new(receiver),
@@ -113,7 +113,7 @@ impl<R> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
 
         Self {
             sending: ActorErasedSending(Box::new(Sending::New {
-                msg: SentMessage::msg_to_one::<M>(Box::new(envelope)),
+                msg: SentMessage::ToOneActor(Box::new(envelope)),
                 sender,
             })),
             state: ResolveToHandlerReturn::new(receiver),
@@ -134,7 +134,7 @@ where
 
         Self {
             sending: ActorNamedSending(Sending::New {
-                msg: SentMessage::msg_to_all::<M>(Arc::new(envelope)),
+                msg: SentMessage::ToAllActors(Arc::new(envelope)),
                 sender,
             }),
             state: Broadcast(()),
@@ -154,7 +154,7 @@ impl SendFuture<ActorErasedSending, Broadcast> {
 
         Self {
             sending: ActorErasedSending(Box::new(Sending::New {
-                msg: SentMessage::msg_to_all::<M>(Arc::new(envelope)),
+                msg: SentMessage::ToAllActors(Arc::new(envelope)),
                 sender,
             })),
             state: Broadcast(()),
@@ -323,7 +323,6 @@ impl<R> ResolveToHandlerReturn<R> {
 
 mod private {
     use super::*;
-    use crate::inbox::MessageKind;
 
     pub trait SetPriority {
         fn set_priority(&mut self, priority: u32);
@@ -339,9 +338,9 @@ mod private {
                 _ => panic!("Cannot set priority after first poll"),
             };
 
-            match &mut msg.msg {
-                MessageKind::ToOneActor(m) => m.set_priority(new_priority),
-                MessageKind::ToAllActors(m) => Arc::get_mut(m)
+            match msg {
+                SentMessage::ToOneActor(m) => m.set_priority(new_priority),
+                SentMessage::ToAllActors(m) => Arc::get_mut(m)
                     .expect("envelope is not cloned until here")
                     .set_priority(new_priority),
             }
