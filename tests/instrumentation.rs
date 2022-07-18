@@ -139,7 +139,11 @@ async fn assert_send_is_child_of_span() {
         assert_eq!(
             lines,
             [
-                r#" INFO user_span:xtra_actor_request{actor="instrumentation::Tracer" instrumentation::Hello}:xtra_message_handler{actor="instrumentation::Tracer" instrumentation::Hello}: instrumentation: Hello world"#
+                " INFO user_span:xtra_actor_request\
+                {actor=instrumentation::Tracer message_type=instrumentation::Hello}:\
+                xtra_message_handler\
+                {actor=instrumentation::Tracer message_type=instrumentation::Hello}: \
+                instrumentation: Hello world"
             ]
         );
     });
