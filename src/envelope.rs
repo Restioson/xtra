@@ -21,7 +21,7 @@ pub trait MessageEnvelope: HasPriority + Send {
     /// The type of actor that this envelope carries a message for
     type Actor;
 
-    fn set_priority(&self, new_priority: u32);
+    fn set_priority(&mut self, new_priority: u32);
 
     /// Handle the message inside of the box by calling the relevant `AsyncHandler::handle` or
     /// `Handler::handle` method, returning its result over a return channel if applicable. The
@@ -142,7 +142,7 @@ impl Instrumentation {
 pub struct ReturningEnvelope<A, M, R> {
     message: M,
     result_sender: Sender<R>,
-    priority: spin::Mutex<u32>,
+    priority: u32,
     phantom: PhantomData<for<'a> fn(&'a A)>,
     instrumentation: Instrumentation,
 }
@@ -153,7 +153,7 @@ impl<A, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
         let envelope = ReturningEnvelope {
             message,
             result_sender: tx,
-            priority: spin::Mutex::new(priority),
+            priority,
             phantom: PhantomData,
             instrumentation: Instrumentation::new::<A, M>(),
         };
@@ -164,7 +164,7 @@ impl<A, M, R: Send + 'static> ReturningEnvelope<A, M, R> {
 
 impl<A, M, R> HasPriority for ReturningEnvelope<A, M, R> {
     fn priority(&self) -> Priority {
-        Priority::Valued(*self.priority.lock())
+        Priority::Valued(self.priority)
     }
 }
 
@@ -182,8 +182,8 @@ where
 {
     type Actor = A;
 
-    fn set_priority(&self, new_priority: u32) {
-        *self.priority.lock() = new_priority;
+    fn set_priority(&mut self, new_priority: u32) {
+        self.priority = new_priority;
     }
 
     fn handle<'a>(
@@ -216,7 +216,7 @@ where
 pub trait BroadcastEnvelope: HasPriority + Send + Sync {
     type Actor;
 
-    fn set_priority(&self, new_priority: u32);
+    fn set_priority(&mut self, new_priority: u32);
 
     fn handle<'a>(
         self: Arc<Self>,
@@ -233,7 +233,7 @@ impl<A> HasPriority for Arc<dyn BroadcastEnvelope<Actor = A>> {
 
 pub struct BroadcastEnvelopeConcrete<A, M> {
     message: M,
-    priority: spin::Mutex<u32>,
+    priority: u32,
     phantom: PhantomData<for<'a> fn(&'a A)>,
     instrumentation: Instrumentation,
 }
@@ -242,7 +242,7 @@ impl<A: Actor, M> BroadcastEnvelopeConcrete<A, M> {
     pub fn new(message: M, priority: u32) -> Self {
         BroadcastEnvelopeConcrete {
             message,
-            priority: spin::Mutex::new(priority),
+            priority,
             phantom: PhantomData,
             instrumentation: Instrumentation::new::<A, M>(),
         }
@@ -256,8 +256,8 @@ where
 {
     type Actor = A;
 
-    fn set_priority(&self, new_priority: u32) {
-        *self.priority.lock() = new_priority;
+    fn set_priority(&mut self, new_priority: u32) {
+        self.priority = new_priority;
     }
 
     fn handle<'a>(
@@ -278,7 +278,7 @@ where
 
 impl<A, M> HasPriority for BroadcastEnvelopeConcrete<A, M> {
     fn priority(&self) -> Priority {
-        Priority::Valued(*self.priority.lock())
+        Priority::Valued(self.priority)
     }
 }
 
@@ -312,7 +312,7 @@ where
 {
     type Actor = A;
 
-    fn set_priority(&self, _: u32) {}
+    fn set_priority(&mut self, _: u32) {}
 
     fn handle<'a>(
         self: Arc<Self>,
