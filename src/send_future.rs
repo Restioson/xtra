@@ -29,16 +29,12 @@ pub struct SendFuture<F, TState> {
 }
 
 /// State-type for [`SendFuture`] to declare that it should resolve to the return value of the [`Handler`](crate::Handler).
-pub struct ResolveToHandlerReturn<R> {
-    receiver: Receiver<R>,
-}
+pub struct ResolveToHandlerReturn<R>(Receiver<R>);
 
 /// State-type for [`SendFuture`] to declare that it should resolve to a [`Receiver`] once the message is queued into the actor's mailbox.
 ///
 /// The [`Receiver`] can be used to await the completion of the handler separately.
-pub struct ResolveToReceiver<R> {
-    receiver: Option<Receiver<R>>,
-}
+pub struct ResolveToReceiver<R>(Option<Receiver<R>>);
 
 /// State-type for [`SendFuture`] to declare that it is a broadcast.
 pub struct Broadcast(());
@@ -55,9 +51,7 @@ where
     pub fn split_receiver(self) -> SendFuture<F, ResolveToReceiver<R>> {
         SendFuture {
             sending: self.sending,
-            state: ResolveToReceiver {
-                receiver: Some(self.state.receiver),
-            },
+            state: self.state.resolve_to_receiver(),
         }
     }
 }
@@ -102,9 +96,7 @@ where
                 msg: SentMessage::msg_to_one::<M>(Box::new(envelope)),
                 sender,
             }),
-            state: ResolveToHandlerReturn {
-                receiver: Receiver::new(receiver),
-            },
+            state: ResolveToHandlerReturn::new(receiver),
         }
     }
 }
@@ -124,9 +116,7 @@ impl<R> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
                 msg: SentMessage::msg_to_one::<M>(Box::new(envelope)),
                 sender,
             })),
-            state: ResolveToHandlerReturn {
-                receiver: Receiver::new(receiver),
-            },
+            state: ResolveToHandlerReturn::new(receiver),
         }
     }
 }
@@ -271,7 +261,7 @@ where
             futures_util::ready!(this.sending.poll_unpin(ctx))?;
         }
 
-        let receiver = this.state.receiver.take().expect("polled after completion");
+        let receiver = this.state.0.take().expect("polled after completion");
 
         Poll::Ready(Ok(receiver))
     }
@@ -290,7 +280,7 @@ where
             futures_util::ready!(this.sending.poll_unpin(ctx))?;
         }
 
-        this.state.receiver.poll_unpin(ctx)
+        this.state.0.poll_unpin(ctx)
     }
 }
 impl<F> Future for SendFuture<F, Broadcast>
@@ -308,24 +298,26 @@ where
 ///
 /// In case the actor becomes disconnected during the execution of the handler, this future will resolve to [`Error::Interrupted`].
 #[must_use = "Futures do nothing unless polled"]
-pub struct Receiver<R> {
-    inner: catty::Receiver<R>,
-}
-
-impl<R> Receiver<R> {
-    pub(crate) fn new(receiver: catty::Receiver<R>) -> Self {
-        Self { inner: receiver }
-    }
-}
+pub struct Receiver<R>(catty::Receiver<R>);
 
 impl<R> Future for Receiver<R> {
     type Output = Result<R, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.get_mut()
-            .inner
+            .0
             .poll_unpin(cx)
             .map_err(|_| Error::Interrupted)
+    }
+}
+
+impl<R> ResolveToHandlerReturn<R> {
+    fn new(receiver: catty::Receiver<R>) -> Self {
+        Self(Receiver(receiver))
+    }
+
+    fn resolve_to_receiver(self) -> ResolveToReceiver<R> {
+        ResolveToReceiver(Some(self.0))
     }
 }
 
