@@ -15,6 +15,12 @@ pub struct Receiver<A, Rc: RxRefCounter> {
     rc: Rc,
 }
 
+impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
+    fn next_broadcast_message(&self) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
+        self.inner.pop_broadcast_message(&self.broadcast_mailbox)
+    }
+}
+
 impl<A> Receiver<A, RxStrong> {
     pub(super) fn new(inner: Arc<Chan<A>>) -> Self {
         let rc = RxStrong(());
@@ -257,26 +263,24 @@ impl<A> WaitingReceiver<A> {
     {
         let mut this = self.state.lock();
 
-        match this.wake_reason.take() {
-            Some(WakeReason::MessageToOneActor(msg)) => {
-                Poll::Ready(Some(ActorMessage::ToOneActor(msg)))
-            }
-            Some(WakeReason::MessageToAllActors) => {
-                match receiver
-                    .inner
-                    .pop_broadcast_message(&receiver.broadcast_mailbox)
-                {
-                    Some(msg) => Poll::Ready(Some(ActorMessage::ToAllActors(msg))),
-                    None => Poll::Ready(None),
-                }
-            }
-            Some(WakeReason::Shutdown) => Poll::Ready(Some(ActorMessage::Shutdown)),
+        let reason = match this.wake_reason.take() {
+            Some(reason) => reason,
             None => {
                 this.waker = Some(cx.waker().clone());
 
-                Poll::Pending
+                return Poll::Pending;
             }
-        }
+        };
+        let actor_message = match reason {
+            WakeReason::MessageToOneActor(msg) => ActorMessage::ToOneActor(msg),
+            WakeReason::Shutdown => ActorMessage::Shutdown,
+            WakeReason::MessageToAllActors => match receiver.next_broadcast_message() {
+                Some(msg) => ActorMessage::ToAllActors(msg),
+                None => return Poll::Ready(None),
+            },
+        };
+
+        Poll::Ready(Some(actor_message))
     }
 }
 
