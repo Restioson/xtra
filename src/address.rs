@@ -174,7 +174,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// set to `()`.
     pub fn broadcast<M>(&self, msg: M) -> SendFuture<ActorNamedSending<A, Rc>, Broadcast>
     where
-        M: Clone + Send + 'static,
+        M: Clone + Send + Sync + 'static,
         A: Handler<M, Return = ()>,
     {
         SendFuture::broadcast_named(msg, self.0.clone())
