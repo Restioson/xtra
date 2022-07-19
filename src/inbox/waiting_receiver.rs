@@ -56,10 +56,7 @@ impl<A> WaitingReceiver<A> {
     pub fn new() -> (WaitingReceiver<A>, FulfillHandle<A>) {
         let (sender, receiver) = catty::oneshot();
 
-        let handle = FulfillHandle(sender);
-        let receiver = WaitingReceiver(receiver);
-
-        (receiver, handle)
+        (WaitingReceiver(receiver), FulfillHandle(sender))
     }
 
     /// Cancel this [`WaitingReceiver`].
