@@ -78,7 +78,7 @@ impl<A, Rc: RxRefCounter> Drop for Receiver<A, Rc> {
 pub enum ReceiveFuture<A, Rc: RxRefCounter> {
     New(Receiver<A, Rc>),
     Waiting(Waiting<A, Rc>),
-    Complete,
+    Done,
 }
 
 /// Dedicated "waiting" state for the [`ReceiveFuture`].
@@ -133,7 +133,7 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
         let this = self.get_mut();
 
         loop {
-            match mem::replace(this, ReceiveFuture::Complete) {
+            match mem::replace(this, ReceiveFuture::Done) {
                 ReceiveFuture::New(rx) => match rx.inner.try_recv(rx.broadcast_mailbox.as_ref()) {
                     Ok(message) => return Poll::Ready(message),
                     Err(waiting) => {
@@ -154,7 +154,7 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                         return Poll::Pending;
                     }
                 },
-                ReceiveFuture::Complete => panic!("polled after completion"),
+                ReceiveFuture::Done => panic!("polled after completion"),
             }
         }
     }
@@ -162,7 +162,7 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
 
 impl<A, Rc: RxRefCounter> FusedFuture for ReceiveFuture<A, Rc> {
     fn is_terminated(&self) -> bool {
-        matches!(self, ReceiveFuture::Complete)
+        matches!(self, ReceiveFuture::Done)
     }
 }
 
