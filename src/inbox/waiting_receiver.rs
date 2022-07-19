@@ -8,28 +8,26 @@ use crate::inbox::ActorMessage;
 /// A [`WaitingReceiver`] is handed out by the channel any time [`Chan::try_recv`](crate::inbox::Chan::try_recv) is called on an empty mailbox.
 ///
 /// [`WaitingReceiver`] implements [`Future`](std::future::Future) which will resolve once a message lands in the mailbox.
-pub struct WaitingReceiver<A>(catty::Receiver<WakeReason<A>>);
+pub struct WaitingReceiver<A>(catty::Receiver<CtrlMsg<A>>);
 
 /// A [`FulfillHandle`] is the counter-part to a [`WaitingReceiver`].
 ///
 /// It is stored internally in the channel and used by the channel implementation to notify a
 /// [`WaitingReceiver`] once a new message hits the mailbox.
-pub struct FulfillHandle<A>(catty::Sender<WakeReason<A>>);
+pub struct FulfillHandle<A>(catty::Sender<CtrlMsg<A>>);
 
 impl<A> FulfillHandle<A> {
-    /// Shutdown the connected [`WaitingReceiver`].
-    ///
-    /// This will wake the corresponding task and notify them that the channel is shutting down.
-    pub fn shutdown(self) {
-        let _ = self.0.send(WakeReason::Shutdown);
+    /// Notify the connected [`WaitingReceiver`] that the channel is shutting down.
+    pub fn notify_channel_shutdown(self) {
+        let _ = self.0.send(CtrlMsg::Shutdown);
     }
 
     /// Notify the connected [`WaitingReceiver`] about a new broadcast message.
     ///
     /// Broadcast mailboxes are stored outside of the main channel implementation which is why this
     /// messages does not take any arguments.
-    pub fn fulfill_message_to_all_actors(self) -> Result<(), ()> {
-        self.0.send(WakeReason::MessageToAllActors).map_err(|_| ())
+    pub fn notify_new_broadcast(self) -> Result<(), ()> {
+        self.0.send(CtrlMsg::NewBroadcast).map_err(|_| ())
     }
 
     /// Notify the connected [`WaitingReceiver`] about a new message.
@@ -39,14 +37,14 @@ impl<A> FulfillHandle<A> {
     ///
     /// This function will return the message in an `Err` if the [`WaitingReceiver`] has since called
     /// [`cancel`](WaitingReceiver::cancel) and is therefore unable to handle the message.
-    pub fn fulfill_message_to_one_actor(
+    pub fn notify_new_message(
         self,
         msg: Box<dyn MessageEnvelope<Actor = A>>,
     ) -> Result<(), Box<dyn MessageEnvelope<Actor = A>>> {
         self.0
-            .send(WakeReason::MessageToOneActor(msg))
+            .send(CtrlMsg::NewMessage(msg))
             .map_err(|reason| match reason {
-                WakeReason::MessageToOneActor(msg) => msg,
+                CtrlMsg::NewMessage(msg) => msg,
                 _ => unreachable!(),
             })
     }
@@ -68,7 +66,7 @@ impl<A> WaitingReceiver<A> {
     /// message would otherwise be dropped.
     pub fn cancel(&self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
         match self.0.try_recv() {
-            Ok(Some(WakeReason::MessageToOneActor(msg))) => Some(msg),
+            Ok(Some(CtrlMsg::NewMessage(msg))) => Some(msg),
             _ => None,
         }
     }
@@ -86,15 +84,15 @@ impl<A> WaitingReceiver<A> {
     where
         Rc: RxRefCounter,
     {
-        let reason = match futures_util::ready!(self.inner.poll_recv(cx)) {
+        let ctrl_msg = match futures_util::ready!(self.0.poll_recv(cx)) {
             Ok(reason) => reason,
             Err(_) => return Poll::Ready(None), // TODO: Not sure if this is correct.
         };
 
-        let actor_message = match reason {
-            WakeReason::MessageToOneActor(msg) => ActorMessage::ToOneActor(msg),
-            WakeReason::Shutdown => ActorMessage::Shutdown,
-            WakeReason::MessageToAllActors => match receiver.next_broadcast_message() {
+        let actor_message = match ctrl_msg {
+            CtrlMsg::NewMessage(msg) => ActorMessage::ToOneActor(msg),
+            CtrlMsg::Shutdown => ActorMessage::Shutdown,
+            CtrlMsg::NewBroadcast => match receiver.next_broadcast_message() {
                 Some(msg) => ActorMessage::ToAllActors(msg),
                 None => return Poll::Ready(None),
             },
@@ -104,9 +102,8 @@ impl<A> WaitingReceiver<A> {
     }
 }
 
-enum WakeReason<A> {
-    MessageToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
-    // should be fetched from own receiver
-    MessageToAllActors,
+enum CtrlMsg<A> {
+    NewMessage(Box<dyn MessageEnvelope<Actor = A>>),
+    NewBroadcast,
     Shutdown,
 }
