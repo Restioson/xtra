@@ -6,18 +6,21 @@ pub mod tx;
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{atomic, Arc, Mutex, Weak};
+use std::task::{Context, Poll, Waker};
 use std::{cmp, mem};
 
 use event_listener::{Event, EventListener};
 pub use rx::Receiver;
-pub use tx::{SendFuture, Sender};
+pub use tx::Sender;
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
 use crate::inbox::rx::{RxStrong, WaitingReceiver};
-use crate::inbox::tx::{TxStrong, WaitingSender};
-use crate::Actor;
+use crate::inbox::tx::TxStrong;
+use crate::{Actor, Error};
 
 type Spinlock<T> = spin::Mutex<T>;
 type BroadcastQueue<A> = Spinlock<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelope<Actor = A>>>>>;
@@ -43,7 +46,7 @@ pub struct Chan<A> {
 }
 
 impl<A> Chan<A> {
-    fn new(capacity: Option<usize>) -> Self {
+    pub fn new(capacity: Option<usize>) -> Self {
         Self {
             capacity,
             chan: Mutex::new(ChanInner::default()),
@@ -65,16 +68,19 @@ impl<A> Chan<A> {
         mailbox
     }
 
-    fn try_send(&self, mut message: SentMessage<A>) -> Result<(), TrySendFail<A>> {
+    pub fn try_send(
+        &self,
+        mut message: SentMessage<A>,
+    ) -> Result<Result<(), MailboxFull<A>>, Error> {
         if !self.is_connected() {
-            return Err(TrySendFail::Disconnected);
+            return Err(Error::Disconnected);
         }
 
         message.start_span();
 
         let mut inner = self.chan.lock().unwrap();
 
-        match message {
+        let result = match message {
             SentMessage::ToAllActors(m) if !self.is_full(inner.broadcast_tail) => {
                 inner.send_broadcast(m);
                 Ok(())
@@ -83,7 +89,7 @@ impl<A> Chan<A> {
                 // on_shutdown is only notified with inner locked, and it's locked here, so no race
                 let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
                 inner.waiting_senders.push_back(Arc::downgrade(&waiting));
-                Err(TrySendFail::Full(waiting))
+                Err(MailboxFull(waiting))
             }
             msg => {
                 let res = inner.try_fulfill_receiver(msg.into());
@@ -106,12 +112,14 @@ impl<A> Chan<A> {
                     Err(WakeReason::MessageToOneActor(m)) => {
                         let waiting = WaitingSender::new(m.into());
                         inner.waiting_senders.push_back(Arc::downgrade(&waiting));
-                        Err(TrySendFail::Full(waiting))
+                        Err(MailboxFull(waiting))
                     }
                     _ => unreachable!(),
                 }
             }
-        }
+        };
+
+        Ok(result)
     }
 
     fn try_recv(
@@ -206,7 +214,7 @@ impl<A> Chan<A> {
             .send_broadcast(Arc::new(Shutdown::new()));
     }
 
-    /// Shutdown all [`WaitingSender`](crate::inbox::tx::WaitingSender)s in this channel.
+    /// Shutdown all [`WaitingSender`]s in this channel.
     fn shutdown_waiting_senders(&self) {
         let waiting_tx = {
             let mut inner = match self.chan.lock() {
@@ -483,10 +491,8 @@ impl<A> From<Box<dyn MessageEnvelope<Actor = A>>> for SentMessage<A> {
     }
 }
 
-enum TrySendFail<A> {
-    Full(Arc<Spinlock<WaitingSender<A>>>),
-    Disconnected,
-}
+/// An error returned in case the mailbox of an actor is full.
+pub struct MailboxFull<A>(pub Arc<Spinlock<WaitingSender<A>>>);
 
 pub enum ActorMessage<A> {
     ToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
@@ -513,6 +519,76 @@ pub enum WakeReason<A> {
     Shutdown,
     // ReceiveFuture::cancel was called
     Cancelled,
+}
+
+pub enum WaitingSender<A> {
+    Active {
+        waker: Option<Waker>,
+        message: SentMessage<A>,
+    },
+    Delivered,
+    Closed,
+}
+
+impl<A> WaitingSender<A> {
+    pub fn new(message: SentMessage<A>) -> Arc<Spinlock<Self>> {
+        let sender = WaitingSender::Active {
+            waker: None,
+            message,
+        };
+        Arc::new(Spinlock::new(sender))
+    }
+
+    pub fn peek(&self) -> &SentMessage<A> {
+        match self {
+            WaitingSender::Active { message, .. } => message,
+            _ => panic!("WaitingSender should have message"),
+        }
+    }
+
+    pub fn fulfill(&mut self) -> SentMessage<A> {
+        match mem::replace(self, Self::Delivered) {
+            WaitingSender::Active { mut waker, message } => {
+                if let Some(waker) = waker.take() {
+                    waker.wake();
+                }
+
+                message
+            }
+            WaitingSender::Delivered | WaitingSender::Closed => {
+                panic!("WaitingSender is already fulfilled or closed")
+            }
+        }
+    }
+
+    /// Mark this [`WaitingSender`] as closed.
+    ///
+    /// Should be called when the last [`Receiver`](crate::inbox::Receiver) goes away.
+    pub fn set_closed(&mut self) {
+        if let WaitingSender::Active {
+            waker: Some(waker), ..
+        } = mem::replace(self, Self::Closed)
+        {
+            waker.wake();
+        }
+    }
+}
+
+impl<A> Future for WaitingSender<A> {
+    type Output = Result<(), Error>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        match this {
+            WaitingSender::Active { waker, .. } => {
+                *waker = Some(cx.waker().clone());
+                Poll::Pending
+            }
+            WaitingSender::Delivered => Poll::Ready(Ok(())),
+            WaitingSender::Closed => Poll::Ready(Err(Error::Disconnected)),
+        }
+    }
 }
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]

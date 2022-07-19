@@ -120,7 +120,7 @@ where
     ///
     /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
     /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
-    pub fn send(&self, message: M) -> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
+    pub fn send(&self, message: M) -> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
         self.inner.send(message)
     }
 
@@ -252,7 +252,7 @@ trait MessageChannelTrait<M, Rc> {
     fn send(
         &self,
         message: M,
-    ) -> SendFuture<Self::Return, ActorErasedSending<Self::Return>, ResolveToHandlerReturn>;
+    ) -> SendFuture<ActorErasedSending, ResolveToHandlerReturn<Self::Return>>;
 
     fn clone_channel(
         &self,
@@ -291,10 +291,7 @@ where
         self.capacity()
     }
 
-    fn send(
-        &self,
-        message: M,
-    ) -> SendFuture<R, ActorErasedSending<Self::Return>, ResolveToHandlerReturn> {
+    fn send(&self, message: M) -> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
         SendFuture::sending_erased(message, self.0.clone())
     }
 

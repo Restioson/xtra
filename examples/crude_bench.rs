@@ -3,9 +3,10 @@ use std::time::{Duration, Instant};
 
 use futures_util::FutureExt;
 use xtra::prelude::*;
+use xtra::refcount::Strong;
 use xtra::spawn::Tokio;
 use xtra::SendFuture;
-use xtra::{ActorErasedSending, NameableSending};
+use xtra::{ActorErasedSending, ActorNamedSending};
 
 struct Counter {
     count: usize,
@@ -97,9 +98,9 @@ const COUNT: usize = 10_000_000; // May take a while on some machines
 
 async fn do_address_benchmark<R>(
     name: &str,
-    f: impl Fn(&Address<Counter>) -> SendFuture<(), NameableSending<Counter, ()>, R>,
+    f: impl Fn(&Address<Counter>) -> SendFuture<ActorNamedSending<Counter, Strong>, R>,
 ) where
-    SendFuture<(), NameableSending<Counter, ()>, R>: Future,
+    SendFuture<ActorNamedSending<Counter, Strong>, R>: Future,
 {
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
 
@@ -123,9 +124,9 @@ async fn do_address_benchmark<R>(
 async fn do_parallel_address_benchmark<R>(
     name: &str,
     workers: usize,
-    f: impl Fn(&Address<Counter>) -> SendFuture<(), NameableSending<Counter, ()>, R>,
+    f: impl Fn(&Address<Counter>) -> SendFuture<ActorNamedSending<Counter, Strong>, R>,
 ) where
-    SendFuture<(), NameableSending<Counter, ()>, R>: Future,
+    SendFuture<ActorNamedSending<Counter, Strong>, R>: Future,
 {
     let (addr, ctx) = Context::new(None);
     let start = Instant::now();
@@ -148,11 +149,11 @@ async fn do_parallel_address_benchmark<R>(
 
 async fn do_channel_benchmark<M, RM>(
     name: &str,
-    f: impl Fn(&MessageChannel<M, ()>) -> SendFuture<(), ActorErasedSending<()>, RM>,
+    f: impl Fn(&MessageChannel<M, ()>) -> SendFuture<ActorErasedSending, RM>,
 ) where
     Counter: Handler<M, Return = ()> + Send,
     M: Send + 'static,
-    SendFuture<(), ActorErasedSending<()>, RM>: Future,
+    SendFuture<ActorErasedSending, RM>: Future,
 {
     let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
     let chan = MessageChannel::new(addr.clone());
