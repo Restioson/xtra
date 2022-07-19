@@ -12,8 +12,8 @@ use event_listener::EventListener;
 use futures_util::FutureExt;
 
 use crate::refcount::{Either, RefCounter, Strong, Weak};
-use crate::send_future::ResolveToHandlerReturn;
-use crate::{inbox, BroadcastFuture, Handler, NameableSending, SendFuture};
+use crate::send_future::{Broadcast, ResolveToHandlerReturn};
+use crate::{inbox, ActorNamedSending, Handler, SendFuture};
 
 /// An [`Address`] is a reference to an actor through which messages can be
 /// sent. It can be cloned to create more addresses to the same actor.
@@ -159,11 +159,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     pub fn send<M>(
         &self,
         message: M,
-    ) -> SendFuture<
-        <A as Handler<M>>::Return,
-        NameableSending<A, <A as Handler<M>>::Return, Rc>,
-        ResolveToHandlerReturn,
-    >
+    ) -> SendFuture<ActorNamedSending<A, Rc>, ResolveToHandlerReturn<<A as Handler<M>>::Return>>
     where
         M: Send + 'static,
         A: Handler<M>,
@@ -171,15 +167,17 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         SendFuture::sending_named(message, self.0.clone())
     }
 
-    /// Send a message to all actors on this address.
+    /// Send a message to all actors on this address. The message will, by default, have a priority
+    /// of 0. This can be configured through [`SendFuture::priority`].
     ///
-    /// For details, please see the documentation on [`BroadcastFuture`].
-    pub fn broadcast<M>(&self, msg: M) -> BroadcastFuture<A, Rc>
+    /// The actor must implement [`Handler<Message>`] for this to work where [`Handler::Return`] is
+    /// set to `()`.
+    pub fn broadcast<M>(&self, msg: M) -> SendFuture<ActorNamedSending<A, Rc>, Broadcast>
     where
-        M: Clone + Sync + Send + 'static,
+        M: Clone + Send + Sync + 'static,
         A: Handler<M, Return = ()>,
     {
-        BroadcastFuture::new(msg, self.0.clone())
+        SendFuture::broadcast_named(msg, self.0.clone())
     }
 
     /// Waits until this address becomes disconnected. Note that if this is called on a strong

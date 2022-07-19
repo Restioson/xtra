@@ -314,7 +314,8 @@ async fn receiving_async_on_address_returns_immediately_after_dispatch() {
     let send_future = address.send(Duration::from_secs(3)).split_receiver();
     let handler_future = send_future
         .now_or_never()
-        .expect("Dispatch should be immediate on first poll");
+        .expect("Dispatch should be immediate on first poll")
+        .expect("Actor is not disconnected");
 
     handler_future.await.unwrap();
 }
@@ -327,7 +328,8 @@ async fn receiving_async_on_message_channel_returns_immediately_after_dispatch()
     let send_future = channel.send(Duration::from_secs(3)).split_receiver();
     let handler_future = send_future
         .now_or_never()
-        .expect("Dispatch should be immediate on first poll");
+        .expect("Dispatch should be immediate on first poll")
+        .expect("Actor is not disconnected");
 
     handler_future.await.unwrap();
 }
@@ -1043,6 +1045,7 @@ async fn timeout_returns_interrupted() {
         .split_receiver()
         .now_or_never()
         .expect("Boundless message should be sent instantly")
+        .expect("Actor is not disconnected")
         .timeout(Duration::from_secs(3))
         .await
         .expect("Message should not time out")
@@ -1059,6 +1062,7 @@ async fn timeout_returns_interrupted() {
         .split_receiver()
         .now_or_never()
         .expect("Boundless message should be sent instantly")
+        .expect("Actor is not disconnected")
         .timeout(Duration::from_secs(3))
         .await
         .expect("Message should not time out")
