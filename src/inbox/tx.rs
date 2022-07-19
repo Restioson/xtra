@@ -77,7 +77,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     }
 
     pub fn capacity(&self) -> Option<usize> {
-        self.inner.capacity
+        self.inner.capacity()
     }
 
     pub fn len(&self) -> usize {
