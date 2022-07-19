@@ -148,14 +148,13 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
                     Poll::Ready(Err(rx)) => {
                         // False positive wake up, try receive again.
                         *this = ReceiveFuture::New(rx);
-                        continue;
                     }
                     Poll::Pending => {
                         *this = ReceiveFuture::Waiting(waiting);
                         return Poll::Pending;
                     }
                 },
-                ReceiveFuture::Complete => return Poll::Pending,
+                ReceiveFuture::Complete => panic!("polled after completion"),
             }
         }
     }
