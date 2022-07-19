@@ -23,9 +23,9 @@ use crate::{inbox, Error, Handler};
 /// In case an actor's mailbox is bounded, [`SendFuture`] will yield `Pending` until the message is queued successfully.
 /// This allows an actor to exercise backpressure on its users.
 #[must_use = "Futures do nothing unless polled"]
-pub struct SendFuture<F, TState> {
+pub struct SendFuture<F, S> {
     sending: F,
-    state: TState,
+    state: S,
 }
 
 /// State-type for [`SendFuture`] to declare that it should resolve to the return value of the [`Handler`](crate::Handler).
@@ -56,7 +56,7 @@ where
     }
 }
 
-impl<F, TState> SendFuture<F, TState>
+impl<F, S> SendFuture<F, S>
 where
     F: private::SetPriority,
 {
