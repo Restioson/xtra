@@ -8,24 +8,20 @@ use crate::inbox::ActorMessage;
 /// A [`WaitingReceiver`] is handed out by the channel any time [`Chan::try_recv`](crate::inbox::Chan::try_recv) is called on an empty mailbox.
 ///
 /// [`WaitingReceiver`] implements [`Future`](std::future::Future) which will resolve once a message lands in the mailbox.
-pub struct WaitingReceiver<A> {
-    inner: catty::Receiver<WakeReason<A>>,
-}
+pub struct WaitingReceiver<A>(catty::Receiver<WakeReason<A>>);
 
 /// A [`FulfillHandle`] is the counter-part to a [`WaitingReceiver`].
 ///
 /// It is stored internally in the channel and used by the channel implementation to notify a
 /// [`WaitingReceiver`] once a new message hits the mailbox.
-pub struct FulfillHandle<A> {
-    inner: catty::Sender<WakeReason<A>>,
-}
+pub struct FulfillHandle<A>(catty::Sender<WakeReason<A>>);
 
 impl<A> FulfillHandle<A> {
     /// Shutdown the connected [`WaitingReceiver`].
     ///
     /// This will wake the corresponding task and notify them that the channel is shutting down.
     pub fn shutdown(self) {
-        let _ = self.inner.send(WakeReason::Shutdown);
+        let _ = self.0.send(WakeReason::Shutdown);
     }
 
     /// Notify the connected [`WaitingReceiver`] about a new broadcast message.
@@ -33,9 +29,7 @@ impl<A> FulfillHandle<A> {
     /// Broadcast mailboxes are stored outside of the main channel implementation which is why this
     /// messages does not take any arguments.
     pub fn fulfill_message_to_all_actors(self) -> Result<(), ()> {
-        self.inner
-            .send(WakeReason::MessageToAllActors)
-            .map_err(|_| ())
+        self.0.send(WakeReason::MessageToAllActors).map_err(|_| ())
     }
 
     /// Notify the connected [`WaitingReceiver`] about a new message.
@@ -49,7 +43,7 @@ impl<A> FulfillHandle<A> {
         self,
         msg: Box<dyn MessageEnvelope<Actor = A>>,
     ) -> Result<(), Box<dyn MessageEnvelope<Actor = A>>> {
-        self.inner
+        self.0
             .send(WakeReason::MessageToOneActor(msg))
             .map_err(|reason| match reason {
                 WakeReason::MessageToOneActor(msg) => msg,
@@ -62,8 +56,8 @@ impl<A> WaitingReceiver<A> {
     pub fn new() -> (WaitingReceiver<A>, FulfillHandle<A>) {
         let (sender, receiver) = catty::oneshot();
 
-        let handle = FulfillHandle { inner: sender };
-        let receiver = WaitingReceiver { inner: receiver };
+        let handle = FulfillHandle(sender);
+        let receiver = WaitingReceiver(receiver);
 
         (receiver, handle)
     }
@@ -76,7 +70,7 @@ impl<A> WaitingReceiver<A> {
     /// It is important to call this message over just dropping the [`WaitingReceiver`] as this
     /// message would otherwise be dropped.
     pub fn cancel(&self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
-        match self.inner.try_recv() {
+        match self.0.try_recv() {
             Ok(Some(WakeReason::MessageToOneActor(msg))) => Some(msg),
             _ => None,
         }
