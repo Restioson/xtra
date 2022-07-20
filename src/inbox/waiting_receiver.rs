@@ -4,6 +4,7 @@ use crate::envelope::MessageEnvelope;
 use crate::inbox::rx::Receiver;
 use crate::inbox::rx::RxRefCounter;
 use crate::inbox::ActorMessage;
+use futures_util::FutureExt;
 
 /// A [`WaitingReceiver`] is handed out by the channel any time [`Chan::try_recv`](crate::inbox::Chan::try_recv) is called on an empty mailbox.
 ///
@@ -64,7 +65,7 @@ impl<A> WaitingReceiver<A> {
     ///
     /// It is important to call this message over just dropping the [`WaitingReceiver`] as this
     /// message would otherwise be dropped.
-    pub fn cancel(&self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+    pub fn cancel(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
         match self.0.try_recv() {
             Ok(Some(CtrlMsg::NewMessage(msg))) => Some(msg),
             _ => None,
@@ -77,14 +78,14 @@ impl<A> WaitingReceiver<A> {
     /// Wake-ups can be false-positives in the case of a broadcast message which is why this
     /// function returns only [`Option<ActorMessage>`].
     pub fn poll<Rc>(
-        &self,
+        &mut self,
         receiver: &Receiver<A, Rc>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<ActorMessage<A>>>
     where
         Rc: RxRefCounter,
     {
-        let ctrl_msg = match futures_util::ready!(self.0.poll_recv(cx)) {
+        let ctrl_msg = match futures_util::ready!(self.0.poll_unpin(cx)) {
             Ok(reason) => reason,
             Err(_) => return Poll::Ready(None), // TODO: Not sure if this is correct.
         };
