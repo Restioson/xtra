@@ -111,9 +111,6 @@ required-features = ["tokio", "instrumentation"]
 [workspace]
 members = ["examples/basic_wasm_bindgen"]
 
-[patch.crates-io]
-catty = { git = "https://github.com/thomaseizinger/catty", rev = "c92f0d403723f071f4797b500bf4a3f23b4cf4d3" }
-
 [package.metadata.docs.rs]
 features = ["async_std", "smol", "tokio", "wasm_bindgen"]
 rustdoc-args = ["--cfg", "docsrs"]
