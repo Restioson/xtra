@@ -207,7 +207,7 @@ impl<A> Chan<A> {
         };
 
         for rx in waiting_rx {
-            rx.shutdown();
+            rx.notify_channel_shutdown();
         }
     }
 
@@ -389,7 +389,7 @@ impl<A> ChanInner<A> {
         });
 
         for rx in mem::take(&mut self.waiting_receivers_handles) {
-            let _ = rx.fulfill_message_to_all_actors();
+            let _ = rx.notify_new_broadcast();
         }
 
         self.broadcast_tail += 1;
@@ -400,7 +400,7 @@ impl<A> ChanInner<A> {
         mut msg: Box<dyn MessageEnvelope<Actor = A>>,
     ) -> Result<(), Box<dyn MessageEnvelope<Actor = A>>> {
         while let Some(rx) = self.waiting_receivers_handles.pop_front() {
-            match rx.fulfill_message_to_one_actor(msg) {
+            match rx.notify_new_message(msg) {
                 Ok(()) => return Ok(()),
                 Err(unfulfilled_msg) => msg = unfulfilled_msg,
             }

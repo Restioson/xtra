@@ -1,5 +1,6 @@
-use std::sync::{Arc, Weak};
-use std::task::{Context, Poll, Waker};
+use std::task::{Context, Poll};
+
+use futures_util::FutureExt;
 
 use crate::envelope::MessageEnvelope;
 use crate::inbox::rx::Receiver;
@@ -9,36 +10,26 @@ use crate::inbox::ActorMessage;
 /// A [`WaitingReceiver`] is handed out by the channel any time [`Chan::try_recv`](crate::inbox::Chan::try_recv) is called on an empty mailbox.
 ///
 /// [`WaitingReceiver`] implements [`Future`](std::future::Future) which will resolve once a message lands in the mailbox.
-pub struct WaitingReceiver<A> {
-    state: Arc<spin::Mutex<WaitingState<A>>>,
-}
+pub struct WaitingReceiver<A>(catty::Receiver<CtrlMsg<A>>);
 
 /// A [`FulfillHandle`] is the counter-part to a [`WaitingReceiver`].
 ///
 /// It is stored internally in the channel and used by the channel implementation to notify a
 /// [`WaitingReceiver`] once a new message hits the mailbox.
-pub struct FulfillHandle<A> {
-    state: Weak<spin::Mutex<WaitingState<A>>>,
-}
+pub struct FulfillHandle<A>(catty::Sender<CtrlMsg<A>>);
 
 impl<A> FulfillHandle<A> {
-    /// Shutdown the connected [`WaitingReceiver`].
-    ///
-    /// This will wake the corresponding task and notify them that the channel is shutting down.
-    pub fn shutdown(&self) {
-        let _ = self.fulfill(WakeReason::Shutdown);
+    /// Notify the connected [`WaitingReceiver`] that the channel is shutting down.
+    pub fn notify_channel_shutdown(self) {
+        let _ = self.0.send(CtrlMsg::Shutdown);
     }
 
     /// Notify the connected [`WaitingReceiver`] about a new broadcast message.
     ///
     /// Broadcast mailboxes are stored outside of the main channel implementation which is why this
     /// messages does not take any arguments.
-    pub fn fulfill_message_to_all_actors(&self) -> Result<(), ()> {
-        match self.fulfill(WakeReason::MessageToAllActors) {
-            Ok(()) => Ok(()),
-            Err(WakeReason::MessageToAllActors) => Err(()),
-            _ => unreachable!(),
-        }
+    pub fn notify_new_broadcast(self) -> Result<(), ()> {
+        self.0.send(CtrlMsg::NewBroadcast).map_err(|_| ())
     }
 
     /// Notify the connected [`WaitingReceiver`] about a new message.
@@ -48,52 +39,24 @@ impl<A> FulfillHandle<A> {
     ///
     /// This function will return the message in an `Err` if the [`WaitingReceiver`] has since called
     /// [`cancel`](WaitingReceiver::cancel) and is therefore unable to handle the message.
-    pub fn fulfill_message_to_one_actor(
-        &self,
+    pub fn notify_new_message(
+        self,
         msg: Box<dyn MessageEnvelope<Actor = A>>,
     ) -> Result<(), Box<dyn MessageEnvelope<Actor = A>>> {
-        match self.fulfill(WakeReason::MessageToOneActor(msg)) {
-            Ok(()) => Ok(()),
-            Err(WakeReason::MessageToOneActor(msg)) => Err(msg),
-            _ => unreachable!(),
-        }
-    }
-
-    fn fulfill(&self, reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
-        let this = match self.state.upgrade() {
-            Some(this) => this,
-            None => return Err(reason),
-        };
-
-        let mut this = this.lock();
-
-        if this.cancelled {
-            return Err(reason);
-        }
-
-        match this.wake_reason {
-            Some(_) => unreachable!("Waiting receiver was fulfilled but not popped!"),
-            None => this.wake_reason = Some(reason),
-        }
-
-        if let Some(waker) = this.waker.take() {
-            waker.wake();
-        }
-
-        Ok(())
+        self.0
+            .send(CtrlMsg::NewMessage(msg))
+            .map_err(|reason| match reason {
+                CtrlMsg::NewMessage(msg) => msg,
+                _ => unreachable!(),
+            })
     }
 }
 
 impl<A> WaitingReceiver<A> {
     pub fn new() -> (WaitingReceiver<A>, FulfillHandle<A>) {
-        let state = Arc::new(spin::Mutex::new(WaitingState::default()));
+        let (sender, receiver) = catty::oneshot();
 
-        let handle = FulfillHandle {
-            state: Arc::downgrade(&state),
-        };
-        let receiver = WaitingReceiver { state };
-
-        (receiver, handle)
+        (WaitingReceiver(receiver), FulfillHandle(sender))
     }
 
     /// Cancel this [`WaitingReceiver`].
@@ -103,13 +66,9 @@ impl<A> WaitingReceiver<A> {
     ///
     /// It is important to call this message over just dropping the [`WaitingReceiver`] as this
     /// message would otherwise be dropped.
-    pub fn cancel(&self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
-        let mut state = self.state.lock();
-
-        state.cancelled = true;
-
-        match state.wake_reason.take()? {
-            WakeReason::MessageToOneActor(msg) => Some(msg),
+    pub fn cancel(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+        match self.0.try_recv() {
+            Ok(Some(CtrlMsg::NewMessage(msg))) => Some(msg),
             _ => None,
         }
     }
@@ -120,27 +79,22 @@ impl<A> WaitingReceiver<A> {
     /// Wake-ups can be false-positives in the case of a broadcast message which is why this
     /// function returns only [`Option<ActorMessage>`].
     pub fn poll<Rc>(
-        &self,
+        &mut self,
         receiver: &Receiver<A, Rc>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<ActorMessage<A>>>
     where
         Rc: RxRefCounter,
     {
-        let mut this = self.state.lock();
-
-        let reason = match this.wake_reason.take() {
-            Some(reason) => reason,
-            None => {
-                this.waker = Some(cx.waker().clone());
-
-                return Poll::Pending;
-            }
+        let ctrl_msg = match futures_util::ready!(self.0.poll_unpin(cx)) {
+            Ok(reason) => reason,
+            Err(_) => return Poll::Ready(None), // TODO: Not sure if this is correct.
         };
-        let actor_message = match reason {
-            WakeReason::MessageToOneActor(msg) => ActorMessage::ToOneActor(msg),
-            WakeReason::Shutdown => ActorMessage::Shutdown,
-            WakeReason::MessageToAllActors => match receiver.next_broadcast_message() {
+
+        let actor_message = match ctrl_msg {
+            CtrlMsg::NewMessage(msg) => ActorMessage::ToOneActor(msg),
+            CtrlMsg::Shutdown => ActorMessage::Shutdown,
+            CtrlMsg::NewBroadcast => match receiver.next_broadcast_message() {
                 Some(msg) => ActorMessage::ToAllActors(msg),
                 None => return Poll::Ready(None),
             },
@@ -150,25 +104,8 @@ impl<A> WaitingReceiver<A> {
     }
 }
 
-struct WaitingState<A> {
-    waker: Option<Waker>,
-    wake_reason: Option<WakeReason<A>>,
-    cancelled: bool,
-}
-
-impl<A> Default for WaitingState<A> {
-    fn default() -> Self {
-        WaitingState {
-            waker: None,
-            wake_reason: None,
-            cancelled: false,
-        }
-    }
-}
-
-enum WakeReason<A> {
-    MessageToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
-    // should be fetched from own receiver
-    MessageToAllActors,
+enum CtrlMsg<A> {
+    NewMessage(Box<dyn MessageEnvelope<Actor = A>>),
+    NewBroadcast,
     Shutdown,
 }
