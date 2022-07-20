@@ -1,10 +1,11 @@
 use std::task::{Context, Poll};
 
+use futures_util::FutureExt;
+
 use crate::envelope::MessageEnvelope;
 use crate::inbox::rx::Receiver;
 use crate::inbox::rx::RxRefCounter;
 use crate::inbox::ActorMessage;
-use futures_util::FutureExt;
 
 /// A [`WaitingReceiver`] is handed out by the channel any time [`Chan::try_recv`](crate::inbox::Chan::try_recv) is called on an empty mailbox.
 ///
