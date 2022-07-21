@@ -85,7 +85,6 @@ impl<A> Chan<A> {
         let result = match message {
             SentMessage::ToAllActors(m) => {
                 if self.is_full(inner.broadcast_tail) {
-                    // on_shutdown is only notified with inner locked, and it's locked here, so no race
                     let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
                     inner.waiting_senders.push_back(Arc::downgrade(&waiting));
 
