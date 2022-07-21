@@ -3,6 +3,7 @@
 
 pub mod rx;
 pub mod tx;
+mod waiting_receiver;
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
@@ -18,8 +19,9 @@ pub use rx::Receiver;
 pub use tx::Sender;
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
-use crate::inbox::rx::{RxStrong, WaitingReceiver};
+use crate::inbox::rx::RxStrong;
 use crate::inbox::tx::TxStrong;
+use crate::inbox::waiting_receiver::{FulfillHandle, WaitingReceiver};
 use crate::{Actor, Error};
 
 type Spinlock<T> = spin::Mutex<T>;
@@ -81,41 +83,44 @@ impl<A> Chan<A> {
         let mut inner = self.chan.lock().unwrap();
 
         let result = match message {
-            SentMessage::ToAllActors(m) if !self.is_full(inner.broadcast_tail) => {
+            SentMessage::ToAllActors(m) => {
+                if self.is_full(inner.broadcast_tail) {
+                    let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
+                    inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+
+                    return Ok(Err(MailboxFull(waiting)));
+                }
+
                 inner.send_broadcast(m);
                 Ok(())
             }
-            SentMessage::ToAllActors(m) => {
-                // on_shutdown is only notified with inner locked, and it's locked here, so no race
-                let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
-                inner.waiting_senders.push_back(Arc::downgrade(&waiting));
-                Err(MailboxFull(waiting))
-            }
-            msg => {
-                let res = inner.try_fulfill_receiver(msg.into());
-                match res {
-                    Ok(()) => Ok(()),
-                    Err(WakeReason::MessageToOneActor(m))
-                        if m.priority() == Priority::default()
-                            && !self.is_full(inner.ordered_queue.len()) =>
+            SentMessage::ToOneActor(msg) => {
+                let unfulfilled_msg = if let Err(msg) = inner.try_fulfill_receiver(msg) {
+                    msg
+                } else {
+                    return Ok(Ok(()));
+                };
+
+                match unfulfilled_msg {
+                    m if m.priority() == Priority::default()
+                        && !self.is_full(inner.ordered_queue.len()) =>
                     {
                         inner.ordered_queue.push_back(m);
-                        Ok(())
                     }
-                    Err(WakeReason::MessageToOneActor(m))
-                        if m.priority() != Priority::default()
-                            && !self.is_full(inner.priority_queue.len()) =>
+                    m if m.priority() != Priority::default()
+                        && !self.is_full(inner.priority_queue.len()) =>
                     {
                         inner.priority_queue.push(ByPriority(m));
-                        Ok(())
                     }
-                    Err(WakeReason::MessageToOneActor(m)) => {
-                        let waiting = WaitingSender::new(m.into());
+                    _ => {
+                        let waiting = WaitingSender::new(SentMessage::ToOneActor(unfulfilled_msg));
                         inner.waiting_senders.push_back(Arc::downgrade(&waiting));
-                        Err(MailboxFull(waiting))
+
+                        return Ok(Err(MailboxFull(waiting)));
                     }
-                    _ => unreachable!(),
-                }
+                };
+
+                Ok(())
             }
         };
 
@@ -125,7 +130,7 @@ impl<A> Chan<A> {
     fn try_recv(
         &self,
         broadcast_mailbox: &BroadcastQueue<A>,
-    ) -> Result<ActorMessage<A>, Arc<Spinlock<WaitingReceiver<A>>>> {
+    ) -> Result<ActorMessage<A>, WaitingReceiver<A>> {
         let mut broadcast = broadcast_mailbox.lock();
 
         // Peek priorities in order to figure out which channel should be taken from
@@ -163,9 +168,10 @@ impl<A> Chan<A> {
                     return Ok(ActorMessage::Shutdown);
                 }
 
-                let waiting = Arc::new(Spinlock::new(WaitingReceiver::default()));
-                inner.waiting_receivers.push_back(Arc::downgrade(&waiting));
-                Err(waiting)
+                let (receiver, handle) = WaitingReceiver::new();
+
+                inner.waiting_receivers_handles.push_back(handle);
+                Err(receiver)
             }
         }
     }
@@ -184,7 +190,7 @@ impl<A> Chan<A> {
         self.capacity.map_or(false, |cap| len >= cap)
     }
 
-    /// Shutdown all [`WaitingReceiver`](crate::inbox::rx::WaitingReceiver)s in this channel.
+    /// Shutdown all [`WaitingReceiver`]s in this channel.
     fn shutdown_waiting_receivers(&self) {
         let waiting_rx = {
             let mut inner = match self.chan.lock() {
@@ -196,11 +202,11 @@ impl<A> Chan<A> {
             // Receivers will be woken with the fulfills below, or they will realise there are
             // no senders when they check the tx refcount
 
-            mem::take(&mut inner.waiting_receivers)
+            mem::take(&mut inner.waiting_receivers_handles)
         };
 
-        for rx in waiting_rx.into_iter().flat_map(|w| w.upgrade()) {
-            let _ = rx.lock().fulfill(WakeReason::Shutdown);
+        for rx in waiting_rx {
+            rx.notify_channel_shutdown();
         }
     }
 
@@ -285,18 +291,13 @@ impl<A> Chan<A> {
             Err(_) => return, // If we can't lock the inner channel, there is nothing we can do.
         };
 
-        let res = inner.try_fulfill_receiver(WakeReason::MessageToOneActor(msg));
-        match res {
-            Ok(()) => (),
-            Err(WakeReason::MessageToOneActor(msg)) => {
-                if msg.priority() == Priority::default() {
-                    // Preserve ordering as much as possible by pushing to the front
-                    inner.ordered_queue.push_front(msg)
-                } else {
-                    inner.priority_queue.push(ByPriority(msg));
-                }
+        if let Err(msg) = inner.try_fulfill_receiver(msg) {
+            if msg.priority() == Priority::default() {
+                // Preserve ordering as much as possible by pushing to the front
+                inner.ordered_queue.push_front(msg)
+            } else {
+                inner.priority_queue.push(ByPriority(msg));
             }
-            Err(_) => unreachable!("Got wrong wake reason back from try_fulfill_receiver"),
         }
     }
 }
@@ -304,7 +305,7 @@ impl<A> Chan<A> {
 struct ChanInner<A> {
     ordered_queue: VecDeque<Box<dyn MessageEnvelope<Actor = A>>>,
     waiting_senders: VecDeque<Weak<Spinlock<WaitingSender<A>>>>,
-    waiting_receivers: VecDeque<Weak<Spinlock<WaitingReceiver<A>>>>,
+    waiting_receivers_handles: VecDeque<FulfillHandle<A>>,
     priority_queue: BinaryHeap<ByPriority<Box<dyn MessageEnvelope<Actor = A>>>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
     broadcast_tail: usize,
@@ -316,7 +317,7 @@ impl<A> Default for ChanInner<A> {
         Self {
             ordered_queue: VecDeque::default(),
             waiting_senders: VecDeque::default(),
-            waiting_receivers: VecDeque::default(),
+            waiting_receivers_handles: VecDeque::default(),
             priority_queue: BinaryHeap::default(),
             broadcast_queues: Vec::default(),
             broadcast_tail: 0,
@@ -386,25 +387,25 @@ impl<A> ChanInner<A> {
             None => false, // The corresponding receiver has been dropped - remove it
         });
 
-        let waiting = mem::take(&mut self.waiting_receivers);
-        for rx in waiting.into_iter().flat_map(|w| w.upgrade()) {
-            let _ = rx.lock().fulfill(WakeReason::MessageToAllActors);
+        for rx in mem::take(&mut self.waiting_receivers_handles) {
+            let _ = rx.notify_new_broadcast();
         }
 
         self.broadcast_tail += 1;
     }
 
-    fn try_fulfill_receiver(&mut self, mut reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
-        while let Some(rx) = self.waiting_receivers.pop_front() {
-            if let Some(rx) = rx.upgrade() {
-                reason = match rx.lock().fulfill(reason) {
-                    Ok(()) => return Ok(()),
-                    Err(reason) => reason,
-                }
+    fn try_fulfill_receiver(
+        &mut self,
+        mut msg: Box<dyn MessageEnvelope<Actor = A>>,
+    ) -> Result<(), Box<dyn MessageEnvelope<Actor = A>>> {
+        while let Some(rx) = self.waiting_receivers_handles.pop_front() {
+            match rx.notify_new_message(msg) {
+                Ok(()) => return Ok(()),
+                Err(unfulfilled_msg) => msg = unfulfilled_msg,
             }
         }
 
-        Err(reason)
+        Err(msg)
     }
 
     fn try_fulfill_sender(&mut self, for_type: MessageType) -> Option<SentMessage<A>> {
@@ -476,15 +477,6 @@ impl<A> SentMessage<A> {
     }
 }
 
-impl<A> From<SentMessage<A>> for WakeReason<A> {
-    fn from(msg: SentMessage<A>) -> Self {
-        match msg {
-            SentMessage::ToOneActor(m) => WakeReason::MessageToOneActor(m),
-            SentMessage::ToAllActors(_) => WakeReason::MessageToAllActors,
-        }
-    }
-}
-
 impl<A> From<Box<dyn MessageEnvelope<Actor = A>>> for SentMessage<A> {
     fn from(msg: Box<dyn MessageEnvelope<Actor = A>>) -> Self {
         SentMessage::ToOneActor(msg)
@@ -510,15 +502,6 @@ impl<A> From<Arc<dyn BroadcastEnvelope<Actor = A>>> for ActorMessage<A> {
     fn from(msg: Arc<dyn BroadcastEnvelope<Actor = A>>) -> Self {
         ActorMessage::ToAllActors(msg)
     }
-}
-
-pub enum WakeReason<A> {
-    MessageToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
-    // should be fetched from own receiver
-    MessageToAllActors,
-    Shutdown,
-    // ReceiveFuture::cancel was called
-    Cancelled,
 }
 
 pub enum WaitingSender<A> {
