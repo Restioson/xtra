@@ -87,6 +87,7 @@ Keep in mind that `xtra` has a MSRV of 1.60.0.
   1.1 had a minor breaking change from 1.0 which leads to xtra no longer compiling on 1.0 and 1.1 simultaneously.
 - `tokio`: enables integration with [tokio](https://tokio.rs).
 - `wasm_bindgen`: enables integration with [wasm-bindgen](https://github.com/rustwasm/wasm-bindgen), and particularly its futures crate.
+- `instrumentation`: Adds a dependency on `tracing` and creates spans for message sending and handling on actors.
 - `sink`: Adds `Address::into_sink` and `MessageChannel::into_sink`.
 
 ## Latest Breaking Changes
