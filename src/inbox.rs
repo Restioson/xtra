@@ -349,23 +349,28 @@ impl<A> ChanInner<A> {
     }
 
     fn try_advance_broadcast_tail(&mut self) {
-        let mut longest = 0;
-        for queue in &self.broadcast_queues {
-            if let Some(queue) = queue.upgrade() {
-                longest = cmp::max(longest, queue.lock().len());
-            }
-        }
-
-        self.broadcast_tail = longest;
+        self.broadcast_tail = self.longest_broadcast_queue();
 
         // If len < cap, try fulfill a waiting sender
-        if self.capacity.map_or(false, |cap| longest < cap) {
+        if self.capacity.map_or(false, |cap| self.broadcast_tail < cap) {
             match self.try_fulfill_sender(MessageType::Broadcast) {
                 Some(SentMessage::ToAllActors(m)) => self.send_broadcast(m),
                 Some(_) => unreachable!(),
                 None => {}
             }
         }
+    }
+
+    fn longest_broadcast_queue(&self) -> usize {
+        let mut longest = 0;
+
+        for queue in &self.broadcast_queues {
+            if let Some(queue) = queue.upgrade() {
+                longest = cmp::max(longest, queue.lock().len());
+            }
+        }
+
+        longest
     }
 
     fn send_broadcast(&mut self, m: Arc<dyn BroadcastEnvelope<Actor = A>>) {
