@@ -91,16 +91,22 @@ impl Instrumentation {
     fn started<A, M>() -> Self {
         #[cfg(feature = "instrumentation")]
         {
-            let parent = Span(tracing::debug_span!(
-                "xtra_actor_request",
-                actor_type = %std::any::type_name::<A>(),
-                message_type = %std::any::type_name::<M>(),
-            ));
+            let parent = Span(
+                tracing::debug_span!(
+                    "xtra_actor_request",
+                    actor_type = %std::any::type_name::<A>(),
+                    message_type = %std::any::type_name::<M>(),
+                )
+                .or_current(),
+            );
 
-            let _waiting_for_actor = Span(tracing::debug_span!(
-                parent: &parent.0,
-                "xtra_message_waiting_for_actor",
-            ));
+            let _waiting_for_actor = Span(
+                tracing::debug_span!(
+                    parent: &parent.0,
+                    "xtra_message_waiting_for_actor",
+                )
+                .or_current(),
+            );
 
             Instrumentation {
                 parent,
@@ -118,11 +124,10 @@ impl Instrumentation {
     {
         #[cfg(feature = "instrumentation")]
         {
-            let executing = tracing::debug_span!(
-                parent: &self.parent.0,
-                "xtra_message_handler",
-                interrupted = tracing::field::Empty,
-            );
+            let executing = self.parent.in_scope(|| {
+                tracing::debug_span!("xtra_message_handler", interrupted = tracing::field::Empty)
+                    .or_current()
+            });
 
             (
                 tracing::Instrument::instrument(fut, executing.clone()),
