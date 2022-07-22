@@ -2,18 +2,26 @@ use std::future::Future;
 use std::mem;
 use std::pin::Pin;
 use std::sync::{atomic, Arc};
-use std::task::{Context, Poll, Waker};
+use std::task::{Context, Poll};
 
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
-use crate::inbox::tx::TxWeak;
-use crate::inbox::*;
+use crate::envelope::BroadcastEnvelope;
+use crate::inbox::tx::{TxStrong, TxWeak};
+use crate::inbox::waiting_receiver::WaitingReceiver;
+use crate::inbox::{ActorMessage, BroadcastQueue, Chan, Sender};
 
 pub struct Receiver<A, Rc: RxRefCounter> {
     inner: Arc<Chan<A>>,
     broadcast_mailbox: Arc<BroadcastQueue<A>>,
     rc: Rc,
+}
+
+impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
+    pub fn next_broadcast_message(&self) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
+        self.inner.pop_broadcast_message(&self.broadcast_mailbox)
+    }
 }
 
 impl<A> Receiver<A, RxStrong> {
@@ -45,7 +53,7 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
             rc: self.rc.increment(&self.inner),
         };
 
-        ReceiveFuture::new(receiver_with_same_broadcast_mailbox)
+        ReceiveFuture::New(receiver_with_same_broadcast_mailbox)
     }
 }
 
@@ -67,22 +75,55 @@ impl<A, Rc: RxRefCounter> Drop for Receiver<A, Rc> {
     }
 }
 
-#[must_use = "Futures do nothing unless polled"]
-pub struct ReceiveFuture<A, Rc: RxRefCounter>(ReceiveState<A, Rc>);
+pub enum ReceiveFuture<A, Rc: RxRefCounter> {
+    New(Receiver<A, Rc>),
+    Waiting(Waiting<A, Rc>),
+    Done,
+}
 
-impl<A, Rc: RxRefCounter> ReceiveFuture<A, Rc> {
-    fn new(rx: Receiver<A, Rc>) -> Self {
-        ReceiveFuture(ReceiveState::New(rx))
+/// Dedicated "waiting" state for the [`ReceiveFuture`].
+///
+/// This type encapsulates the waiting for a notification from the channel about a new message that
+/// can be received. This notification may arrive in the [`WaitingReceiver`] before we poll it again.
+///
+/// To avoid losing a message, this type implements [`Drop`] and re-queues the message into the
+/// mailbox in such a scenario.
+pub struct Waiting<A, Rc>
+where
+    Rc: RxRefCounter,
+{
+    channel_receiver: Receiver<A, Rc>,
+    waiting_receiver: WaitingReceiver<A>,
+}
+
+impl<A, Rc> Future for Waiting<A, Rc>
+where
+    Rc: RxRefCounter,
+{
+    type Output = Result<ActorMessage<A>, Receiver<A, Rc>>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        let result =
+            match futures_util::ready!(this.waiting_receiver.poll(&this.channel_receiver, cx)) {
+                None => Err(this.channel_receiver.clone()), // TODO: Optimise this clone with an `Option` where we call `take`?
+                Some(msg) => Ok(msg),
+            };
+
+        Poll::Ready(result)
     }
 }
 
-enum ReceiveState<A, Rc: RxRefCounter> {
-    New(Receiver<A, Rc>),
-    Waiting {
-        rx: Receiver<A, Rc>,
-        waiting: Arc<Spinlock<WaitingReceiver<A>>>,
-    },
-    Complete,
+impl<A, Rc> Drop for Waiting<A, Rc>
+where
+    Rc: RxRefCounter,
+{
+    fn drop(&mut self) {
+        if let Some(msg) = self.waiting_receiver.cancel() {
+            self.channel_receiver.inner.requeue_message(msg);
+        }
+    }
 }
 
 impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
@@ -92,58 +133,28 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
         let this = self.get_mut();
 
         loop {
-            match mem::replace(&mut this.0, ReceiveState::Complete) {
-                ReceiveState::New(rx) => {
-                    match rx.inner.try_recv(rx.broadcast_mailbox.as_ref()) {
-                        Ok(message) => return Poll::Ready(message),
-                        Err(waiting) => {
-                            // Start waiting. The waiting receiver should be immediately polled, in case a
-                            // send operation happened between `try_recv` and here, in which case the
-                            // WaitingReceiver would be fulfilled, but not properly woken.
-                            this.0 = ReceiveState::Waiting { rx, waiting };
-                        }
+            match mem::replace(this, ReceiveFuture::Done) {
+                ReceiveFuture::New(rx) => match rx.inner.try_recv(rx.broadcast_mailbox.as_ref()) {
+                    Ok(message) => return Poll::Ready(message),
+                    Err(waiting) => {
+                        *this = ReceiveFuture::Waiting(Waiting {
+                            channel_receiver: rx,
+                            waiting_receiver: waiting,
+                        });
                     }
-                }
-                ReceiveState::Waiting { rx, waiting } => {
-                    let poll = { waiting.lock().poll_unpin(cx) };
-
-                    let actor_message = match poll {
-                        Poll::Ready(WakeReason::MessageToOneActor(msg)) => msg.into(),
-                        Poll::Ready(WakeReason::Shutdown) => ActorMessage::Shutdown,
-                        Poll::Ready(WakeReason::Cancelled) => {
-                            unreachable!("Waiting receive future cannot be interrupted")
-                        }
-                        Poll::Ready(WakeReason::MessageToAllActors) => {
-                            match rx.inner.pop_broadcast_message(&rx.broadcast_mailbox) {
-                                Some(msg) => ActorMessage::ToAllActors(msg),
-                                None => {
-                                    // We got woken but failed to pop a message, try receiving again.
-                                    this.0 = ReceiveState::New(rx);
-                                    continue;
-                                }
-                            }
-                        }
-                        Poll::Pending => {
-                            this.0 = ReceiveState::Waiting { rx, waiting };
-                            return Poll::Pending;
-                        }
-                    };
-
-                    return Poll::Ready(actor_message);
-                }
-                ReceiveState::Complete => return Poll::Pending,
-            }
-        }
-    }
-}
-
-impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
-    fn drop(&mut self) {
-        if let ReceiveState::Waiting { waiting, rx } =
-            mem::replace(&mut self.0, ReceiveState::Complete)
-        {
-            if let Some(WakeReason::MessageToOneActor(msg)) = waiting.lock().cancel() {
-                rx.inner.requeue_message(msg);
+                },
+                ReceiveFuture::Waiting(mut waiting) => match waiting.poll_unpin(cx) {
+                    Poll::Ready(Ok(msg)) => return Poll::Ready(msg),
+                    Poll::Ready(Err(rx)) => {
+                        // False positive wake up, try receive again.
+                        *this = ReceiveFuture::New(rx);
+                    }
+                    Poll::Pending => {
+                        *this = ReceiveFuture::Waiting(waiting);
+                        return Poll::Pending;
+                    }
+                },
+                ReceiveFuture::Done => panic!("polled after completion"),
             }
         }
     }
@@ -151,60 +162,7 @@ impl<A, Rc: RxRefCounter> Drop for ReceiveFuture<A, Rc> {
 
 impl<A, Rc: RxRefCounter> FusedFuture for ReceiveFuture<A, Rc> {
     fn is_terminated(&self) -> bool {
-        matches!(self.0, ReceiveState::Complete)
-    }
-}
-
-pub struct WaitingReceiver<A> {
-    waker: Option<Waker>,
-    wake_reason: Option<WakeReason<A>>,
-}
-
-impl<A> Default for WaitingReceiver<A> {
-    fn default() -> Self {
-        WaitingReceiver {
-            waker: None,
-            wake_reason: None,
-        }
-    }
-}
-
-impl<A> WaitingReceiver<A> {
-    pub(super) fn fulfill(&mut self, reason: WakeReason<A>) -> Result<(), WakeReason<A>> {
-        match self.wake_reason {
-            // Receive was interrupted, so this cannot be fulfilled
-            Some(WakeReason::Cancelled) => return Err(reason),
-            Some(_) => unreachable!("Waiting receiver was fulfilled but not popped!"),
-            None => self.wake_reason = Some(reason),
-        }
-
-        if let Some(waker) = self.waker.take() {
-            waker.wake();
-        }
-
-        Ok(())
-    }
-
-    /// Cancel this [`WaitingReceiver`] returning its current, internal state.
-    fn cancel(&mut self) -> Option<WakeReason<A>> {
-        mem::replace(&mut self.wake_reason, Some(WakeReason::Cancelled))
-    }
-}
-
-impl<A> Future for WaitingReceiver<A> {
-    type Output = WakeReason<A>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
-        match this.wake_reason.take() {
-            Some(reason) => Poll::Ready(reason),
-            None => {
-                this.waker = Some(cx.waker().clone());
-
-                Poll::Pending
-            }
-        }
+        matches!(self, ReceiveFuture::Done)
     }
 }
 
