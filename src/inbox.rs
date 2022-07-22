@@ -125,13 +125,14 @@ impl<A> Chan<A> {
         &self,
         broadcast_mailbox: &BroadcastQueue<A>,
     ) -> Result<ActorMessage<A>, WaitingReceiver<A>> {
-        // lock braodcast mailbox for as short as possible
+        // Lock `ChanInner` as the first thing. This avoids race conditions in modifying the broadcast mailbox.
+        let mut inner = self.chan.lock().unwrap();
+
+        // lock broadcast mailbox for as short as possible
         let broadcast_priority = {
             // Peek priorities in order to figure out which channel should be taken from
             broadcast_mailbox.lock().peek().map(|it| it.priority())
         };
-
-        let mut inner = self.chan.lock().unwrap();
 
         let shared_priority: Option<Priority> = inner.priority_queue.peek().map(|it| it.priority());
 
