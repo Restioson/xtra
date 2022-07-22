@@ -149,7 +149,7 @@ impl<A> Chan<A> {
                 Ok(inner.pop_priority().unwrap().into())
             }
             // Shared priority is less - take from broadcast
-            Ordering::Less => Ok(inner.pop_broadcast(&broadcast_mailbox).unwrap().into()),
+            Ordering::Less => Ok(inner.pop_broadcast(broadcast_mailbox).unwrap().into()),
             // Equal, but both are empty, so wait or exit if shutdown
             _ => {
                 // on_shutdown is only notified with inner locked, and it's locked here, so no race
