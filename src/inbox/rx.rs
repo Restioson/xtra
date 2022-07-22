@@ -20,7 +20,11 @@ pub struct Receiver<A, Rc: RxRefCounter> {
 
 impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
     pub fn next_broadcast_message(&self) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
-        self.inner.pop_broadcast_message(&self.broadcast_mailbox)
+        self.inner
+            .chan
+            .lock()
+            .unwrap()
+            .pop_broadcast(&self.broadcast_mailbox)
     }
 }
 
