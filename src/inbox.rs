@@ -41,7 +41,6 @@ pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxSt
 // Public because of private::RefCounterInner. This should never actually be exported, though.
 pub struct Chan<A> {
     chan: Mutex<ChanInner<A>>,
-    capacity: Option<usize>,
     on_shutdown: Event,
     sender_count: AtomicUsize,
     receiver_count: AtomicUsize,
@@ -50,8 +49,7 @@ pub struct Chan<A> {
 impl<A> Chan<A> {
     pub fn new(capacity: Option<usize>) -> Self {
         Self {
-            capacity,
-            chan: Mutex::new(ChanInner::default()),
+            chan: Mutex::new(ChanInner::new(capacity)),
             on_shutdown: Event::new(),
             sender_count: AtomicUsize::new(0),
             receiver_count: AtomicUsize::new(0),
@@ -84,7 +82,7 @@ impl<A> Chan<A> {
 
         let result = match message {
             SentMessage::ToAllActors(m) => {
-                if self.is_full(inner.broadcast_tail) {
+                if inner.is_broadcast_full() {
                     let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
                     inner.waiting_senders.push_back(Arc::downgrade(&waiting));
 
@@ -102,14 +100,10 @@ impl<A> Chan<A> {
                 };
 
                 match unfulfilled_msg {
-                    m if m.priority() == Priority::default()
-                        && !self.is_full(inner.ordered_queue.len()) =>
-                    {
+                    m if m.priority() == Priority::default() && !inner.is_ordered_full() => {
                         inner.ordered_queue.push_back(m);
                     }
-                    m if m.priority() != Priority::default()
-                        && !self.is_full(inner.priority_queue.len()) =>
-                    {
+                    m if m.priority() != Priority::default() && !inner.is_priority_full() => {
                         inner.priority_queue.push(ByPriority(m));
                     }
                     _ => {
@@ -142,7 +136,7 @@ impl<A> Chan<A> {
 
         // Try take from ordered channel
         if cmp::max(shared_priority, broadcast_priority) <= Some(Priority::Valued(0)) {
-            if let Some(msg) = inner.pop_ordered(self.capacity) {
+            if let Some(msg) = inner.pop_ordered() {
                 return Ok(msg.into());
             }
         }
@@ -151,13 +145,13 @@ impl<A> Chan<A> {
         match shared_priority.cmp(&broadcast_priority) {
             // Shared priority is greater or equal (and it is not empty)
             Ordering::Greater | Ordering::Equal if shared_priority.is_some() => {
-                Ok(inner.pop_priority(self.capacity).unwrap().into())
+                Ok(inner.pop_priority().unwrap().into())
             }
             // Shared priority is less - take from broadcast
             Ordering::Less => {
                 let msg = broadcast.pop().unwrap().0;
                 drop(broadcast);
-                inner.try_advance_broadcast_tail(self.capacity);
+                inner.try_advance_broadcast_tail();
 
                 Ok(msg.into())
             }
@@ -186,8 +180,8 @@ impl<A> Chan<A> {
         inner.broadcast_tail + inner.ordered_queue.len() + inner.priority_queue.len()
     }
 
-    fn is_full(&self, len: usize) -> bool {
-        self.capacity.map_or(false, |cap| len >= cap)
+    fn capacity(&self) -> Option<usize> {
+        self.chan.lock().unwrap().capacity
     }
 
     /// Shutdown all [`WaitingReceiver`]s in this channel.
@@ -269,10 +263,7 @@ impl<A> Chan<A> {
 
         // Advance the broadcast tail if we successfully took a message.
         if message.is_some() {
-            self.chan
-                .lock()
-                .unwrap()
-                .try_advance_broadcast_tail(self.capacity);
+            self.chan.lock().unwrap().try_advance_broadcast_tail();
         }
 
         Some(message?.0)
@@ -303,6 +294,7 @@ impl<A> Chan<A> {
 }
 
 struct ChanInner<A> {
+    capacity: Option<usize>,
     ordered_queue: VecDeque<Box<dyn MessageEnvelope<Actor = A>>>,
     waiting_senders: VecDeque<Weak<Spinlock<WaitingSender<A>>>>,
     waiting_receivers_handles: VecDeque<FulfillHandle<A>>,
@@ -311,10 +303,10 @@ struct ChanInner<A> {
     broadcast_tail: usize,
 }
 
-// Manual impl to avoid `A: Default` bound.
-impl<A> Default for ChanInner<A> {
-    fn default() -> Self {
+impl<A> ChanInner<A> {
+    fn new(capacity: Option<usize>) -> Self {
         Self {
+            capacity,
             ordered_queue: VecDeque::default(),
             waiting_senders: VecDeque::default(),
             waiting_receivers_handles: VecDeque::default(),
@@ -323,15 +315,13 @@ impl<A> Default for ChanInner<A> {
             broadcast_tail: 0,
         }
     }
-}
 
-impl<A> ChanInner<A> {
-    fn pop_priority(
-        &mut self,
-        capacity: Option<usize>,
-    ) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+    fn pop_priority(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
-        if capacity.map_or(false, |cap| cap == self.priority_queue.len()) {
+        if self
+            .capacity
+            .map_or(false, |cap| cap == self.priority_queue.len())
+        {
             match self.try_fulfill_sender(MessageType::Priority) {
                 Some(SentMessage::ToOneActor(msg)) => self.priority_queue.push(ByPriority(msg)),
                 Some(_) => unreachable!(),
@@ -342,12 +332,12 @@ impl<A> ChanInner<A> {
         Some(self.priority_queue.pop()?.0)
     }
 
-    fn pop_ordered(
-        &mut self,
-        capacity: Option<usize>,
-    ) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+    fn pop_ordered(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
-        if capacity.map_or(false, |cap| cap == self.ordered_queue.len()) {
+        if self
+            .capacity
+            .map_or(false, |cap| cap == self.ordered_queue.len())
+        {
             match self.try_fulfill_sender(MessageType::Ordered) {
                 Some(SentMessage::ToOneActor(msg)) => self.ordered_queue.push_back(msg),
                 Some(_) => unreachable!(),
@@ -358,7 +348,7 @@ impl<A> ChanInner<A> {
         self.ordered_queue.pop_front()
     }
 
-    fn try_advance_broadcast_tail(&mut self, capacity: Option<usize>) {
+    fn try_advance_broadcast_tail(&mut self) {
         let mut longest = 0;
         for queue in &self.broadcast_queues {
             if let Some(queue) = queue.upgrade() {
@@ -369,7 +359,7 @@ impl<A> ChanInner<A> {
         self.broadcast_tail = longest;
 
         // If len < cap, try fulfill a waiting sender
-        if capacity.map_or(false, |cap| longest < cap) {
+        if self.capacity.map_or(false, |cap| longest < cap) {
             match self.try_fulfill_sender(MessageType::Broadcast) {
                 Some(SentMessage::ToAllActors(m)) => self.send_broadcast(m),
                 Some(_) => unreachable!(),
@@ -446,6 +436,21 @@ impl<A> ChanInner<A> {
                 return Some(tx.lock().fulfill());
             }
         }
+    }
+
+    fn is_broadcast_full(&self) -> bool {
+        self.capacity
+            .map_or(false, |cap| self.broadcast_tail >= cap)
+    }
+
+    fn is_ordered_full(&self) -> bool {
+        self.capacity
+            .map_or(false, |cap| self.ordered_queue.len() >= cap)
+    }
+
+    fn is_priority_full(&self) -> bool {
+        self.capacity
+            .map_or(false, |cap| self.priority_queue.len() >= cap)
     }
 }
 
