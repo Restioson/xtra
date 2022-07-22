@@ -170,7 +170,9 @@ async fn assert_handler_span_is_child_of_caller_span_with_min_level_info() {
         .await;
 
     with_logs(&buf, |lines: &[&str]| {
-        assert_eq!(lines, [" INFO sender_span:info_span: instrumentation: Test!"]);
+        assert_eq!(
+            lines,
+            [" INFO sender_span:info_span: instrumentation: Test!"]
+        );
     });
 }
-
