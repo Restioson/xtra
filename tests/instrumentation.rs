@@ -122,6 +122,17 @@ impl Handler<Hello> for Tracer {
     }
 }
 
+struct CreateInfoSpan;
+
+#[async_trait]
+impl Handler<CreateInfoSpan> for Tracer {
+    type Return = ();
+
+    async fn handle(&mut self, _msg: CreateInfoSpan, _ctx: &mut Context<Self>) {
+        tracing::info_span!("info_span").in_scope(|| tracing::info!("Test!"));
+    }
+}
+
 #[tokio::test]
 async fn assert_send_is_child_of_span() {
     let buf = Arc::new(Mutex::new(vec![]));
@@ -144,3 +155,22 @@ async fn assert_send_is_child_of_span() {
         );
     });
 }
+
+#[tokio::test]
+async fn assert_handler_span_is_child_of_caller_span_with_min_level_info() {
+    let buf = Arc::new(Mutex::new(vec![]));
+    let mock_writer = MockWriter::new(buf.clone());
+    let subscriber = get_subscriber(mock_writer, "instrumentation=info,xtra=info");
+    let _g = tracing::dispatcher::set_default(&subscriber);
+
+    let addr = Tracer.create(None).spawn_global();
+    let _ = addr
+        .send(CreateInfoSpan)
+        .instrument(tracing::info_span!("sender_span"))
+        .await;
+
+    with_logs(&buf, |lines: &[&str]| {
+        assert_eq!(lines, [" INFO sender_span:info_span: instrumentation: Test!"]);
+    });
+}
+
