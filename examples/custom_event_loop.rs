@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 use xtra::prelude::*;
-use xtra::ActorManager;
 
 struct Counter {
     count: usize,
@@ -37,11 +36,8 @@ impl Handler<Inc> for Counter {
 
 #[tokio::main]
 async fn main() {
-    let ActorManager {
-        address,
-        mut actor,
-        mut ctx,
-    } = Counter::new().create(None);
+    let (address, mut ctx) = Context::new(None);
+    let mut actor = Counter::new();
 
     tokio::spawn(async move {
         actor.started(&mut ctx).await;

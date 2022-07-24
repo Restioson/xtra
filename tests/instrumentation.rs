@@ -30,7 +30,6 @@ use tracing::{Dispatch, Instrument};
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::FmtSubscriber;
 use xtra::prelude::*;
-use xtra::spawn::TokioGlobalSpawnExt;
 
 #[derive(Debug)]
 pub struct MockWriter {
@@ -140,7 +139,7 @@ async fn assert_send_is_child_of_span() {
     let subscriber = get_subscriber(mock_writer, "instrumentation=trace,xtra=trace");
     let _g = tracing::dispatcher::set_default(&subscriber);
 
-    let addr = Tracer.create(None).spawn_global();
+    let addr = xtra::spawn_tokio(Tracer, None);
     let _ = addr
         .send(Hello("world"))
         .instrument(tracing::info_span!("user_span"))
@@ -163,7 +162,7 @@ async fn assert_handler_span_is_child_of_caller_span_with_min_level_info() {
     let subscriber = get_subscriber(mock_writer, "instrumentation=info,xtra=info");
     let _g = tracing::dispatcher::set_default(&subscriber);
 
-    let addr = Tracer.create(None).spawn_global();
+    let addr = xtra::spawn_tokio(Tracer, None);
     let _ = addr
         .send(CreateInfoSpan)
         .instrument(tracing::info_span!("sender_span"))

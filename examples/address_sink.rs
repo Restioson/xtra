@@ -1,7 +1,6 @@
 use futures_util::stream::repeat;
 use futures_util::StreamExt;
 use xtra::prelude::*;
-use xtra::spawn::Tokio;
 
 #[derive(Default)]
 struct Accumulator {
@@ -39,9 +38,7 @@ impl Handler<GetSum> for Accumulator {
 
 #[tokio::main]
 async fn main() {
-    let addr = Accumulator::default()
-        .create(None)
-        .spawn(&mut Tokio::Global);
+    let addr = xtra::spawn_tokio(Accumulator::default(), None);
 
     repeat(10)
         .take(4)

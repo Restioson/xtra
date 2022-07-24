@@ -4,7 +4,6 @@ use std::time::{Duration, Instant};
 use futures_util::FutureExt;
 use xtra::prelude::*;
 use xtra::refcount::Strong;
-use xtra::spawn::Tokio;
 use xtra::SendFuture;
 use xtra::{ActorErasedSending, ActorNamedSending};
 
@@ -102,7 +101,7 @@ async fn do_address_benchmark<R>(
 ) where
     SendFuture<ActorNamedSending<Counter, Strong>, R>: Future,
 {
-    let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
+    let addr = xtra::spawn_tokio(Counter { count: 0 }, None);
 
     let start = Instant::now();
 
@@ -155,7 +154,7 @@ async fn do_channel_benchmark<M, RM>(
     M: Send + 'static,
     SendFuture<ActorErasedSending, RM>: Future,
 {
-    let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
+    let addr = xtra::spawn_tokio(Counter { count: 0 }, None);
     let chan = MessageChannel::new(addr.clone());
 
     let start = Instant::now();

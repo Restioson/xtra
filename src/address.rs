@@ -115,7 +115,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///
     /// # #[cfg(feature = "smol")]
     /// smol::block_on(async {
-    ///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
+    ///     let addr = xtra::spawn_smol(MyActor, None);
     ///     assert!(addr.is_connected());
     ///     addr.send(Shutdown).await;
     ///     smol::Timer::after(Duration::from_secs(1)).await; // Give it time to shut down
