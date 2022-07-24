@@ -15,15 +15,17 @@ use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{Broadcast, ResolveToHandlerReturn};
 use crate::{inbox, ActorNamedSending, Handler, SendFuture};
 
-/// An [`Address`] is a reference to an actor through which messages can be
-/// sent. It can be cloned to create more addresses to the same actor.
-/// By default (i.e without specifying the second type parameter, `Rc`, to be
-/// [`Weak`], [`Address`]es are strong. Therefore, when all [`Address`]es
-/// are dropped, the actor will be stopped. In other words, any existing [`Address`]es will inhibit
-/// the dropping of an actor. If this is undesirable, then a [`WeakAddress`]
-/// should be used instead. An address is created by calling the
-/// [`Actor::create`](crate::Actor::create) or [`Context::run`](crate::Context::run)
-/// methods, or by cloning another [`Address`].
+/// An [`Address`] is a reference to an actor through which messages can be sent.
+///
+/// It can be cloned to create more addresses to the same actor.
+///
+/// By default (i.e without specifying the second type parameter, `Rc`, to be [`Weak`],
+/// [`Address`]es are strong. Therefore, when all [`Address`]es are dropped, the actor will be
+/// stopped. In other words, any existing [`Address`]es will inhibit the dropping of an actor. If
+/// this is undesirable, then a [`WeakAddress`] should be used instead.
+///
+/// An address is created by calling the [`Context::run`](crate::Context::run) method, or by cloning
+/// another [`Address`].
 ///
 /// ## Mailboxes
 ///
