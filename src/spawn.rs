@@ -1,4 +1,4 @@
-/// Spawns the given actor into the tokio runtime, returning an [`Address`] to it.
+/// Spawns the given actor into the tokio runtime, returning an [`Address`](crate::Address) to it.
 ///
 /// The 2nd parameter is the mailbox size with `None` creating an unbounded mailbox.
 #[cfg(feature = "tokio")]
@@ -14,7 +14,7 @@ where
     address
 }
 
-/// Spawns the given actor into the async_std runtime, returning an [`Address`] to it.
+/// Spawns the given actor into the async_std runtime, returning an [`Address`](crate::Address) to it.
 ///
 /// The 2nd parameter is the mailbox size with `None` creating an unbounded mailbox.
 #[cfg(feature = "async_std")]
@@ -30,7 +30,7 @@ where
     address
 }
 
-/// Spawns the given actor into the smol runtime, returning an [`Address`] to it.
+/// Spawns the given actor into the smol runtime, returning an [`Address`](crate::Address) to it.
 ///
 /// The 2nd parameter is the mailbox size with `None` creating an unbounded mailbox.
 #[cfg(feature = "smol")]
@@ -46,7 +46,7 @@ where
     address
 }
 
-/// Spawns the given actor onto the thread-local runtime via `wasm_bindgen_futures`, returning an [`Address`] to it.
+/// Spawns the given actor onto the thread-local runtime via `wasm_bindgen_futures`, returning an [`Address`](crate::Address) to it.
 ///
 /// The 2nd parameter is the mailbox size with `None` creating an unbounded mailbox.
 #[cfg(feature = "wasm_bindgen")]
