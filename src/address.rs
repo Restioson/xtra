@@ -83,6 +83,18 @@ impl<A> Address<A, Strong> {
     pub fn downgrade(&self) -> WeakAddress<A> {
         Address(self.0.downgrade())
     }
+
+    /// Convert this address into a generic address which can be weak or strong.
+    pub fn as_either(&self) -> Address<A, Either> {
+        Address(self.0.clone().into_either_rc())
+    }
+}
+
+impl<A> Address<A, Weak> {
+    /// Convert this address into a generic address which can be weak or strong.
+    pub fn as_either(&self) -> Address<A, Either> {
+        Address(self.0.clone().into_either_rc())
+    }
 }
 
 /// Functions which apply only to addresses which can either be strong or weak.
@@ -141,11 +153,6 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// Returns whether the actor's mailbox is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-
-    /// Convert this address into a generic address which can be weak or strong.
-    pub fn as_either(&self) -> Address<A, Either> {
-        Address(self.0.clone().into_either_rc())
     }
 
     /// Send a message to the actor. The message will, by default, have a priority of 0 and be sent

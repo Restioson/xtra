@@ -1,6 +1,7 @@
 //! Latency is prioritised over most accurate prioritisation. Specifically, at most one low priority
 //! message may be handled before piled-up higher priority messages will be handled.
 
+pub mod chan_ptr;
 pub mod rx;
 pub mod tx;
 mod waiting_receiver;
@@ -19,8 +20,8 @@ pub use rx::Receiver;
 pub use tx::Sender;
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
-use crate::inbox::rx::RxStrong;
-use crate::inbox::tx::TxStrong;
+use crate::inbox::chan_ptr::RxStrong;
+use crate::inbox::chan_ptr::TxStrong;
 use crate::inbox::waiting_receiver::{FulfillHandle, WaitingReceiver};
 use crate::{Actor, Error};
 

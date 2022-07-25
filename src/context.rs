@@ -11,7 +11,8 @@ use futures_util::future::{self, Either};
 use futures_util::FutureExt;
 
 use crate::envelope::{Shutdown, Span};
-use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
+use crate::inbox::chan_ptr::RxStrong;
+use crate::inbox::rx::ReceiveFuture as InboxReceiveFuture;
 use crate::inbox::ActorMessage;
 use crate::{inbox, Actor, Address, Error, WeakAddress};
 

@@ -3,8 +3,8 @@ use std::task::{Context, Poll};
 use futures_util::FutureExt;
 
 use crate::envelope::MessageEnvelope;
+use crate::inbox::chan_ptr::RefCountPolicy;
 use crate::inbox::rx::Receiver;
-use crate::inbox::rx::RxRefCounter;
 use crate::inbox::ActorMessage;
 
 /// A [`WaitingReceiver`] is handed out by the channel any time [`Chan::try_recv`](crate::inbox::Chan::try_recv) is called on an empty mailbox.
@@ -84,7 +84,7 @@ impl<A> WaitingReceiver<A> {
         cx: &mut Context<'_>,
     ) -> Poll<Option<ActorMessage<A>>>
     where
-        Rc: RxRefCounter,
+        Rc: RefCountPolicy,
     {
         let ctrl_msg = match futures_util::ready!(self.0.poll_unpin(cx)) {
             Ok(reason) => reason,
