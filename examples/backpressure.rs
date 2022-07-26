@@ -1,5 +1,4 @@
 use xtra::prelude::*;
-use xtra::spawn::TokioGlobalSpawnExt;
 
 struct Greeter;
 
@@ -62,7 +61,7 @@ impl Handler<Hello> for Greeter {
 async fn main() {
     let mailbox_capacity = None;
 
-    let address = Greeter.create(mailbox_capacity).spawn_global();
+    let address = xtra::spawn_tokio(Greeter, mailbox_capacity);
 
     for _ in 0..100 {
         let name = "world!".to_owned();

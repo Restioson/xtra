@@ -38,8 +38,8 @@ fn throughput(c: &mut Criterion) {
     let _g = runtime.enter();
 
     for num_messages in [1, 10, 100, 1000] {
-        let (address, task) = Counter(0).create(Some(num_messages)).run();
-        let _task = smol::spawn(task);
+        let (address, context) = Context::new(Some(num_messages));
+        let _task = smol::spawn(context.run(Counter(0)));
 
         group.bench_with_input(
             BenchmarkId::from_parameter(num_messages),

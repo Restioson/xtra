@@ -4,7 +4,6 @@ use futures_core::Stream;
 use futures_util::stream::repeat;
 use futures_util::StreamExt;
 use xtra::prelude::*;
-use xtra::spawn::Tokio;
 use xtra::Error;
 
 #[derive(Default)]
@@ -30,7 +29,7 @@ impl Handler<Greet> for Greeter {
 
 #[tokio::main]
 async fn main() {
-    let addr = Greeter::default().create(None).spawn(&mut Tokio::Global);
+    let addr = xtra::spawn_tokio(Greeter::default(), None);
     greeter_stream(500).forward(addr.into_sink()).await.unwrap();
 }
 

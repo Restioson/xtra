@@ -1,5 +1,4 @@
 use xtra::prelude::*;
-use xtra::spawn::Smol;
 
 struct Printer {
     times: usize,
@@ -32,7 +31,8 @@ impl Handler<Print> for Printer {
 
 fn main() {
     smol::block_on(async {
-        let addr = Printer::new().create(None).spawn(&mut Smol::Global);
+        let addr = xtra::spawn_smol(Printer::new(), None);
+
         loop {
             addr.send(Print("hello".to_string()))
                 .await
