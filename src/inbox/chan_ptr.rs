@@ -1,3 +1,4 @@
+use std::fmt;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
@@ -11,6 +12,22 @@ where
 {
     inner: Arc<Chan<A>>,
     policy: P,
+}
+
+impl<A, P> fmt::Debug for ChanPtr<A, P>
+where
+    P: RefCountPolicy,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use atomic::Ordering::SeqCst;
+
+        let act = std::any::type_name::<A>();
+        let rc = std::any::type_name::<P>();
+        f.debug_struct(&format!("ChanPtr<{}, {}>", act, rc))
+            .field("rx_count", &self.inner.receiver_count.load(SeqCst))
+            .field("tx_count", &self.inner.sender_count.load(SeqCst))
+            .finish()
+    }
 }
 
 /// The reference count of a strong address. Strong addresses will prevent the actor from being
