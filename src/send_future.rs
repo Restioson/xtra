@@ -84,7 +84,7 @@ where
     /// Construct a [`SendFuture`] that contains the actor's name in its type.
     ///
     /// Compared to [`SendFuture::sending_erased`], this function avoids one allocation.
-    pub(crate) fn sending_named<M>(message: M, sender: inbox::Sender<A, Rc>) -> Self
+    pub(crate) fn sending_named<M>(message: M, sender: inbox::ChanPtr<A, Rc>) -> Self
     where
         A: Handler<M, Return = R>,
         M: Send + 'static,
@@ -102,7 +102,7 @@ where
 }
 
 impl<R> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
-    pub(crate) fn sending_erased<A, M, Rc>(message: M, sender: inbox::Sender<A, Rc>) -> Self
+    pub(crate) fn sending_erased<A, M, Rc>(message: M, sender: inbox::ChanPtr<A, Rc>) -> Self
     where
         Rc: RefCounter,
         A: Handler<M, Return = R>,
@@ -125,7 +125,7 @@ impl<A, Rc> SendFuture<ActorNamedSending<A, Rc>, Broadcast>
 where
     Rc: RefCounter,
 {
-    pub(crate) fn broadcast_named<M>(msg: M, sender: inbox::Sender<A, Rc>) -> Self
+    pub(crate) fn broadcast_named<M>(msg: M, sender: inbox::ChanPtr<A, Rc>) -> Self
     where
         A: Handler<M, Return = ()>,
         M: Clone + Send + Sync + 'static,
@@ -144,7 +144,7 @@ where
 
 #[allow(dead_code)] // This will useful later.
 impl SendFuture<ActorErasedSending, Broadcast> {
-    pub(crate) fn broadcast_erased<A, M, Rc>(msg: M, sender: inbox::Sender<A, Rc>) -> Self
+    pub(crate) fn broadcast_erased<A, M, Rc>(msg: M, sender: inbox::ChanPtr<A, Rc>) -> Self
     where
         Rc: RefCounter,
         A: Handler<M, Return = ()>,
@@ -166,7 +166,7 @@ impl SendFuture<ActorErasedSending, Broadcast> {
 enum Sending<A, Rc: RefCounter> {
     New {
         msg: SentMessage<A>,
-        sender: inbox::Sender<A, Rc>,
+        sender: inbox::ChanPtr<A, Rc>,
     },
     WaitingToSend(Arc<spin::Mutex<WaitingSender<A>>>),
     Done,
@@ -183,7 +183,7 @@ where
 
         loop {
             match mem::replace(this, Sending::Done) {
-                Sending::New { msg, sender } => match sender.inner.try_send(msg)? {
+                Sending::New { msg, sender } => match sender.try_send(msg)? {
                     Ok(()) => return Poll::Ready(Ok(())),
                     Err(MailboxFull(waiting)) => {
                         *this = Sending::WaitingToSend(waiting);

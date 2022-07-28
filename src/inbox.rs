@@ -3,7 +3,6 @@
 
 mod chan_ptr;
 pub mod rx;
-pub mod tx;
 mod waiting_receiver;
 
 use std::cmp::Ordering;
@@ -18,7 +17,6 @@ use std::{cmp, mem};
 pub use chan_ptr::{ChanPtr, RefCountPolicy, RxStrong, RxWeak, TxEither, TxStrong, TxWeak};
 use event_listener::{Event, EventListener};
 pub use rx::Receiver;
-pub use tx::Sender;
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
 use crate::inbox::waiting_receiver::{FulfillHandle, WaitingReceiver};
@@ -29,10 +27,10 @@ type BroadcastQueue<A> = Spinlock<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelop
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
-pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
+pub fn new<A>(capacity: Option<usize>) -> (ChanPtr<A, TxStrong>, Receiver<A, RxStrong>) {
     let inner = Arc::new(Chan::new(capacity));
 
-    let tx = Sender::new(inner.clone());
+    let tx = ChanPtr::<A, TxStrong>::new(inner.clone());
     let rx = Receiver::new(inner);
 
     (tx, rx)
@@ -170,17 +168,17 @@ impl<A> Chan<A> {
         }
     }
 
-    fn is_connected(&self) -> bool {
+    pub fn is_connected(&self) -> bool {
         self.receiver_count.load(atomic::Ordering::SeqCst) > 0
             && self.sender_count.load(atomic::Ordering::SeqCst) > 0
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         let inner = self.chan.lock().unwrap();
         inner.broadcast_tail + inner.ordered_queue.len() + inner.priority_queue.len()
     }
 
-    fn capacity(&self) -> Option<usize> {
+    pub fn capacity(&self) -> Option<usize> {
         self.chan.lock().unwrap().capacity
     }
 
@@ -204,7 +202,7 @@ impl<A> Chan<A> {
         }
     }
 
-    fn shutdown_all_receivers(&self)
+    pub fn shutdown_all_receivers(&self)
     where
         A: Actor,
     {
@@ -237,7 +235,7 @@ impl<A> Chan<A> {
         }
     }
 
-    fn disconnect_listener(&self) -> Option<EventListener> {
+    pub fn disconnect_listener(&self) -> Option<EventListener> {
         // Listener is created before checking connectivity to avoid the following race scenario:
         //
         // 1. is_connected returns true

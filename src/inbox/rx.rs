@@ -11,7 +11,7 @@ use crate::envelope::BroadcastEnvelope;
 use crate::inbox::chan_ptr::{ChanPtr, RefCountPolicy, RxStrong};
 use crate::inbox::chan_ptr::{TxStrong, TxWeak};
 use crate::inbox::waiting_receiver::WaitingReceiver;
-use crate::inbox::{ActorMessage, BroadcastQueue, Chan, Sender};
+use crate::inbox::{ActorMessage, BroadcastQueue, Chan};
 
 pub struct Receiver<A, Rc>
 where
@@ -35,18 +35,14 @@ impl<A> Receiver<A, RxStrong> {
         }
     }
 
-    pub fn sender(&self) -> Option<Sender<A, TxStrong>> {
-        Some(Sender {
-            inner: self.inner.try_to_tx_strong()?,
-        })
+    pub fn sender(&self) -> Option<ChanPtr<A, TxStrong>> {
+        self.inner.try_to_tx_strong()
     }
 }
 
 impl<A, Rc: RefCountPolicy> Receiver<A, Rc> {
-    pub fn weak_sender(&self) -> Sender<A, TxWeak> {
-        Sender {
-            inner: self.inner.to_tx_weak(),
-        }
+    pub fn weak_sender(&self) -> ChanPtr<A, TxWeak> {
+        self.inner.to_tx_weak()
     }
 
     pub fn receive(&self) -> ReceiveFuture<A, Rc> {

@@ -61,7 +61,7 @@ use crate::{inbox, ActorNamedSending, Handler, SendFuture};
 /// of their priority. All actors must handle a message for it to be removed from the mailbox and
 /// the length to decrease. This means that the backpressure provided by [`Address::broadcast`] will
 /// wait for the slowest actor.
-pub struct Address<A, Rc: RefCounter = Strong>(pub(crate) inbox::Sender<A, Rc>);
+pub struct Address<A, Rc: RefCounter = Strong>(pub(crate) inbox::ChanPtr<A, Rc>);
 
 impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -81,19 +81,19 @@ impl<A> Address<A, Strong> {
     /// an actor will not be prevented from being dropped if only weak sinks, channels, and
     /// addresses exist.
     pub fn downgrade(&self) -> WeakAddress<A> {
-        Address(self.0.downgrade())
+        Address(self.0.to_tx_weak())
     }
 
     /// Convert this address into a generic address which can be weak or strong.
     pub fn as_either(&self) -> Address<A, Either> {
-        Address(self.0.clone().into_either_rc())
+        Address(self.0.to_tx_either())
     }
 }
 
 impl<A> Address<A, Weak> {
     /// Convert this address into a generic address which can be weak or strong.
     pub fn as_either(&self) -> Address<A, Either> {
-        Address(self.0.clone().into_either_rc())
+        Address(self.0.to_tx_either())
     }
 }
 
@@ -101,7 +101,7 @@ impl<A> Address<A, Weak> {
 impl<A> Address<A, Either> {
     /// Converts this address into a weak address.
     pub fn downgrade(&self) -> WeakAddress<A> {
-        Address(self.0.downgrade())
+        Address(self.0.to_tx_weak())
     }
 }
 
@@ -191,7 +191,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// address, it will only ever trigger if the actor calls [`Context::stop_self`](crate::Context::stop_self),
     /// as the address would prevent the actor being dropped due to too few strong addresses.
     pub fn join(&self) -> ActorJoinHandle {
-        ActorJoinHandle(self.0.disconnect_notice())
+        ActorJoinHandle(self.0.disconnect_listener())
     }
 
     /// Returns true if this address and the other address point to the same actor. This is

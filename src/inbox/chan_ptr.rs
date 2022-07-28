@@ -101,6 +101,10 @@ where
             policy: TxWeak(()),
         }
     }
+
+    pub fn inner_ptr(&self) -> *const () {
+        Arc::as_ptr(&self.inner) as *const ()
+    }
 }
 
 impl<A> ChanPtr<A, TxStrong> {
