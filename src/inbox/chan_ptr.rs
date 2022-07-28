@@ -6,6 +6,9 @@ use std::sync::{atomic, Arc};
 use crate::inbox::Chan;
 
 /// A reference-counted pointer to the channel that is generic over its reference counting policy.
+///
+/// Apart from [`TxEither`], all reference-counting policies are zero-sized types and the actual channel
+/// is stored in an `Arc`, meaning this pointer type is exactly as wide as an `Arc`, i.e. 8 bytes.
 pub struct ChanPtr<A, P>
 where
     P: RefCountPolicy,
@@ -308,7 +311,18 @@ impl RefCountPolicy for RxWeak {
 
 #[cfg(test)]
 mod tests {
+    use std::mem::size_of;
+
     use super::*;
+
+    #[test]
+    fn size_of_ptr() {
+        assert_eq!(size_of::<ChanPtr<Foo, TxStrong>>(), 8);
+        assert_eq!(size_of::<ChanPtr<Foo, TxWeak>>(), 8);
+        assert_eq!(size_of::<ChanPtr<Foo, RxStrong>>(), 8);
+        assert_eq!(size_of::<ChanPtr<Foo, RxWeak>>(), 8);
+        assert_eq!(size_of::<ChanPtr<Foo, TxEither>>(), 16);
+    }
 
     #[test]
     fn starts_with_rc_count_one() {
