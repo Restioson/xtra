@@ -102,7 +102,7 @@ impl<A> ChanPtr<A, TxStrong> {
 }
 
 impl<A> ChanPtr<A, TxWeak> {
-    pub fn to_tx_either(self) -> ChanPtr<A, TxEither> {
+    pub fn to_tx_either(&self) -> ChanPtr<A, TxEither> {
         ChanPtr {
             inner: self.inner.clone(),
             policy: TxEither::Weak(TxWeak(())),
@@ -303,9 +303,10 @@ mod tests {
         let inner = Arc::new(Chan::new(None));
 
         let ptr1 = ChanPtr::<Foo, TxStrong>::new(inner.clone());
+        #[allow(clippy::redundant_clone)]
         let _ptr2 = ptr1.clone();
 
-        assert_eq!(ptr1.inner.sender_count.load(Ordering::SeqCst), 2)
+        assert_eq!(inner.sender_count.load(Ordering::SeqCst), 2)
     }
 
     #[test]
@@ -334,6 +335,7 @@ mod tests {
 
         let strong_ptr = ChanPtr::<Foo, TxStrong>::new(inner.clone());
         let either_ptr_1 = strong_ptr.to_tx_either();
+        #[allow(clippy::redundant_clone)]
         let _either_ptr_2 = either_ptr_1.clone();
 
         assert_eq!(inner.sender_count.load(Ordering::SeqCst), 3);
@@ -343,7 +345,7 @@ mod tests {
     fn either_is_strong() {
         let inner = Arc::new(Chan::new(None));
 
-        let strong_ptr = ChanPtr::<Foo, TxStrong>::new(inner.clone());
+        let strong_ptr = ChanPtr::<Foo, TxStrong>::new(inner);
         let either_ptr = strong_ptr.to_tx_either();
 
         assert!(either_ptr.is_strong());
