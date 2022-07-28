@@ -7,22 +7,20 @@ use std::fmt;
 
 pub use self::address::{Address, WeakAddress};
 pub use self::context::Context;
-pub use self::manager::ActorManager;
 pub use self::scoped_task::scoped;
 pub use self::send_future::{ActorErasedSending, ActorNamedSending, Receiver, SendFuture};
+pub use self::spawn::*; // Star export so we don't have to write `cfg` attributes here.
 
 pub mod address;
 mod context;
 mod envelope;
 mod inbox;
-mod manager;
 pub mod message_channel;
 /// This module contains a way to scope a future to the lifetime of an actor, stopping it before it
 /// completes if the actor it is associated with stops too.
 pub mod scoped_task;
 mod send_future;
-/// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
-pub mod spawn;
+mod spawn;
 
 /// Commonly used types from xtra
 pub mod prelude {
@@ -69,7 +67,7 @@ pub mod refcount {
 /// fn main() {
 /// #   #[cfg(feature = "smol")]
 ///     smol::block_on(async {
-///         let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
+///         let addr = xtra::spawn_smol(MyActor, None);
 ///         assert_eq!(addr.send(Msg).await, Ok(20));
 ///     })
 /// }
@@ -128,7 +126,7 @@ pub trait Handler<M>: Actor {
 /// // Will print "Started!", "Goodbye!", and then "Finally stopping."
 /// # #[cfg(feature = "smol")]
 /// smol::block_on(async {
-///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
+///     let addr = xtra::spawn_smol(MyActor, None);
 ///     addr.send(Goodbye).await;
 ///
 ///     smol::Timer::after(Duration::from_secs(1)).await; // Give it time to run
@@ -153,34 +151,6 @@ pub trait Actor: 'static + Send + Sized {
     /// - An actor called [`Context::stop_all`].
     /// - The last [`Address`] with a [`Strong`](crate::refcount::Strong) reference count was dropped.
     async fn stopped(self) -> Self::Stop;
-
-    /// Returns the actor's address and manager in a ready-to-start state, given the cap for the
-    /// actor's mailbox. If `None` is passed, it will be of unbounded size. To spawn the actor,
-    /// the [`ActorManager::spawn`] must be called, or
-    /// the [`ActorManager::run`] method must be called
-    /// and the future it returns spawned onto an executor.
-    /// # Example
-    ///
-    /// ```rust
-    /// # use xtra::prelude::*;
-    /// # use std::time::Duration;
-    /// # use smol::Timer;
-    /// # struct MyActor;
-    /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
-    /// smol::block_on(async {
-    ///     let (addr, fut) = MyActor.create(None).run();
-    ///     smol::spawn(fut).detach(); // Actually spawn the actor onto an executor
-    ///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
-    /// })
-    /// ```
-    fn create(self, message_cap: Option<usize>) -> ActorManager<Self> {
-        let (address, ctx) = Context::new(message_cap);
-        ActorManager {
-            address,
-            actor: self,
-            ctx,
-        }
-    }
 }
 
 /// An error related to the actor system

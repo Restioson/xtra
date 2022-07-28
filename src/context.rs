@@ -189,7 +189,7 @@ impl<A: Actor> Context<A> {
     ///
     /// # #[cfg(feature = "smol")]
     /// # smol::block_on(async {
-    /// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
+    /// let addr = xtra::spawn_smol(MyActor, None);
     /// assert!(addr.is_connected());
     /// assert_eq!(addr.send(Joining).await, Ok(true)); // Assert that the join did evaluate the future
     /// # })
@@ -261,7 +261,7 @@ impl<A: Actor> Context<A> {
     ///
     /// # #[cfg(feature = "smol")]
     /// # smol::block_on(async {
-    /// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
+    /// let addr = xtra::spawn_smol(MyActor, None);
     /// assert!(addr.is_connected());
     /// assert_eq!(addr.send(Selecting).await, Ok(true)); // Assert that the select did end early
     /// # })

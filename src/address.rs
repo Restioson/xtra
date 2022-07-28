@@ -15,15 +15,17 @@ use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{Broadcast, ResolveToHandlerReturn};
 use crate::{inbox, ActorNamedSending, Handler, SendFuture};
 
-/// An [`Address`] is a reference to an actor through which messages can be
-/// sent. It can be cloned to create more addresses to the same actor.
-/// By default (i.e without specifying the second type parameter, `Rc`, to be
-/// [`Weak`], [`Address`]es are strong. Therefore, when all [`Address`]es
-/// are dropped, the actor will be stopped. In other words, any existing [`Address`]es will inhibit
-/// the dropping of an actor. If this is undesirable, then a [`WeakAddress`]
-/// should be used instead. An address is created by calling the
-/// [`Actor::create`](crate::Actor::create) or [`Context::run`](crate::Context::run)
-/// methods, or by cloning another [`Address`].
+/// An [`Address`] is a reference to an actor through which messages can be sent.
+///
+/// It can be cloned to create more addresses to the same actor.
+///
+/// By default (i.e without specifying the second type parameter, `Rc`, to be [`Weak`],
+/// [`Address`]es are strong. Therefore, when all [`Address`]es are dropped, the actor will be
+/// stopped. In other words, any existing [`Address`]es will inhibit the dropping of an actor. If
+/// this is undesirable, then a [`WeakAddress`] should be used instead.
+///
+/// An address is created by calling the [`Context::run`](crate::Context::run) method, or by cloning
+/// another [`Address`].
 ///
 /// ## Mailboxes
 ///
@@ -127,7 +129,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///
     /// # #[cfg(feature = "smol")]
     /// smol::block_on(async {
-    ///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
+    ///     let addr = xtra::spawn_smol(MyActor, None);
     ///     assert!(addr.is_connected());
     ///     addr.send(Shutdown).await;
     ///     smol::Timer::after(Duration::from_secs(1)).await; // Give it time to shut down

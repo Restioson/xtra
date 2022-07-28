@@ -26,6 +26,8 @@
 - Remove `Context::notify_interval` without a direct replacement. Users are encouraged to write their own loop within
   which they call `Address:send`.
 - Rename features from `with-crate-version` to just `crate`. For example, `with-tokio-1` has been renamed to `tokio`. 
+- Redesign "spawn" interface: Remove `Actor::create`, `ActorManager` and extension traits for spawning in favor of
+  `xtra::spawn_tokio`, `xtra::spawn_smol`, `xtra::spawn_async_std` and `xtra::spawn_wasm_bindgen`. 
 
 ## 0.5.0
 

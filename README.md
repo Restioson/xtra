@@ -13,10 +13,9 @@ For better ergonomics with xtra, try the [spaad](https://crates.io/crates/spaad)
 - Lightweight: xtra has few dependencies, most of which are lightweight (except `futures`).
 - Asynchronous and synchronous message handlers.
 - Simple asynchronous message handling interface which allows `async`/`await` syntax even when borrowing `self`.
-- Does not depend on its own runtime and can be run with any futures executor ([Tokio](https://tokio.rs/),
-  [async-std](https://async.rs/), [smol](https://github.com/stjepang/smol), and 
-  [wasm-bindgen-futures](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/) have the `Actor::spawn`
-  convenience method implemented out of the box).
+- Does not depend on its own runtime and can be run with any futures executor. Convenience `spawn` functions are provided
+  for [Tokio](https://tokio.rs/), [async-std](https://async.rs/), [smol](https://github.com/stjepang/smol), and 
+  [wasm-bindgen-futures](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/).
 - Quite fast. Running on Tokio, <170ns time from sending a message to it being processed for sending without waiting for a 
 result on my development machine with an AMD Ryzen 3 3200G.
 - However, it is also relatively new and less mature than other options.
@@ -24,7 +23,6 @@ result on my development machine with an AMD Ryzen 3 3200G.
 ## Example
 ```rust
 use xtra::prelude::*;
-use xtra::spawn::Tokio;
 
 struct Printer {
     times: usize,
@@ -56,7 +54,7 @@ impl Handler<Print> for Printer {
 
 #[tokio::main]
 async fn main() {
-    let addr = Printer::new().create(None).spawn(&mut Tokio::Global);
+    let addr = xtra::spawn_tokio(Printer::new(), None);
     loop {
         addr.send(Print("hello".to_string()))
             .await
@@ -74,7 +72,7 @@ Too verbose? Check out the [spaad](https://crates.io/crates/spaad) sister-crate!
 ## Okay, sounds great! How do I use it?
 Check out the [docs](https://docs.rs/xtra) and the [examples](https://github.com/Restioson/xtra/blob/master/examples)
 to get started! Enabling the `tokio`, `async_std`, `smol`, or `wasm_bindgen` features
-is recommended in order to enable some  convenience methods (such as `Actor::spawn`). Which you enable will depend on
+is recommended in order to enable some  convenience methods (such as `xtra::spawn_tokio`). Which you enable will depend on
 which executor you want to use (check out their docs to learn more about each). If you have any questions, feel free to
 [open an issue](https://github.com/Restioson/xtra/issues/new) or message me on the [Rust discord](https://bit.ly/rust-community).
 
