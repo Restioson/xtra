@@ -11,9 +11,9 @@ use futures_util::future::{self, Either};
 use futures_util::FutureExt;
 
 use crate::envelope::{Shutdown, Span};
-use crate::inbox::chan_ptr::RxStrong;
 use crate::inbox::rx::ReceiveFuture as InboxReceiveFuture;
 use crate::inbox::ActorMessage;
+use crate::inbox::RxStrong;
 use crate::{inbox, Actor, Address, Error, WeakAddress};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
