@@ -82,7 +82,8 @@ impl<A, Rc: RefCountPolicy> fmt::Debug for Sender<A, Rc> {
         use atomic::Ordering::SeqCst;
 
         let act = std::any::type_name::<A>();
-        f.debug_struct(&format!("Sender<{}>", act))
+        let rc = std::any::type_name::<Rc>();
+        f.debug_struct(&format!("Sender<{}, {}>", act, rc))
             .field("rx_count", &self.inner.receiver_count.load(SeqCst))
             .field("tx_count", &self.inner.sender_count.load(SeqCst))
             .finish()

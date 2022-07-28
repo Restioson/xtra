@@ -4,7 +4,7 @@ use std::sync::{atomic, Arc};
 
 use crate::inbox::Chan;
 
-/// A reference-counted pointer that is generic over its reference counting policy.
+/// A reference-counted pointer to the channel that is generic over its reference counting policy.
 pub struct ChanPtr<A, P>
 where
     P: RefCountPolicy,
@@ -160,10 +160,15 @@ where
 }
 
 // TODO: Seal this.
+/// todo(docs)
 pub trait RefCountPolicy: Send + Sync + 'static + Unpin {
+    /// todo(docs)
     fn increment<A>(&self, chan: &Chan<A>) -> Self;
+    /// todo(docs)
     fn decrement<A>(&self, chan: &Chan<A>) -> bool;
+    /// todo(docs)
     fn on_last_drop<A>(&self, chan: &Chan<A>);
+    /// todo(docs)
     fn is_strong(&self) -> bool;
 }
 
