@@ -19,15 +19,17 @@ use event_listener::{Event, EventListener};
 pub use priority::{ByPriority, HasPriority, Priority};
 pub use rx::Receiver;
 pub use tx::Sender;
+pub use waiting_receiver::WaitingReceiver;
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
 use crate::inbox::rx::RxStrong;
 use crate::inbox::tx::TxStrong;
-use crate::inbox::waiting_receiver::{FulfillHandle, WaitingReceiver};
+use crate::inbox::waiting_receiver::FulfillHandle;
 use crate::{Actor, Error};
 
 type Spinlock<T> = spin::Mutex<T>;
-type BroadcastQueue<A> = Spinlock<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelope<Actor = A>>>>>;
+pub type BroadcastQueue<A> =
+    Spinlock<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelope<Actor = A>>>>>;
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
@@ -123,7 +125,7 @@ impl<A> Chan<A> {
         Ok(result)
     }
 
-    fn try_recv(
+    pub fn try_recv(
         &self,
         broadcast_mailbox: &BroadcastQueue<A>,
     ) -> Result<ActorMessage<A>, WaitingReceiver<A>> {
@@ -278,7 +280,7 @@ impl<A> Chan<A> {
     /// given message so it does not get lost.
     ///
     /// Note that the ordering of messages in the queues may be slightly off with this function.
-    fn requeue_message(&self, msg: Box<dyn MessageEnvelope<Actor = A>>) {
+    pub fn requeue_message(&self, msg: Box<dyn MessageEnvelope<Actor = A>>) {
         let mut inner = match self.chan.lock() {
             Ok(lock) => lock,
             Err(_) => return, // If we can't lock the inner channel, there is nothing we can do.
