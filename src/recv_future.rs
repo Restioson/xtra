@@ -136,7 +136,7 @@ impl<A> Future for Receiving<A> {
 
 impl<A> FusedFuture for Receiving<A> {
     fn is_terminated(&self) -> bool {
-        matches!(self, Self::Done)
+        matches!(self, Receiving::Done)
     }
 }
 
