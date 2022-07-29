@@ -19,7 +19,6 @@ pub use rx::Receiver;
 pub use tx::Sender;
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
-use crate::inbox::rx::RxStrong;
 use crate::inbox::tx::TxStrong;
 use crate::inbox::waiting_receiver::{FulfillHandle, WaitingReceiver};
 use crate::{Actor, Error};
@@ -29,7 +28,7 @@ type BroadcastQueue<A> = Spinlock<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelop
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
-pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
+pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A>) {
     let inner = Arc::new(Chan::new(capacity));
 
     let tx = Sender::new(inner.clone());
