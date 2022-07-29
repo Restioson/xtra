@@ -56,8 +56,6 @@ impl<A> Future for ReceiveFuture<A> {
 ///
 /// This type only exists because the variants of an enum are public and we would leak
 /// implementation details like the variant names into the public API.
-///
-/// This future is the counterpart to [`Sending`](crate::send_future::Sending).
 enum Receiving<A> {
     New(Receiver<A, RxStrong>),
     WaitingToReceive(Waiting<A>),
