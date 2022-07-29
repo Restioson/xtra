@@ -1,6 +1,5 @@
 use std::sync::{atomic, Arc};
 
-use crate::envelope::BroadcastEnvelope;
 use crate::inbox::tx::{TxStrong, TxWeak};
 use crate::inbox::{BroadcastQueue, Chan, Sender};
 
@@ -8,12 +7,6 @@ pub struct Receiver<A, Rc: RxRefCounter> {
     pub inner: Arc<Chan<A>>,
     pub broadcast_mailbox: Arc<BroadcastQueue<A>>,
     pub rc: Rc,
-}
-
-impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
-    pub fn next_broadcast_message(&self) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
-        self.inner.pop_broadcast_message(&self.broadcast_mailbox)
-    }
 }
 
 impl<A> Receiver<A, RxStrong> {
