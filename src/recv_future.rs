@@ -7,7 +7,7 @@ use std::task::{Context, Poll};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
-use crate::inbox::rx::{RxRefCounter, RxStrong};
+use crate::inbox::rx::RxStrong;
 use crate::inbox::{ActorMessage, BroadcastQueue, Chan, Receiver, WaitingReceiver};
 
 /// A future which will resolve to the next message to be handled by the actor.
@@ -60,7 +60,7 @@ impl<A> Future for ReceiveFuture<A> {
 /// This future is the counterpart to [`Sending`](crate::send_future::Sending).
 enum Receiving<A> {
     New(Receiver<A, RxStrong>),
-    WaitingToReceive(Waiting<A, RxStrong>),
+    WaitingToReceive(Waiting<A>),
     Done,
 }
 
@@ -71,19 +71,13 @@ enum Receiving<A> {
 ///
 /// To avoid losing a message, this type implements [`Drop`] and re-queues the message into the
 /// mailbox in such a scenario.
-struct Waiting<A, Rc>
-where
-    Rc: RxRefCounter,
-{
-    channel_receiver: Receiver<A, Rc>,
+struct Waiting<A> {
+    channel_receiver: Receiver<A, RxStrong>,
     waiting_receiver: WaitingReceiver<A>,
 }
 
-impl<A, Rc> Future for Waiting<A, Rc>
-where
-    Rc: RxRefCounter,
-{
-    type Output = Result<ActorMessage<A>, Receiver<A, Rc>>;
+impl<A> Future for Waiting<A> {
+    type Output = Result<ActorMessage<A>, Receiver<A, RxStrong>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -98,10 +92,7 @@ where
     }
 }
 
-impl<A, Rc> Drop for Waiting<A, Rc>
-where
-    Rc: RxRefCounter,
-{
+impl<A> Drop for Waiting<A> {
     fn drop(&mut self) {
         if let Some(msg) = self.waiting_receiver.cancel() {
             self.channel_receiver.inner.requeue_message(msg);
