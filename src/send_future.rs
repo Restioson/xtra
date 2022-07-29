@@ -163,6 +163,8 @@ impl SendFuture<ActorErasedSending, Broadcast> {
 }
 
 /// The core state machine around sending a message to an actor's mailbox.
+///
+/// This future is the counterpart to [`Receiving`](crate::recv_future::Receiving).
 enum Sending<A, Rc: RefCounter> {
     New {
         msg: SentMessage<A>,
