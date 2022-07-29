@@ -58,7 +58,7 @@ impl<A> Future for ReceiveFuture<A> {
 /// implementation details like the variant names into the public API.
 enum Receiving<A> {
     New(Receiver<A, RxStrong>),
-    Waiting(Waiting<A, RxStrong>),
+    WaitingToReceive(Waiting<A, RxStrong>),
     Done,
 }
 
@@ -118,20 +118,20 @@ impl<A> Future for Receiving<A> {
                 Receiving::New(rx) => match rx.inner.try_recv(rx.broadcast_mailbox.as_ref()) {
                     Ok(message) => return Poll::Ready(message),
                     Err(waiting) => {
-                        *this = Receiving::Waiting(Waiting {
+                        *this = Receiving::WaitingToReceive(Waiting {
                             channel_receiver: rx,
                             waiting_receiver: waiting,
                         });
                     }
                 },
-                Receiving::Waiting(mut waiting) => match waiting.poll_unpin(cx) {
+                Receiving::WaitingToReceive(mut waiting) => match waiting.poll_unpin(cx) {
                     Poll::Ready(Ok(msg)) => return Poll::Ready(msg),
                     Poll::Ready(Err(rx)) => {
                         // False positive wake up, try receive again.
                         *this = Receiving::New(rx);
                     }
                     Poll::Pending => {
-                        *this = Receiving::Waiting(waiting);
+                        *this = Receiving::WaitingToReceive(waiting);
                         return Poll::Pending;
                     }
                 },
