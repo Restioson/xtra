@@ -55,6 +55,20 @@ impl<A> Chan<A> {
         }
     }
 
+    pub fn increment_receiver_count(&self) {
+        self.receiver_count.fetch_add(1, atomic::Ordering::Relaxed);
+    }
+
+    pub fn decrement_receiver_count(&self) -> bool {
+        // Memory orderings copied from Arc::drop
+        if self.receiver_count.fetch_sub(1, atomic::Ordering::Release) != 1 {
+            return false;
+        }
+
+        atomic::fence(atomic::Ordering::Acquire);
+        true
+    }
+
     /// Creates a new broadcast mailbox on this channel.
     fn new_broadcast_mailbox(&self) -> Arc<BroadcastQueue<A>> {
         let mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));

@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
-use std::sync::{atomic, Arc};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures_core::FusedFuture;
@@ -167,17 +167,11 @@ pub struct RxStrong(());
 
 impl RxRefCounter for RxStrong {
     fn increment<A>(&self, inner: &Chan<A>) -> Self {
-        inner.receiver_count.fetch_add(1, atomic::Ordering::Relaxed);
+        inner.increment_receiver_count();
         RxStrong(())
     }
 
     fn decrement<A>(&self, inner: &Chan<A>) -> bool {
-        // Memory orderings copied from Arc::drop
-        if inner.receiver_count.fetch_sub(1, atomic::Ordering::Release) != 1 {
-            return false;
-        }
-
-        atomic::fence(atomic::Ordering::Acquire);
-        true
+        inner.decrement_receiver_count()
     }
 }
