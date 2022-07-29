@@ -67,9 +67,7 @@ impl<A> Clone for Receiver<A> {
 
 impl<A> Drop for Receiver<A> {
     fn drop(&mut self) {
-        if self.inner.decrement_receiver_count() {
-            self.inner.shutdown_waiting_senders()
-        }
+        self.inner.decrement_receiver_count()
     }
 }
 

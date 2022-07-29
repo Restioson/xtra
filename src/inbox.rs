@@ -59,14 +59,15 @@ impl<A> Chan<A> {
         self.receiver_count.fetch_add(1, atomic::Ordering::Relaxed);
     }
 
-    pub fn decrement_receiver_count(&self) -> bool {
+    pub fn decrement_receiver_count(&self) {
         // Memory orderings copied from Arc::drop
         if self.receiver_count.fetch_sub(1, atomic::Ordering::Release) != 1 {
-            return false;
+            return;
         }
 
         atomic::fence(atomic::Ordering::Acquire);
-        true
+
+        self.shutdown_waiting_senders();
     }
 
     /// Creates a new broadcast mailbox on this channel.
