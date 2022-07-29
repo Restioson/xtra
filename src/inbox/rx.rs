@@ -15,7 +15,6 @@ use crate::inbox::{ActorMessage, BroadcastQueue, Chan, Sender};
 pub struct Receiver<A> {
     inner: Arc<Chan<A>>,
     broadcast_mailbox: Arc<BroadcastQueue<A>>,
-    rc: RxStrong,
 }
 
 impl<A> Receiver<A> {
@@ -26,13 +25,11 @@ impl<A> Receiver<A> {
 
 impl<A> Receiver<A> {
     pub(super) fn new(inner: Arc<Chan<A>>) -> Self {
-        let rc = RxStrong(());
-        rc.increment(&inner);
+        inner.increment_receiver_count();
 
         Receiver {
             broadcast_mailbox: inner.new_broadcast_mailbox(),
             inner,
-            rc,
         }
     }
 }
@@ -50,8 +47,8 @@ impl<A> Receiver<A> {
         let receiver_with_same_broadcast_mailbox = Receiver {
             inner: self.inner.clone(),
             broadcast_mailbox: self.broadcast_mailbox.clone(),
-            rc: self.rc.increment(&self.inner),
         };
+        self.inner.increment_receiver_count();
 
         ReceiveFuture::New(receiver_with_same_broadcast_mailbox)
     }
@@ -59,17 +56,18 @@ impl<A> Receiver<A> {
 
 impl<A> Clone for Receiver<A> {
     fn clone(&self) -> Self {
+        self.inner.increment_receiver_count();
+
         Receiver {
             inner: self.inner.clone(),
             broadcast_mailbox: self.inner.new_broadcast_mailbox(),
-            rc: self.rc.increment(&self.inner),
         }
     }
 }
 
 impl<A> Drop for Receiver<A> {
     fn drop(&mut self) {
-        if self.rc.decrement(&self.inner) {
+        if self.inner.decrement_receiver_count() {
             self.inner.shutdown_waiting_senders()
         }
     }
@@ -154,24 +152,5 @@ impl<A> Future for ReceiveFuture<A> {
 impl<A> FusedFuture for ReceiveFuture<A> {
     fn is_terminated(&self) -> bool {
         matches!(self, ReceiveFuture::Done)
-    }
-}
-
-pub trait RxRefCounter: Unpin {
-    fn increment<A>(&self, inner: &Chan<A>) -> Self;
-    #[must_use = "If decrement returns false, the address must be disconnected"]
-    fn decrement<A>(&self, inner: &Chan<A>) -> bool;
-}
-
-pub struct RxStrong(());
-
-impl RxRefCounter for RxStrong {
-    fn increment<A>(&self, inner: &Chan<A>) -> Self {
-        inner.increment_receiver_count();
-        RxStrong(())
-    }
-
-    fn decrement<A>(&self, inner: &Chan<A>) -> bool {
-        inner.decrement_receiver_count()
     }
 }
