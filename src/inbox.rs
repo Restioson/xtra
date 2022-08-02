@@ -180,17 +180,17 @@ impl<A> Chan<A> {
         }
     }
 
-    fn is_connected(&self) -> bool {
+    pub fn is_connected(&self) -> bool {
         self.receiver_count.load(atomic::Ordering::SeqCst) > 0
             && self.sender_count.load(atomic::Ordering::SeqCst) > 0
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         let inner = self.chan.lock().unwrap();
         inner.broadcast_tail + inner.ordered_queue.len() + inner.priority_queue.len()
     }
 
-    fn capacity(&self) -> Option<usize> {
+    pub fn capacity(&self) -> Option<usize> {
         self.chan.lock().unwrap().capacity
     }
 
@@ -214,7 +214,7 @@ impl<A> Chan<A> {
         }
     }
 
-    fn shutdown_all_receivers(&self)
+    pub fn shutdown_all_receivers(&self)
     where
         A: Actor,
     {
@@ -247,7 +247,7 @@ impl<A> Chan<A> {
         }
     }
 
-    fn disconnect_listener(&self) -> Option<EventListener> {
+    pub fn disconnect_listener(&self) -> Option<EventListener> {
         // Listener is created before checking connectivity to avoid the following race scenario:
         //
         // 1. is_connected returns true

@@ -1,11 +1,11 @@
 use std::fmt;
+use std::ops::Deref;
 
 use super::*;
 use crate::inbox::tx::private::RefCounterInner;
-use crate::Actor;
 
 pub struct Sender<A, Rc: TxRefCounter> {
-    pub inner: Arc<Chan<A>>,
+    inner: Arc<Chan<A>>,
     rc: Rc,
 }
 
@@ -32,14 +32,18 @@ impl<A> Sender<A, TxWeak> {
     }
 }
 
-impl<Rc: TxRefCounter, A> Sender<A, Rc> {
-    pub fn stop_all_receivers(&self)
-    where
-        A: Actor,
-    {
-        self.inner.shutdown_all_receivers()
-    }
+impl<A, Rc> Deref for Sender<A, Rc>
+where
+    Rc: TxRefCounter,
+{
+    type Target = Chan<A>;
 
+    fn deref(&self) -> &Self::Target {
+        self.inner.as_ref()
+    }
+}
+
+impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     pub fn downgrade(&self) -> Sender<A, TxWeak> {
         Sender {
             inner: self.inner.clone(),
@@ -60,22 +64,6 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
             inner: self.inner.clone(),
             rc: self.rc.increment(&self.inner).into_either(),
         }
-    }
-
-    pub fn is_connected(&self) -> bool {
-        self.inner.is_connected()
-    }
-
-    pub fn capacity(&self) -> Option<usize> {
-        self.inner.capacity()
-    }
-
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    pub fn disconnect_notice(&self) -> Option<EventListener> {
-        self.inner.disconnect_listener()
     }
 }
 
