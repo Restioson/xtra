@@ -19,7 +19,6 @@ pub use rx::Receiver;
 pub use tx::Sender;
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
-use crate::inbox::rx::RxStrong;
 use crate::inbox::tx::TxStrong;
 use crate::inbox::waiting_receiver::{FulfillHandle, WaitingReceiver};
 use crate::{Actor, Error};
@@ -29,7 +28,7 @@ type BroadcastQueue<A> = Spinlock<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelop
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
-pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A, RxStrong>) {
+pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A>) {
     let inner = Arc::new(Chan::new(capacity));
 
     let tx = Sender::new(inner.clone());
@@ -54,6 +53,21 @@ impl<A> Chan<A> {
             sender_count: AtomicUsize::new(0),
             receiver_count: AtomicUsize::new(0),
         }
+    }
+
+    pub fn increment_receiver_count(&self) {
+        self.receiver_count.fetch_add(1, atomic::Ordering::Relaxed);
+    }
+
+    pub fn decrement_receiver_count(&self) {
+        // Memory orderings copied from Arc::drop
+        if self.receiver_count.fetch_sub(1, atomic::Ordering::Release) != 1 {
+            return;
+        }
+
+        atomic::fence(atomic::Ordering::Acquire);
+
+        self.shutdown_waiting_senders();
     }
 
     /// Creates a new broadcast mailbox on this channel.

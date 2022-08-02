@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
-use std::sync::{atomic, Arc};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures_core::FusedFuture;
@@ -12,13 +12,12 @@ use crate::inbox::tx::{TxStrong, TxWeak};
 use crate::inbox::waiting_receiver::WaitingReceiver;
 use crate::inbox::{ActorMessage, BroadcastQueue, Chan, Sender};
 
-pub struct Receiver<A, Rc: RxRefCounter> {
+pub struct Receiver<A> {
     inner: Arc<Chan<A>>,
     broadcast_mailbox: Arc<BroadcastQueue<A>>,
-    rc: Rc,
 }
 
-impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
+impl<A> Receiver<A> {
     pub fn next_broadcast_message(&self) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
         self.inner
             .chan
@@ -28,20 +27,18 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
     }
 }
 
-impl<A> Receiver<A, RxStrong> {
+impl<A> Receiver<A> {
     pub(super) fn new(inner: Arc<Chan<A>>) -> Self {
-        let rc = RxStrong(());
-        rc.increment(&inner);
+        inner.increment_receiver_count();
 
         Receiver {
             broadcast_mailbox: inner.new_broadcast_mailbox(),
             inner,
-            rc,
         }
     }
 }
 
-impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
+impl<A> Receiver<A> {
     pub fn sender(&self) -> Option<Sender<A, TxStrong>> {
         Sender::try_new_strong(self.inner.clone())
     }
@@ -50,38 +47,37 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
         Sender::new_weak(self.inner.clone())
     }
 
-    pub fn receive(&self) -> ReceiveFuture<A, Rc> {
+    pub fn receive(&self) -> ReceiveFuture<A> {
         let receiver_with_same_broadcast_mailbox = Receiver {
             inner: self.inner.clone(),
             broadcast_mailbox: self.broadcast_mailbox.clone(),
-            rc: self.rc.increment(&self.inner),
         };
+        self.inner.increment_receiver_count();
 
         ReceiveFuture::New(receiver_with_same_broadcast_mailbox)
     }
 }
 
-impl<A, Rc: RxRefCounter> Clone for Receiver<A, Rc> {
+impl<A> Clone for Receiver<A> {
     fn clone(&self) -> Self {
+        self.inner.increment_receiver_count();
+
         Receiver {
             inner: self.inner.clone(),
             broadcast_mailbox: self.inner.new_broadcast_mailbox(),
-            rc: self.rc.increment(&self.inner),
         }
     }
 }
 
-impl<A, Rc: RxRefCounter> Drop for Receiver<A, Rc> {
+impl<A> Drop for Receiver<A> {
     fn drop(&mut self) {
-        if self.rc.decrement(&self.inner) {
-            self.inner.shutdown_waiting_senders()
-        }
+        self.inner.decrement_receiver_count()
     }
 }
 
-pub enum ReceiveFuture<A, Rc: RxRefCounter> {
-    New(Receiver<A, Rc>),
-    Waiting(Waiting<A, Rc>),
+pub enum ReceiveFuture<A> {
+    New(Receiver<A>),
+    Waiting(Waiting<A>),
     Done,
 }
 
@@ -92,19 +88,13 @@ pub enum ReceiveFuture<A, Rc: RxRefCounter> {
 ///
 /// To avoid losing a message, this type implements [`Drop`] and re-queues the message into the
 /// mailbox in such a scenario.
-pub struct Waiting<A, Rc>
-where
-    Rc: RxRefCounter,
-{
-    channel_receiver: Receiver<A, Rc>,
+pub struct Waiting<A> {
+    channel_receiver: Receiver<A>,
     waiting_receiver: WaitingReceiver<A>,
 }
 
-impl<A, Rc> Future for Waiting<A, Rc>
-where
-    Rc: RxRefCounter,
-{
-    type Output = Result<ActorMessage<A>, Receiver<A, Rc>>;
+impl<A> Future for Waiting<A> {
+    type Output = Result<ActorMessage<A>, Receiver<A>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -119,10 +109,7 @@ where
     }
 }
 
-impl<A, Rc> Drop for Waiting<A, Rc>
-where
-    Rc: RxRefCounter,
-{
+impl<A> Drop for Waiting<A> {
     fn drop(&mut self) {
         if let Some(msg) = self.waiting_receiver.cancel() {
             self.channel_receiver.inner.requeue_message(msg);
@@ -130,7 +117,7 @@ where
     }
 }
 
-impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
+impl<A> Future for ReceiveFuture<A> {
     type Output = ActorMessage<A>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<ActorMessage<A>> {
@@ -164,45 +151,8 @@ impl<A, Rc: RxRefCounter> Future for ReceiveFuture<A, Rc> {
     }
 }
 
-impl<A, Rc: RxRefCounter> FusedFuture for ReceiveFuture<A, Rc> {
+impl<A> FusedFuture for ReceiveFuture<A> {
     fn is_terminated(&self) -> bool {
         matches!(self, ReceiveFuture::Done)
-    }
-}
-
-pub trait RxRefCounter: Unpin {
-    fn increment<A>(&self, inner: &Chan<A>) -> Self;
-    #[must_use = "If decrement returns false, the address must be disconnected"]
-    fn decrement<A>(&self, inner: &Chan<A>) -> bool;
-}
-
-pub struct RxStrong(());
-
-impl RxRefCounter for RxStrong {
-    fn increment<A>(&self, inner: &Chan<A>) -> Self {
-        inner.receiver_count.fetch_add(1, atomic::Ordering::Relaxed);
-        RxStrong(())
-    }
-
-    fn decrement<A>(&self, inner: &Chan<A>) -> bool {
-        // Memory orderings copied from Arc::drop
-        if inner.receiver_count.fetch_sub(1, atomic::Ordering::Release) != 1 {
-            return false;
-        }
-
-        atomic::fence(atomic::Ordering::Acquire);
-        true
-    }
-}
-
-pub struct RxWeak(());
-
-impl RxRefCounter for RxWeak {
-    fn increment<A>(&self, _inner: &Chan<A>) -> Self {
-        RxWeak(())
-    }
-
-    fn decrement<A>(&self, _inner: &Chan<A>) -> bool {
-        false
     }
 }

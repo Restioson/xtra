@@ -11,7 +11,7 @@ use futures_util::future::{self, Either};
 use futures_util::FutureExt;
 
 use crate::envelope::{Shutdown, Span};
-use crate::inbox::rx::{ReceiveFuture as InboxReceiveFuture, RxStrong};
+use crate::inbox::rx::ReceiveFuture as InboxReceiveFuture;
 use crate::inbox::ActorMessage;
 use crate::{inbox, Actor, Address, Error, WeakAddress};
 
@@ -27,7 +27,7 @@ pub struct Context<A> {
     /// to achieve this.
     pub running: bool,
     /// The actor's mailbox.
-    mailbox: inbox::Receiver<A, RxStrong>,
+    mailbox: inbox::Receiver<A>,
 }
 
 impl<A: Actor> Context<A> {
@@ -331,7 +331,7 @@ pub struct Message<A>(pub(crate) ActorMessage<A>);
 /// poll on the future. [`ReceiveFuture`] is guaranteed to complete in a single poll if it has
 /// remaining work to do.
 #[must_use = "Futures do nothing unless polled"]
-pub struct ReceiveFuture<A>(InboxReceiveFuture<A, RxStrong>);
+pub struct ReceiveFuture<A>(InboxReceiveFuture<A>);
 
 impl<A> Future for ReceiveFuture<A> {
     type Output = Message<A>;
