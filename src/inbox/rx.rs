@@ -1,7 +1,6 @@
-use std::ops::Deref;
 use std::sync::Arc;
 
-use crate::envelope::BroadcastEnvelope;
+use crate::envelope::{BroadcastEnvelope, MessageEnvelope};
 use crate::inbox::tx::{TxStrong, TxWeak};
 use crate::inbox::{ActorMessage, BroadcastQueue, Chan, Sender, WaitingReceiver};
 use crate::recv_future::ReceiveFuture;
@@ -31,7 +30,7 @@ impl<A> Receiver<A> {
         })
     }
 
-    pub fn pop_broadcast_message(&self) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
+    pub fn pop_broadcast_message(&self) -> Option<Arc<dyn BroadcastEnvelope<Actor=A>>> {
         self.inner
             .chan
             .lock()
@@ -47,16 +46,12 @@ impl<A> Receiver<A> {
         Sender::new_weak(self.inner.clone())
     }
 
+    pub fn requeue_message(&self, msg: Box<dyn MessageEnvelope<Actor=A>>) {
+        self.inner.requeue_message(msg)
+    }
+
     pub(crate) fn try_recv(&self) -> Result<ActorMessage<A>, WaitingReceiver<A>> {
         self.inner.try_recv(self.broadcast_mailbox.as_ref())
-    }
-}
-
-impl<A> Deref for Receiver<A> {
-    type Target = Chan<A>;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner.as_ref()
     }
 }
 
