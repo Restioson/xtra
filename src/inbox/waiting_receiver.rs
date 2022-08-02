@@ -90,13 +90,7 @@ impl<A> WaitingReceiver<A> {
         let actor_message = match ctrl_msg {
             CtrlMsg::NewMessage(msg) => ActorMessage::ToOneActor(msg),
             CtrlMsg::Shutdown => ActorMessage::Shutdown,
-            CtrlMsg::NewBroadcast => match receiver
-                .inner
-                .chan
-                .lock()
-                .unwrap()
-                .pop_broadcast(&receiver.broadcast_mailbox)
-            {
+            CtrlMsg::NewBroadcast => match receiver.pop_broadcast_message() {
                 Some(msg) => ActorMessage::ToAllActors(msg),
                 None => return Poll::Ready(None),
             },

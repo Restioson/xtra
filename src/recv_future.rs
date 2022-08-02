@@ -83,7 +83,7 @@ impl<A> Future for Waiting<A> {
 impl<A> Drop for Waiting<A> {
     fn drop(&mut self) {
         if let Some(msg) = self.waiting_receiver.cancel() {
-            self.channel_receiver.inner.requeue_message(msg);
+            self.channel_receiver.requeue_message(msg);
         }
     }
 }
@@ -96,7 +96,7 @@ impl<A> Future for Receiving<A> {
 
         loop {
             match mem::replace(this, Receiving::Done) {
-                Receiving::New(rx) => match rx.inner.try_recv(rx.broadcast_mailbox.as_ref()) {
+                Receiving::New(rx) => match rx.try_recv() {
                     Ok(message) => return Poll::Ready(message),
                     Err(waiting) => {
                         *this = Receiving::WaitingToReceive(Waiting {

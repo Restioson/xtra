@@ -121,13 +121,7 @@ impl<A: Actor> Context<A> {
 
     /// Get for the next message from the actor's mailbox.
     pub fn next_message(&self) -> ReceiveFuture<A> {
-        // It is important to clone the `Arc` here otherwise the future will read from a new broadcast mailbox.
-        let receiver = inbox::Receiver::with_broadcast_mailbox(
-            self.mailbox.inner.clone(),
-            self.mailbox.broadcast_mailbox.clone(),
-        );
-
-        ReceiveFuture::new(receiver)
+        self.mailbox.receive()
     }
 
     /// Handle one message and return whether to exit from the manage loop or not.
