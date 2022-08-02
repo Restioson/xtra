@@ -1,28 +1,34 @@
-use std::sync::{atomic, Arc};
+use std::sync::Arc;
 
 use crate::inbox::tx::{TxStrong, TxWeak};
 use crate::inbox::{BroadcastQueue, Chan, Sender};
 
-pub struct Receiver<A, Rc: RxRefCounter> {
+pub struct Receiver<A> {
     pub inner: Arc<Chan<A>>,
     pub broadcast_mailbox: Arc<BroadcastQueue<A>>,
-    pub rc: Rc,
 }
 
-impl<A> Receiver<A, RxStrong> {
-    pub(super) fn new(inner: Arc<Chan<A>>) -> Self {
-        let rc = RxStrong(());
-        rc.increment(&inner);
+impl<A> Receiver<A> {
+    pub fn new(inner: Arc<Chan<A>>) -> Self {
+        let new_broadcast_mailbox = inner.new_broadcast_mailbox();
+
+        Receiver::with_broadcast_mailbox(inner, new_broadcast_mailbox)
+    }
+
+    pub fn with_broadcast_mailbox(
+        inner: Arc<Chan<A>>,
+        broadcast_mailbox: Arc<BroadcastQueue<A>>,
+    ) -> Self {
+        inner.increment_receiver_count();
 
         Receiver {
-            broadcast_mailbox: inner.new_broadcast_mailbox(),
             inner,
-            rc,
+            broadcast_mailbox,
         }
     }
 }
 
-impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
+impl<A> Receiver<A> {
     pub fn sender(&self) -> Option<Sender<A, TxStrong>> {
         Sender::try_new_strong(self.inner.clone())
     }
@@ -32,57 +38,19 @@ impl<A, Rc: RxRefCounter> Receiver<A, Rc> {
     }
 }
 
-impl<A, Rc: RxRefCounter> Clone for Receiver<A, Rc> {
+impl<A> Clone for Receiver<A> {
     fn clone(&self) -> Self {
+        self.inner.increment_receiver_count();
+
         Receiver {
             inner: self.inner.clone(),
             broadcast_mailbox: self.inner.new_broadcast_mailbox(),
-            rc: self.rc.increment(&self.inner),
         }
     }
 }
 
-impl<A, Rc: RxRefCounter> Drop for Receiver<A, Rc> {
+impl<A> Drop for Receiver<A> {
     fn drop(&mut self) {
-        if self.rc.decrement(&self.inner) {
-            self.inner.shutdown_waiting_senders()
-        }
-    }
-}
-
-pub trait RxRefCounter: Unpin {
-    fn increment<A>(&self, inner: &Chan<A>) -> Self;
-    #[must_use = "If decrement returns false, the address must be disconnected"]
-    fn decrement<A>(&self, inner: &Chan<A>) -> bool;
-}
-
-pub struct RxStrong(());
-
-impl RxRefCounter for RxStrong {
-    fn increment<A>(&self, inner: &Chan<A>) -> Self {
-        inner.receiver_count.fetch_add(1, atomic::Ordering::Relaxed);
-        RxStrong(())
-    }
-
-    fn decrement<A>(&self, inner: &Chan<A>) -> bool {
-        // Memory orderings copied from Arc::drop
-        if inner.receiver_count.fetch_sub(1, atomic::Ordering::Release) != 1 {
-            return false;
-        }
-
-        atomic::fence(atomic::Ordering::Acquire);
-        true
-    }
-}
-
-pub struct RxWeak(());
-
-impl RxRefCounter for RxWeak {
-    fn increment<A>(&self, _inner: &Chan<A>) -> Self {
-        RxWeak(())
-    }
-
-    fn decrement<A>(&self, _inner: &Chan<A>) -> bool {
-        false
+        self.inner.decrement_receiver_count()
     }
 }

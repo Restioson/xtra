@@ -1,14 +1,12 @@
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
-use crate::inbox::rx::RxStrong;
-use crate::inbox::{ActorMessage, BroadcastQueue, Chan, Receiver, WaitingReceiver};
+use crate::inbox::{ActorMessage, Receiver, WaitingReceiver};
 
 /// A future which will resolve to the next message to be handled by the actor.
 ///
@@ -31,16 +29,8 @@ pub struct ReceiveFuture<A>(Receiving<A>);
 pub struct Message<A>(pub(crate) ActorMessage<A>);
 
 impl<A> ReceiveFuture<A> {
-    pub(crate) fn new(
-        chan: Arc<Chan<A>>,
-        broadcast_mailbox: Arc<BroadcastQueue<A>>,
-        rc: RxStrong,
-    ) -> Self {
-        Self(Receiving::New(Receiver {
-            inner: chan,
-            broadcast_mailbox,
-            rc,
-        }))
+    pub(crate) fn new(receiver: Receiver<A>) -> Self {
+        Self(Receiving::New(receiver))
     }
 }
 
@@ -57,7 +47,7 @@ impl<A> Future for ReceiveFuture<A> {
 /// This type only exists because the variants of an enum are public and we would leak
 /// implementation details like the variant names into the public API.
 enum Receiving<A> {
-    New(Receiver<A, RxStrong>),
+    New(Receiver<A>),
     WaitingToReceive(Waiting<A>),
     Done,
 }
@@ -70,12 +60,12 @@ enum Receiving<A> {
 /// To avoid losing a message, this type implements [`Drop`] and re-queues the message into the
 /// mailbox in such a scenario.
 struct Waiting<A> {
-    channel_receiver: Receiver<A, RxStrong>,
+    channel_receiver: Receiver<A>,
     waiting_receiver: WaitingReceiver<A>,
 }
 
 impl<A> Future for Waiting<A> {
-    type Output = Result<ActorMessage<A>, Receiver<A, RxStrong>>;
+    type Output = Result<ActorMessage<A>, Receiver<A>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();

@@ -10,7 +10,6 @@ use futures_util::future::{self, Either};
 use futures_util::FutureExt;
 
 use crate::envelope::{Shutdown, Span};
-use crate::inbox::rx::{RxRefCounter, RxStrong};
 use crate::inbox::ActorMessage;
 use crate::recv_future::{Message, ReceiveFuture};
 use crate::{inbox, Actor, Address, Error, WeakAddress};
@@ -27,7 +26,7 @@ pub struct Context<A> {
     /// to achieve this.
     pub running: bool,
     /// The actor's mailbox.
-    mailbox: inbox::Receiver<A, RxStrong>,
+    mailbox: inbox::Receiver<A>,
 }
 
 impl<A: Actor> Context<A> {
@@ -122,11 +121,13 @@ impl<A: Actor> Context<A> {
 
     /// Get for the next message from the actor's mailbox.
     pub fn next_message(&self) -> ReceiveFuture<A> {
-        ReceiveFuture::new(
+        // It is important to clone the `Arc` here otherwise the future will read from a new broadcast mailbox.
+        let receiver = inbox::Receiver::with_broadcast_mailbox(
             self.mailbox.inner.clone(),
-            self.mailbox.broadcast_mailbox.clone(), // It is important to clone the `Arc` here otherwise the future will read from a new broadcast mailbox.
-            self.mailbox.rc.increment(self.mailbox.inner.as_ref()),
-        )
+            self.mailbox.broadcast_mailbox.clone(),
+        );
+
+        ReceiveFuture::new(receiver)
     }
 
     /// Handle one message and return whether to exit from the manage loop or not.
