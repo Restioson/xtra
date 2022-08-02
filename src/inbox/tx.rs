@@ -90,9 +90,7 @@ impl<A, Rc: TxRefCounter> Clone for Sender<A, Rc> {
 
 impl<A, Rc: TxRefCounter> Drop for Sender<A, Rc> {
     fn drop(&mut self) {
-        if self.rc.decrement(&self.inner) {
-            self.inner.shutdown_waiting_receivers()
-        }
+        self.rc.decrement(&self.inner);
     }
 }
 
@@ -179,9 +177,6 @@ pub enum TxEither {
 }
 
 mod private {
-    use std::sync::atomic;
-    use std::sync::atomic::Ordering;
-
     use super::{TxEither, TxStrong, TxWeak};
     use crate::inbox::Chan;
 
@@ -189,9 +184,8 @@ mod private {
         /// Increments the reference counter, returning a new reference counter for the same
         /// allocation
         fn increment<A>(&self, inner: &Chan<A>) -> Self;
-        /// Decrements the reference counter, returning whether the inner data should be dropped
-        #[must_use = "If decrement returns false, the address must be disconnected"]
-        fn decrement<A>(&self, inner: &Chan<A>) -> bool;
+        /// Decrements the reference counter.
+        fn decrement<A>(&self, inner: &Chan<A>);
         /// Converts this reference counter into a dynamic reference counter.
         fn into_either(self) -> TxEither;
         /// Returns if this reference counter is a strong reference counter
@@ -200,19 +194,13 @@ mod private {
 
     impl RefCounterInner for TxStrong {
         fn increment<A>(&self, inner: &Chan<A>) -> Self {
-            // Memory orderings copied from Arc::clone
-            inner.sender_count.fetch_add(1, Ordering::Relaxed);
+            inner.increment_sender_count();
+
             TxStrong(())
         }
 
-        fn decrement<A>(&self, inner: &Chan<A>) -> bool {
-            // Memory orderings copied from Arc::drop
-            if inner.sender_count.fetch_sub(1, Ordering::Release) != 1 {
-                return false;
-            }
-
-            atomic::fence(Ordering::Acquire);
-            true
+        fn decrement<A>(&self, inner: &Chan<A>) {
+            inner.decrement_sender_count();
         }
 
         fn into_either(self) -> TxEither {
@@ -230,10 +218,9 @@ mod private {
             TxWeak(())
         }
 
-        fn decrement<A>(&self, _inner: &Chan<A>) -> bool {
+        fn decrement<A>(&self, _inner: &Chan<A>) {
             // A weak being dropped can never result in the inner data being dropped, as this
             // depends on strongs alone
-            false
         }
 
         fn into_either(self) -> TxEither {
@@ -252,7 +239,7 @@ mod private {
             }
         }
 
-        fn decrement<A>(&self, inner: &Chan<A>) -> bool {
+        fn decrement<A>(&self, inner: &Chan<A>) {
             match self {
                 TxEither::Strong(strong) => strong.decrement(inner),
                 TxEither::Weak(weak) => weak.decrement(inner),
