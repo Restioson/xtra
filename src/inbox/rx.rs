@@ -7,7 +7,6 @@ use std::task::{Context, Poll};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
-use crate::envelope::BroadcastEnvelope;
 use crate::inbox::chan_ptr::{ChanPtr, Rx};
 use crate::inbox::chan_ptr::{TxStrong, TxWeak};
 use crate::inbox::waiting_receiver::WaitingReceiver;
@@ -16,16 +15,6 @@ use crate::inbox::{ActorMessage, BroadcastQueue, Chan};
 pub struct Receiver<A> {
     inner: ChanPtr<A, Rx>,
     broadcast_mailbox: Arc<BroadcastQueue<A>>,
-}
-
-impl<A> Receiver<A> {
-    pub fn next_broadcast_message(&self) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
-        self.inner
-            .chan
-            .lock()
-            .unwrap()
-            .pop_broadcast(&self.broadcast_mailbox)
-    }
 }
 
 impl<A> Receiver<A> {
@@ -47,12 +36,10 @@ impl<A> Receiver<A> {
     }
 
     pub fn receive(&self) -> ReceiveFuture<A> {
-        let receiver_with_same_broadcast_mailbox = Receiver {
-            inner: self.inner.clone(),
+        ReceiveFuture::New {
+            channel: self.inner.clone(),
             broadcast_mailbox: self.broadcast_mailbox.clone(),
-        };
-
-        ReceiveFuture::New(receiver_with_same_broadcast_mailbox)
+        }
     }
 }
 
@@ -66,7 +53,10 @@ impl<A> Clone for Receiver<A> {
 }
 
 pub enum ReceiveFuture<A> {
-    New(Receiver<A>),
+    New {
+        channel: ChanPtr<A, Rx>,
+        broadcast_mailbox: Arc<BroadcastQueue<A>>,
+    },
     Waiting(Waiting<A>),
     Done,
 }
@@ -79,21 +69,25 @@ pub enum ReceiveFuture<A> {
 /// To avoid losing a message, this type implements [`Drop`] and re-queues the message into the
 /// mailbox in such a scenario.
 pub struct Waiting<A> {
-    channel_receiver: Receiver<A>,
+    channel: ChanPtr<A, Rx>,
+    broadcast_mailbox: Arc<BroadcastQueue<A>>,
     waiting_receiver: WaitingReceiver<A>,
 }
 
 impl<A> Future for Waiting<A> {
-    type Output = Result<ActorMessage<A>, Receiver<A>>;
+    type Output = Result<ActorMessage<A>, (ChanPtr<A, Rx>, Arc<BroadcastQueue<A>>)>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
 
-        let result =
-            match futures_util::ready!(this.waiting_receiver.poll(&this.channel_receiver, cx)) {
-                None => Err(this.channel_receiver.clone()), // TODO: Optimise this clone with an `Option` where we call `take`?
-                Some(msg) => Ok(msg),
-            };
+        let result = match futures_util::ready!(this.waiting_receiver.poll(
+            &this.channel,
+            &this.broadcast_mailbox,
+            cx
+        )) {
+            None => Err((this.channel.clone(), this.broadcast_mailbox.clone())), // TODO: Optimise this clone with an `Option` where we call `take`?
+            Some(msg) => Ok(msg),
+        };
 
         Poll::Ready(result)
     }
@@ -102,7 +96,7 @@ impl<A> Future for Waiting<A> {
 impl<A> Drop for Waiting<A> {
     fn drop(&mut self) {
         if let Some(msg) = self.waiting_receiver.cancel() {
-            self.channel_receiver.inner.requeue_message(msg);
+            self.channel.requeue_message(msg);
         }
     }
 }
@@ -115,23 +109,30 @@ impl<A> Future for ReceiveFuture<A> {
 
         loop {
             match mem::replace(this, ReceiveFuture::Done) {
-                ReceiveFuture::New(rx) => match rx.inner.try_recv(rx.broadcast_mailbox.as_ref()) {
+                ReceiveFuture::New {
+                    channel,
+                    broadcast_mailbox,
+                } => match channel.try_recv(broadcast_mailbox.as_ref()) {
                     Ok(message) => return Poll::Ready(message),
                     Err(waiting) => {
                         *this = ReceiveFuture::Waiting(Waiting {
-                            channel_receiver: rx,
+                            channel,
+                            broadcast_mailbox,
                             waiting_receiver: waiting,
                         });
                     }
                 },
-                ReceiveFuture::Waiting(mut waiting) => match waiting.poll_unpin(cx) {
+                ReceiveFuture::Waiting(mut inner) => match inner.poll_unpin(cx) {
                     Poll::Ready(Ok(msg)) => return Poll::Ready(msg),
-                    Poll::Ready(Err(rx)) => {
+                    Poll::Ready(Err((channel, broadcast_mailbox))) => {
                         // False positive wake up, try receive again.
-                        *this = ReceiveFuture::New(rx);
+                        *this = ReceiveFuture::New {
+                            channel,
+                            broadcast_mailbox,
+                        };
                     }
                     Poll::Pending => {
-                        *this = ReceiveFuture::Waiting(waiting);
+                        *this = ReceiveFuture::Waiting(inner);
                         return Poll::Pending;
                     }
                 },

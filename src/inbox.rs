@@ -23,7 +23,8 @@ use crate::inbox::waiting_receiver::{FulfillHandle, WaitingReceiver};
 use crate::{Actor, Error};
 
 type Spinlock<T> = spin::Mutex<T>;
-type BroadcastQueue<A> = Spinlock<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelope<Actor = A>>>>>;
+pub type BroadcastQueue<A> =
+    Spinlock<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelope<Actor = A>>>>>;
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
@@ -305,6 +306,13 @@ impl<A> Chan<A> {
                 inner.priority_queue.push(ByPriority(msg));
             }
         }
+    }
+
+    pub fn next_broadcast_message(
+        &self,
+        broadcast_mailbox: &BroadcastQueue<A>,
+    ) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
+        self.chan.lock().unwrap().pop_broadcast(broadcast_mailbox)
     }
 }
 
@@ -626,7 +634,7 @@ pub trait HasPriority {
 }
 
 /// A wrapper struct that allows comparison and ordering for anything thas has a priority, i.e. implements [`HasPriority`].
-struct ByPriority<T>(pub T);
+pub struct ByPriority<T>(pub T);
 
 impl<T> HasPriority for ByPriority<T>
 where
