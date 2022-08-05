@@ -1,6 +1,5 @@
 use std::fmt;
 use std::ops::Deref;
-use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
 
 use crate::inbox::Chan;
@@ -110,7 +109,7 @@ where
 
 impl<A> ChanPtr<A, TxStrong> {
     pub fn new(inner: Arc<Chan<A>>) -> Self {
-        let policy = TxStrong(()).increment(inner.as_ref());
+        let policy = TxStrong(()).make_new(inner.as_ref());
 
         Self {
             ref_counter: policy,
@@ -121,7 +120,7 @@ impl<A> ChanPtr<A, TxStrong> {
     pub fn to_tx_either(&self) -> ChanPtr<A, TxEither> {
         ChanPtr {
             inner: self.inner.clone(),
-            ref_counter: TxEither::Strong(self.ref_counter.increment(self.inner.as_ref())),
+            ref_counter: TxEither::Strong(self.ref_counter.make_new(self.inner.as_ref())),
         }
     }
 }
@@ -137,7 +136,7 @@ impl<A> ChanPtr<A, TxWeak> {
 
 impl<A> ChanPtr<A, Rx> {
     pub fn new(inner: Arc<Chan<A>>) -> Self {
-        let policy = Rx(()).increment(inner.as_ref());
+        let policy = Rx(()).make_new(inner.as_ref());
 
         Self {
             ref_counter: policy,
@@ -160,7 +159,7 @@ where
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            ref_counter: self.ref_counter.increment(self.inner.as_ref()),
+            ref_counter: self.ref_counter.make_new(self.inner.as_ref()),
         }
     }
 }
@@ -170,9 +169,7 @@ where
     Rc: RefCounter,
 {
     fn drop(&mut self) {
-        if self.ref_counter.decrement(self.inner.as_ref()) {
-            self.ref_counter.on_last_drop(self.inner.as_ref());
-        }
+        self.ref_counter.destroy(self.inner.as_ref())
     }
 }
 
@@ -189,35 +186,23 @@ where
 
 /// Defines a reference counting policy for a channel pointer.
 pub trait RefCounter: Send + Sync + 'static + Unpin {
-    /// Increment the reference count for the given channel, returning a new instance of it.
-    fn increment<A>(&self, chan: &Chan<A>) -> Self;
-    /// Decrement the reference count for the given channel, returning whether or not it was the last reference.
-    fn decrement<A>(&self, chan: &Chan<A>) -> bool;
-    /// Callback to be invoked when the last (strong) reference of a policy is destroyed/dropped.
-    fn on_last_drop<A>(&self, chan: &Chan<A>);
+    /// Make a new instance of this reference counting policy.
+    fn make_new<A>(&self, chan: &Chan<A>) -> Self;
+    /// Destroy an instance of this reference counting policy.
+    fn destroy<A>(&self, chan: &Chan<A>);
     /// Whether or not the given policy is strong.
     fn is_strong(&self) -> bool;
 }
 
 impl RefCounter for TxStrong {
-    fn increment<A>(&self, inner: &Chan<A>) -> Self {
-        // Memory orderings copied from Arc::clone
-        inner.sender_count.fetch_add(1, Ordering::Relaxed);
+    fn make_new<A>(&self, inner: &Chan<A>) -> Self {
+        inner.on_sender_created();
+
         TxStrong(())
     }
 
-    fn decrement<A>(&self, inner: &Chan<A>) -> bool {
-        // Memory orderings copied from Arc::drop
-        if inner.sender_count.fetch_sub(1, Ordering::Release) != 1 {
-            return false;
-        }
-
-        atomic::fence(Ordering::Acquire);
-        true
-    }
-
-    fn on_last_drop<A>(&self, chan: &Chan<A>) {
-        chan.shutdown_waiting_receivers();
+    fn destroy<A>(&self, inner: &Chan<A>) {
+        inner.on_sender_dropped();
     }
 
     fn is_strong(&self) -> bool {
@@ -226,15 +211,11 @@ impl RefCounter for TxStrong {
 }
 
 impl RefCounter for TxWeak {
-    fn increment<A>(&self, _: &Chan<A>) -> Self {
+    fn make_new<A>(&self, _: &Chan<A>) -> Self {
         TxWeak(())
     }
 
-    fn decrement<A>(&self, _: &Chan<A>) -> bool {
-        false
-    }
-
-    fn on_last_drop<A>(&self, _: &Chan<A>) {}
+    fn destroy<A>(&self, _: &Chan<A>) {}
 
     fn is_strong(&self) -> bool {
         false
@@ -242,24 +223,17 @@ impl RefCounter for TxWeak {
 }
 
 impl RefCounter for TxEither {
-    fn increment<A>(&self, chan: &Chan<A>) -> Self {
+    fn make_new<A>(&self, chan: &Chan<A>) -> Self {
         match self {
-            TxEither::Strong(strong) => TxEither::Strong(strong.increment(chan)),
-            TxEither::Weak(weak) => TxEither::Weak(weak.increment(chan)),
+            TxEither::Strong(strong) => TxEither::Strong(strong.make_new(chan)),
+            TxEither::Weak(weak) => TxEither::Weak(weak.make_new(chan)),
         }
     }
 
-    fn decrement<A>(&self, chan: &Chan<A>) -> bool {
+    fn destroy<A>(&self, chan: &Chan<A>) {
         match self {
-            TxEither::Strong(strong) => strong.decrement(chan),
-            TxEither::Weak(weak) => weak.decrement(chan),
-        }
-    }
-
-    fn on_last_drop<A>(&self, chan: &Chan<A>) {
-        match self {
-            TxEither::Strong(strong) => strong.on_last_drop(chan),
-            TxEither::Weak(weak) => weak.on_last_drop(chan),
+            TxEither::Strong(strong) => strong.destroy(chan),
+            TxEither::Weak(weak) => weak.destroy(chan),
         }
     }
 
@@ -272,23 +246,14 @@ impl RefCounter for TxEither {
 }
 
 impl RefCounter for Rx {
-    fn increment<A>(&self, inner: &Chan<A>) -> Self {
-        inner.receiver_count.fetch_add(1, atomic::Ordering::Relaxed);
+    fn make_new<A>(&self, inner: &Chan<A>) -> Self {
+        inner.on_receiver_created();
+
         Rx(())
     }
 
-    fn decrement<A>(&self, inner: &Chan<A>) -> bool {
-        // Memory orderings copied from Arc::drop
-        if inner.receiver_count.fetch_sub(1, atomic::Ordering::Release) != 1 {
-            return false;
-        }
-
-        atomic::fence(atomic::Ordering::Acquire);
-        true
-    }
-
-    fn on_last_drop<A>(&self, chan: &Chan<A>) {
-        chan.shutdown_waiting_senders()
+    fn destroy<A>(&self, inner: &Chan<A>) {
+        inner.on_receiver_dropped();
     }
 
     fn is_strong(&self) -> bool {
@@ -316,7 +281,7 @@ mod tests {
 
         let _ptr1 = ChanPtr::<Foo, TxStrong>::new(inner.clone());
 
-        assert_eq!(inner.sender_count.load(Ordering::SeqCst), 1)
+        assert_eq!(inner.sender_count.load(atomic::Ordering::SeqCst), 1)
     }
 
     #[test]
@@ -327,7 +292,7 @@ mod tests {
         #[allow(clippy::redundant_clone)]
         let _ptr2 = ptr1.clone();
 
-        assert_eq!(inner.sender_count.load(Ordering::SeqCst), 2)
+        assert_eq!(inner.sender_count.load(atomic::Ordering::SeqCst), 2)
     }
 
     #[test]
@@ -337,7 +302,7 @@ mod tests {
         let ptr1 = ChanPtr::<Foo, TxStrong>::new(inner.clone());
         std::mem::drop(ptr1);
 
-        assert_eq!(inner.sender_count.load(Ordering::SeqCst), 0);
+        assert_eq!(inner.sender_count.load(atomic::Ordering::SeqCst), 0);
     }
 
     #[test]
@@ -347,7 +312,7 @@ mod tests {
         let strong_ptr = ChanPtr::<Foo, TxStrong>::new(inner.clone());
         let _weak_ptr = strong_ptr.to_tx_weak();
 
-        assert_eq!(inner.sender_count.load(Ordering::SeqCst), 1);
+        assert_eq!(inner.sender_count.load(atomic::Ordering::SeqCst), 1);
     }
 
     #[test]
@@ -359,7 +324,7 @@ mod tests {
         #[allow(clippy::redundant_clone)]
         let _either_ptr_2 = either_ptr_1.clone();
 
-        assert_eq!(inner.sender_count.load(Ordering::SeqCst), 3);
+        assert_eq!(inner.sender_count.load(atomic::Ordering::SeqCst), 3);
     }
 
     #[test]
