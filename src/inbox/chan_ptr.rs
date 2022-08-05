@@ -9,23 +9,23 @@ use crate::inbox::Chan;
 ///
 /// Apart from [`TxEither`], all reference-counting policies are zero-sized types and the actual channel
 /// is stored in an `Arc`, meaning this pointer type is exactly as wide as an `Arc`, i.e. 8 bytes.
-pub struct ChanPtr<A, P>
+pub struct ChanPtr<A, Rc>
 where
-    P: RefCounter,
+    Rc: RefCounter,
 {
     inner: Arc<Chan<A>>,
-    policy: P,
+    ref_counter: Rc,
 }
 
-impl<A, P> fmt::Debug for ChanPtr<A, P>
+impl<A, Rc> fmt::Debug for ChanPtr<A, Rc>
 where
-    P: RefCounter,
+    Rc: RefCounter,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use atomic::Ordering::SeqCst;
 
         let act = std::any::type_name::<A>();
-        let rc = std::any::type_name::<P>();
+        let rc = std::any::type_name::<Rc>();
         f.debug_struct(&format!("ChanPtr<{}, {}>", act, rc))
             .field("rx_count", &self.inner.receiver_count.load(SeqCst))
             .field("tx_count", &self.inner.sender_count.load(SeqCst))
@@ -88,18 +88,18 @@ pub enum TxEither {
 
 pub struct Rx(());
 
-impl<A, P> ChanPtr<A, P>
+impl<A, Rc> ChanPtr<A, Rc>
 where
-    P: RefCounter,
+    Rc: RefCounter,
 {
     pub fn is_strong(&self) -> bool {
-        self.policy.is_strong()
+        self.ref_counter.is_strong()
     }
 
     pub fn to_tx_weak(&self) -> ChanPtr<A, TxWeak> {
         ChanPtr {
             inner: self.inner.clone(),
-            policy: TxWeak(()),
+            ref_counter: TxWeak(()),
         }
     }
 
@@ -112,13 +112,16 @@ impl<A> ChanPtr<A, TxStrong> {
     pub fn new(inner: Arc<Chan<A>>) -> Self {
         let policy = TxStrong(()).increment(inner.as_ref());
 
-        Self { policy, inner }
+        Self {
+            ref_counter: policy,
+            inner,
+        }
     }
 
     pub fn to_tx_either(&self) -> ChanPtr<A, TxEither> {
         ChanPtr {
             inner: self.inner.clone(),
-            policy: TxEither::Strong(self.policy.increment(self.inner.as_ref())),
+            ref_counter: TxEither::Strong(self.ref_counter.increment(self.inner.as_ref())),
         }
     }
 }
@@ -127,7 +130,7 @@ impl<A> ChanPtr<A, TxWeak> {
     pub fn to_tx_either(&self) -> ChanPtr<A, TxEither> {
         ChanPtr {
             inner: self.inner.clone(),
-            policy: TxEither::Weak(TxWeak(())),
+            ref_counter: TxEither::Weak(TxWeak(())),
         }
     }
 }
@@ -136,43 +139,46 @@ impl<A> ChanPtr<A, Rx> {
     pub fn new(inner: Arc<Chan<A>>) -> Self {
         let policy = Rx(()).increment(inner.as_ref());
 
-        Self { policy, inner }
+        Self {
+            ref_counter: policy,
+            inner,
+        }
     }
 
     pub fn try_to_tx_strong(&self) -> Option<ChanPtr<A, TxStrong>> {
         Some(ChanPtr {
             inner: self.inner.clone(),
-            policy: TxStrong::try_new(self.inner.as_ref())?,
+            ref_counter: TxStrong::try_new(self.inner.as_ref())?,
         })
     }
 }
 
-impl<A, P> Clone for ChanPtr<A, P>
+impl<A, Rc> Clone for ChanPtr<A, Rc>
 where
-    P: RefCounter,
+    Rc: RefCounter,
 {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            policy: self.policy.increment(self.inner.as_ref()),
+            ref_counter: self.ref_counter.increment(self.inner.as_ref()),
         }
     }
 }
 
-impl<A, P> Drop for ChanPtr<A, P>
+impl<A, Rc> Drop for ChanPtr<A, Rc>
 where
-    P: RefCounter,
+    Rc: RefCounter,
 {
     fn drop(&mut self) {
-        if self.policy.decrement(self.inner.as_ref()) {
-            self.policy.on_last_drop(self.inner.as_ref());
+        if self.ref_counter.decrement(self.inner.as_ref()) {
+            self.ref_counter.on_last_drop(self.inner.as_ref());
         }
     }
 }
 
-impl<A, P> Deref for ChanPtr<A, P>
+impl<A, Rc> Deref for ChanPtr<A, Rc>
 where
-    P: RefCounter,
+    Rc: RefCounter,
 {
     type Target = Chan<A>;
 
