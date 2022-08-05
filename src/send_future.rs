@@ -8,8 +8,7 @@ use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use crate::envelope::{BroadcastEnvelopeConcrete, ReturningEnvelope};
-use crate::inbox::{MailboxFull, SentMessage, WaitingSender};
-use crate::refcount::RefCounter;
+use crate::inbox::{MailboxFull, RefCounter, SentMessage, WaitingSender};
 use crate::{inbox, Error, Handler};
 
 /// A [`Future`] that represents the state of sending a message to an actor.

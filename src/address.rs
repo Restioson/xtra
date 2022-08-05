@@ -11,7 +11,8 @@ use std::task::{Context, Poll};
 use event_listener::EventListener;
 use futures_util::FutureExt;
 
-use crate::refcount::{Either, RefCounter, Strong, Weak};
+use crate::inbox::RefCounter;
+use crate::refcount::{Either, Strong, Weak};
 use crate::send_future::{Broadcast, ResolveToHandlerReturn};
 use crate::{inbox, ActorNamedSending, Handler, SendFuture};
 

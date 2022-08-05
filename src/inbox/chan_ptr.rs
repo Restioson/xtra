@@ -187,7 +187,6 @@ where
     }
 }
 
-// TODO: Seal this.
 /// todo(docs)
 pub trait RefCounter: Send + Sync + 'static + Unpin {
     /// todo(docs)
