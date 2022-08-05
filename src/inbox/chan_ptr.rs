@@ -179,6 +179,8 @@ pub enum TxEither {
     Weak(TxWeak),
 }
 
+/// A reference counter for the receiving end of the channel or in actor terminology, the mailbox
+/// of an actor.
 pub struct Rx(());
 
 /// Defines a reference counting policy for a channel pointer.

@@ -588,7 +588,7 @@ impl<A> WaitingSender<A> {
 
     /// Mark this [`WaitingSender`] as closed.
     ///
-    /// Should be called when the last [`Receiver`](crate::inbox::Receiver) goes away.
+    /// Should be called when the last [`ChanPtr`] with an [`Rx`] reference counter goes away.
     pub fn set_closed(&mut self) {
         if let WaitingSender::Active {
             waker: Some(waker), ..
