@@ -186,7 +186,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// address, it will only ever trigger if the actor calls [`Context::stop_self`](crate::Context::stop_self),
     /// as the address would prevent the actor being dropped due to too few strong addresses.
     pub fn join(&self) -> ActorJoinHandle {
-        ActorJoinHandle(self.0.disconnect_notice())
+        ActorJoinHandle(self.0.disconnect_listener())
     }
 
     /// Returns true if this address and the other address point to the same actor. This is

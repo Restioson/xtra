@@ -183,7 +183,7 @@ where
 
         loop {
             match mem::replace(this, Sending::Done) {
-                Sending::New { msg, sender } => match sender.inner.try_send(msg)? {
+                Sending::New { msg, sender } => match sender.try_send(msg)? {
                     Ok(()) => return Poll::Ready(Ok(())),
                     Err(MailboxFull(waiting)) => {
                         *this = Sending::WaitingToSend(waiting);
