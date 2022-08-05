@@ -12,7 +12,7 @@ pub struct Sender<A, Rc: TxRefCounter> {
 impl<A> Sender<A, TxStrong> {
     pub fn new(inner: Arc<Chan<A>>) -> Self {
         let rc = TxStrong(());
-        rc.increment(&inner);
+        rc.new(&inner);
 
         Sender { inner, rc }
     }
@@ -58,7 +58,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     pub fn into_either_rc(self) -> Sender<A, TxEither> {
         Sender {
             inner: self.inner.clone(),
-            rc: self.rc.increment(&self.inner).into_either(),
+            rc: self.rc.new(&self.inner).into_either(),
         }
     }
 
@@ -83,14 +83,14 @@ impl<A, Rc: TxRefCounter> Clone for Sender<A, Rc> {
     fn clone(&self) -> Self {
         Sender {
             inner: self.inner.clone(),
-            rc: self.rc.increment(&self.inner),
+            rc: self.rc.new(&self.inner),
         }
     }
 }
 
 impl<A, Rc: TxRefCounter> Drop for Sender<A, Rc> {
     fn drop(&mut self) {
-        self.rc.decrement(&self.inner);
+        self.rc.on_drop(&self.inner);
     }
 }
 
@@ -181,11 +181,10 @@ mod private {
     use crate::inbox::Chan;
 
     pub trait RefCounterInner {
-        /// Increments the reference counter, returning a new reference counter for the same
-        /// allocation
-        fn increment<A>(&self, inner: &Chan<A>) -> Self;
-        /// Decrements the reference counter.
-        fn decrement<A>(&self, inner: &Chan<A>);
+        /// Creates a new instance of the reference counter.
+        fn new<A>(&self, inner: &Chan<A>) -> Self;
+        /// Callback to be invoked when the reference counter is dropped.
+        fn on_drop<A>(&self, inner: &Chan<A>);
         /// Converts this reference counter into a dynamic reference counter.
         fn into_either(self) -> TxEither;
         /// Returns if this reference counter is a strong reference counter
@@ -193,13 +192,13 @@ mod private {
     }
 
     impl RefCounterInner for TxStrong {
-        fn increment<A>(&self, inner: &Chan<A>) -> Self {
+        fn new<A>(&self, inner: &Chan<A>) -> Self {
             inner.on_sender_created();
 
             TxStrong(())
         }
 
-        fn decrement<A>(&self, inner: &Chan<A>) {
+        fn on_drop<A>(&self, inner: &Chan<A>) {
             inner.on_sender_dropped();
         }
 
@@ -213,12 +212,12 @@ mod private {
     }
 
     impl RefCounterInner for TxWeak {
-        fn increment<A>(&self, _inner: &Chan<A>) -> Self {
+        fn new<A>(&self, _inner: &Chan<A>) -> Self {
             // A weak being cloned does not affect the strong count
             TxWeak(())
         }
 
-        fn decrement<A>(&self, _inner: &Chan<A>) {
+        fn on_drop<A>(&self, _inner: &Chan<A>) {
             // A weak being dropped can never result in the inner data being dropped, as this
             // depends on strongs alone
         }
@@ -232,17 +231,17 @@ mod private {
     }
 
     impl RefCounterInner for TxEither {
-        fn increment<A>(&self, inner: &Chan<A>) -> Self {
+        fn new<A>(&self, inner: &Chan<A>) -> Self {
             match self {
-                TxEither::Strong(strong) => TxEither::Strong(strong.increment(inner)),
-                TxEither::Weak(weak) => TxEither::Weak(weak.increment(inner)),
+                TxEither::Strong(strong) => TxEither::Strong(strong.new(inner)),
+                TxEither::Weak(weak) => TxEither::Weak(weak.new(inner)),
             }
         }
 
-        fn decrement<A>(&self, inner: &Chan<A>) {
+        fn on_drop<A>(&self, inner: &Chan<A>) {
             match self {
-                TxEither::Strong(strong) => strong.decrement(inner),
-                TxEither::Weak(weak) => weak.decrement(inner),
+                TxEither::Strong(strong) => strong.on_drop(inner),
+                TxEither::Weak(weak) => weak.on_drop(inner),
             }
         }
 
