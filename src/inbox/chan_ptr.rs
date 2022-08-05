@@ -8,6 +8,8 @@ use crate::inbox::Chan;
 ///
 /// Apart from [`TxEither`], all reference-counting policies are zero-sized types and the actual channel
 /// is stored in an `Arc`, meaning this pointer type is exactly as wide as an `Arc`, i.e. 8 bytes.
+///
+/// This is possible because the actual reference counting is done within [`Chan`].
 pub struct ChanPtr<A, Rc>
 where
     Rc: RefCounter,
