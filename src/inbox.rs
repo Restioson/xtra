@@ -14,7 +14,7 @@ use std::sync::{atomic, Arc, Mutex, Weak};
 use std::task::{Context, Poll, Waker};
 use std::{cmp, mem};
 
-pub use chan_ptr::{ChanPtr, RefCountPolicy, Rx, TxEither, TxStrong, TxWeak};
+pub use chan_ptr::{ChanPtr, RefCounter, Rx, TxEither, TxStrong, TxWeak};
 use event_listener::{Event, EventListener};
 pub use rx::Receiver;
 

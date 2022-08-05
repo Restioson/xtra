@@ -11,7 +11,7 @@ use crate::inbox::Chan;
 /// is stored in an `Arc`, meaning this pointer type is exactly as wide as an `Arc`, i.e. 8 bytes.
 pub struct ChanPtr<A, P>
 where
-    P: RefCountPolicy,
+    P: RefCounter,
 {
     inner: Arc<Chan<A>>,
     policy: P,
@@ -19,7 +19,7 @@ where
 
 impl<A, P> fmt::Debug for ChanPtr<A, P>
 where
-    P: RefCountPolicy,
+    P: RefCounter,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use atomic::Ordering::SeqCst;
@@ -90,7 +90,7 @@ pub struct Rx(());
 
 impl<A, P> ChanPtr<A, P>
 where
-    P: RefCountPolicy,
+    P: RefCounter,
 {
     pub fn is_strong(&self) -> bool {
         self.policy.is_strong()
@@ -149,7 +149,7 @@ impl<A> ChanPtr<A, Rx> {
 
 impl<A, P> Clone for ChanPtr<A, P>
 where
-    P: RefCountPolicy,
+    P: RefCounter,
 {
     fn clone(&self) -> Self {
         Self {
@@ -161,7 +161,7 @@ where
 
 impl<A, P> Drop for ChanPtr<A, P>
 where
-    P: RefCountPolicy,
+    P: RefCounter,
 {
     fn drop(&mut self) {
         if self.policy.decrement(self.inner.as_ref()) {
@@ -172,7 +172,7 @@ where
 
 impl<A, P> Deref for ChanPtr<A, P>
 where
-    P: RefCountPolicy,
+    P: RefCounter,
 {
     type Target = Chan<A>;
 
@@ -183,7 +183,7 @@ where
 
 // TODO: Seal this.
 /// todo(docs)
-pub trait RefCountPolicy: Send + Sync + 'static + Unpin {
+pub trait RefCounter: Send + Sync + 'static + Unpin {
     /// todo(docs)
     fn increment<A>(&self, chan: &Chan<A>) -> Self;
     /// todo(docs)
@@ -194,7 +194,7 @@ pub trait RefCountPolicy: Send + Sync + 'static + Unpin {
     fn is_strong(&self) -> bool;
 }
 
-impl RefCountPolicy for TxStrong {
+impl RefCounter for TxStrong {
     fn increment<A>(&self, inner: &Chan<A>) -> Self {
         // Memory orderings copied from Arc::clone
         inner.sender_count.fetch_add(1, Ordering::Relaxed);
@@ -220,7 +220,7 @@ impl RefCountPolicy for TxStrong {
     }
 }
 
-impl RefCountPolicy for TxWeak {
+impl RefCounter for TxWeak {
     fn increment<A>(&self, _: &Chan<A>) -> Self {
         TxWeak(())
     }
@@ -236,7 +236,7 @@ impl RefCountPolicy for TxWeak {
     }
 }
 
-impl RefCountPolicy for TxEither {
+impl RefCounter for TxEither {
     fn increment<A>(&self, chan: &Chan<A>) -> Self {
         match self {
             TxEither::Strong(strong) => TxEither::Strong(strong.increment(chan)),
@@ -266,7 +266,7 @@ impl RefCountPolicy for TxEither {
     }
 }
 
-impl RefCountPolicy for Rx {
+impl RefCounter for Rx {
     fn increment<A>(&self, inner: &Chan<A>) -> Self {
         inner.receiver_count.fetch_add(1, atomic::Ordering::Relaxed);
         Rx(())
