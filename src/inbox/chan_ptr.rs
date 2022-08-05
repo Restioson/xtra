@@ -16,6 +16,100 @@ where
     ref_counter: Rc,
 }
 
+impl<A> ChanPtr<A, TxStrong> {
+    pub fn new(inner: Arc<Chan<A>>) -> Self {
+        let policy = TxStrong(()).make_new(inner.as_ref());
+
+        Self {
+            ref_counter: policy,
+            inner,
+        }
+    }
+
+    pub fn to_tx_either(&self) -> ChanPtr<A, TxEither> {
+        ChanPtr {
+            inner: self.inner.clone(),
+            ref_counter: TxEither::Strong(self.ref_counter.make_new(self.inner.as_ref())),
+        }
+    }
+}
+
+impl<A> ChanPtr<A, Rx> {
+    pub fn new(inner: Arc<Chan<A>>) -> Self {
+        let ref_counter = Rx(()).make_new(inner.as_ref());
+
+        Self { ref_counter, inner }
+    }
+
+    pub fn try_to_tx_strong(&self) -> Option<ChanPtr<A, TxStrong>> {
+        Some(ChanPtr {
+            inner: self.inner.clone(),
+            ref_counter: TxStrong::try_new(self.inner.as_ref())?,
+        })
+    }
+}
+
+impl<A> ChanPtr<A, TxWeak> {
+    pub fn to_tx_either(&self) -> ChanPtr<A, TxEither> {
+        ChanPtr {
+            inner: self.inner.clone(),
+            ref_counter: TxEither::Weak(TxWeak(())),
+        }
+    }
+}
+
+impl<A, Rc> ChanPtr<A, Rc>
+where
+    Rc: RefCounter,
+{
+    pub fn is_strong(&self) -> bool {
+        self.ref_counter.is_strong()
+    }
+
+    pub fn to_tx_weak(&self) -> ChanPtr<A, TxWeak> {
+        ChanPtr {
+            inner: self.inner.clone(),
+            ref_counter: TxWeak(()),
+        }
+    }
+
+    pub fn inner_ptr(&self) -> *const () {
+        Arc::as_ptr(&self.inner) as *const ()
+    }
+}
+
+impl<A, Rc> Clone for ChanPtr<A, Rc>
+where
+    Rc: RefCounter,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            ref_counter: self.ref_counter.make_new(self.inner.as_ref()),
+        }
+    }
+}
+
+impl<A, Rc> Drop for ChanPtr<A, Rc>
+where
+    Rc: RefCounter,
+{
+    fn drop(&mut self) {
+        self.ref_counter.destroy(self.inner.as_ref())
+    }
+}
+
+impl<A, Rc> Deref for ChanPtr<A, Rc>
+where
+    Rc: RefCounter,
+{
+    type Target = Chan<A>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
 impl<A, Rc> fmt::Debug for ChanPtr<A, Rc>
 where
     Rc: RefCounter,
@@ -86,103 +180,6 @@ pub enum TxEither {
 }
 
 pub struct Rx(());
-
-impl<A, Rc> ChanPtr<A, Rc>
-where
-    Rc: RefCounter,
-{
-    pub fn is_strong(&self) -> bool {
-        self.ref_counter.is_strong()
-    }
-
-    pub fn to_tx_weak(&self) -> ChanPtr<A, TxWeak> {
-        ChanPtr {
-            inner: self.inner.clone(),
-            ref_counter: TxWeak(()),
-        }
-    }
-
-    pub fn inner_ptr(&self) -> *const () {
-        Arc::as_ptr(&self.inner) as *const ()
-    }
-}
-
-impl<A> ChanPtr<A, TxStrong> {
-    pub fn new(inner: Arc<Chan<A>>) -> Self {
-        let policy = TxStrong(()).make_new(inner.as_ref());
-
-        Self {
-            ref_counter: policy,
-            inner,
-        }
-    }
-
-    pub fn to_tx_either(&self) -> ChanPtr<A, TxEither> {
-        ChanPtr {
-            inner: self.inner.clone(),
-            ref_counter: TxEither::Strong(self.ref_counter.make_new(self.inner.as_ref())),
-        }
-    }
-}
-
-impl<A> ChanPtr<A, TxWeak> {
-    pub fn to_tx_either(&self) -> ChanPtr<A, TxEither> {
-        ChanPtr {
-            inner: self.inner.clone(),
-            ref_counter: TxEither::Weak(TxWeak(())),
-        }
-    }
-}
-
-impl<A> ChanPtr<A, Rx> {
-    pub fn new(inner: Arc<Chan<A>>) -> Self {
-        let ref_counter = Rx(()).make_new(inner.as_ref());
-
-        Self {
-            ref_counter,
-            inner,
-        }
-    }
-
-    pub fn try_to_tx_strong(&self) -> Option<ChanPtr<A, TxStrong>> {
-        Some(ChanPtr {
-            inner: self.inner.clone(),
-            ref_counter: TxStrong::try_new(self.inner.as_ref())?,
-        })
-    }
-}
-
-impl<A, Rc> Clone for ChanPtr<A, Rc>
-where
-    Rc: RefCounter,
-{
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            ref_counter: self.ref_counter.make_new(self.inner.as_ref()),
-        }
-    }
-}
-
-impl<A, Rc> Drop for ChanPtr<A, Rc>
-where
-    Rc: RefCounter,
-{
-    fn drop(&mut self) {
-        self.ref_counter.destroy(self.inner.as_ref())
-    }
-}
-
-impl<A, Rc> Deref for ChanPtr<A, Rc>
-where
-    Rc: RefCounter,
-{
-    type Target = Chan<A>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
 
 /// Defines a reference counting policy for a channel pointer.
 ///
