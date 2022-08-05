@@ -136,10 +136,10 @@ impl<A> ChanPtr<A, TxWeak> {
 
 impl<A> ChanPtr<A, Rx> {
     pub fn new(inner: Arc<Chan<A>>) -> Self {
-        let policy = Rx(()).make_new(inner.as_ref());
+        let ref_counter = Rx(()).make_new(inner.as_ref());
 
         Self {
-            ref_counter: policy,
+            ref_counter,
             inner,
         }
     }
