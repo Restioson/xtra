@@ -12,7 +12,7 @@ pub struct Sender<A, Rc: TxRefCounter> {
 impl<A> Sender<A, TxStrong> {
     pub fn new(inner: Arc<Chan<A>>) -> Self {
         let rc = TxStrong(());
-        rc.new(&inner);
+        rc.make_new(&inner);
 
         Sender { inner, rc }
     }
@@ -58,7 +58,7 @@ impl<Rc: TxRefCounter, A> Sender<A, Rc> {
     pub fn into_either_rc(self) -> Sender<A, TxEither> {
         Sender {
             inner: self.inner.clone(),
-            rc: self.rc.new(&self.inner).into_either(),
+            rc: self.rc.make_new(&self.inner).into_either(),
         }
     }
 
@@ -83,7 +83,7 @@ impl<A, Rc: TxRefCounter> Clone for Sender<A, Rc> {
     fn clone(&self) -> Self {
         Sender {
             inner: self.inner.clone(),
-            rc: self.rc.new(&self.inner),
+            rc: self.rc.make_new(&self.inner),
         }
     }
 }
@@ -182,7 +182,7 @@ mod private {
 
     pub trait RefCounterInner {
         /// Creates a new instance of the reference counter.
-        fn new<A>(&self, inner: &Chan<A>) -> Self;
+        fn make_new<A>(&self, inner: &Chan<A>) -> Self;
         /// Callback to be invoked when the reference counter is dropped.
         fn on_drop<A>(&self, inner: &Chan<A>);
         /// Converts this reference counter into a dynamic reference counter.
@@ -192,7 +192,7 @@ mod private {
     }
 
     impl RefCounterInner for TxStrong {
-        fn new<A>(&self, inner: &Chan<A>) -> Self {
+        fn make_new<A>(&self, inner: &Chan<A>) -> Self {
             inner.on_sender_created();
 
             TxStrong(())
@@ -212,7 +212,7 @@ mod private {
     }
 
     impl RefCounterInner for TxWeak {
-        fn new<A>(&self, _inner: &Chan<A>) -> Self {
+        fn make_new<A>(&self, _inner: &Chan<A>) -> Self {
             // A weak being cloned does not affect the strong count
             TxWeak(())
         }
@@ -231,9 +231,9 @@ mod private {
     }
 
     impl RefCounterInner for TxEither {
-        fn new<A>(&self, inner: &Chan<A>) -> Self {
+        fn make_new<A>(&self, inner: &Chan<A>) -> Self {
             match self {
-                TxEither::Strong(strong) => TxEither::Strong(strong.new(inner)),
+                TxEither::Strong(strong) => TxEither::Strong(strong.make_new(inner)),
                 TxEither::Weak(weak) => TxEither::Weak(weak.new(inner)),
             }
         }
