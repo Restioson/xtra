@@ -225,6 +225,7 @@ mod private {
         fn into_either(self) -> TxEither {
             TxEither::Weak(self)
         }
+
         fn is_strong(&self) -> bool {
             false
         }
@@ -234,7 +235,7 @@ mod private {
         fn make_new<A>(&self, inner: &Chan<A>) -> Self {
             match self {
                 TxEither::Strong(strong) => TxEither::Strong(strong.make_new(inner)),
-                TxEither::Weak(weak) => TxEither::Weak(weak.new(inner)),
+                TxEither::Weak(weak) => TxEither::Weak(weak.make_new(inner)),
             }
         }
 
