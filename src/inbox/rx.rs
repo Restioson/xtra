@@ -51,7 +51,6 @@ impl<A> Receiver<A> {
             inner: self.inner.clone(),
             broadcast_mailbox: self.broadcast_mailbox.clone(),
         };
-        self.inner.increment_receiver_count();
 
         ReceiveFuture::New(receiver_with_same_broadcast_mailbox)
     }
