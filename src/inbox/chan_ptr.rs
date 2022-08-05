@@ -187,15 +187,15 @@ where
     }
 }
 
-/// todo(docs)
+/// Defines a reference counting policy for a channel pointer.
 pub trait RefCounter: Send + Sync + 'static + Unpin {
-    /// todo(docs)
+    /// Increment the reference count for the given channel, returning a new instance of it.
     fn increment<A>(&self, chan: &Chan<A>) -> Self;
-    /// todo(docs)
+    /// Decrement the reference count for the given channel, returning whether or not it was the last reference.
     fn decrement<A>(&self, chan: &Chan<A>) -> bool;
-    /// todo(docs)
+    /// Callback to be invoked when the last (strong) reference of a policy is destroyed/dropped.
     fn on_last_drop<A>(&self, chan: &Chan<A>);
-    /// todo(docs)
+    /// Whether or not the given policy is strong.
     fn is_strong(&self) -> bool;
 }
 
