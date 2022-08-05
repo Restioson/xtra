@@ -14,7 +14,7 @@ use std::sync::{atomic, Arc, Mutex, Weak};
 use std::task::{Context, Poll, Waker};
 use std::{cmp, mem};
 
-pub use chan_ptr::{ChanPtr, RefCountPolicy, RxStrong, RxWeak, TxEither, TxStrong, TxWeak};
+pub use chan_ptr::{ChanPtr, RefCountPolicy, Rx, TxEither, TxStrong, TxWeak};
 use event_listener::{Event, EventListener};
 pub use rx::Receiver;
 
@@ -27,7 +27,7 @@ type BroadcastQueue<A> = Spinlock<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelop
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
-pub fn new<A>(capacity: Option<usize>) -> (ChanPtr<A, TxStrong>, Receiver<A, RxStrong>) {
+pub fn new<A>(capacity: Option<usize>) -> (ChanPtr<A, TxStrong>, Receiver<A>) {
     let inner = Arc::new(Chan::new(capacity));
 
     let tx = ChanPtr::<A, TxStrong>::new(inner.clone());
@@ -52,6 +52,21 @@ impl<A> Chan<A> {
             sender_count: AtomicUsize::new(0),
             receiver_count: AtomicUsize::new(0),
         }
+    }
+
+    pub fn increment_receiver_count(&self) {
+        self.receiver_count.fetch_add(1, atomic::Ordering::Relaxed);
+    }
+
+    pub fn decrement_receiver_count(&self) {
+        // Memory orderings copied from Arc::drop
+        if self.receiver_count.fetch_sub(1, atomic::Ordering::Release) != 1 {
+            return;
+        }
+
+        atomic::fence(atomic::Ordering::Acquire);
+
+        self.shutdown_waiting_senders();
     }
 
     /// Creates a new broadcast mailbox on this channel.
@@ -123,12 +138,14 @@ impl<A> Chan<A> {
         &self,
         broadcast_mailbox: &BroadcastQueue<A>,
     ) -> Result<ActorMessage<A>, WaitingReceiver<A>> {
-        let mut broadcast = broadcast_mailbox.lock();
-
-        // Peek priorities in order to figure out which channel should be taken from
-        let broadcast_priority = broadcast.peek().map(|it| it.priority());
-
+        // Lock `ChanInner` as the first thing. This avoids race conditions in modifying the broadcast mailbox.
         let mut inner = self.chan.lock().unwrap();
+
+        // lock broadcast mailbox for as short as possible
+        let broadcast_priority = {
+            // Peek priorities in order to figure out which channel should be taken from
+            broadcast_mailbox.lock().peek().map(|it| it.priority())
+        };
 
         let shared_priority: Option<Priority> = inner.priority_queue.peek().map(|it| it.priority());
 
@@ -146,13 +163,7 @@ impl<A> Chan<A> {
                 Ok(inner.pop_priority().unwrap().into())
             }
             // Shared priority is less - take from broadcast
-            Ordering::Less => {
-                let msg = broadcast.pop().unwrap().0;
-                drop(broadcast);
-                inner.try_advance_broadcast_tail();
-
-                Ok(msg.into())
-            }
+            Ordering::Less => Ok(inner.pop_broadcast(broadcast_mailbox).unwrap().into()),
             // Equal, but both are empty, so wait or exit if shutdown
             _ => {
                 // on_shutdown is only notified with inner locked, and it's locked here, so no race
@@ -253,20 +264,6 @@ impl<A> Chan<A> {
         }
     }
 
-    fn pop_broadcast_message(
-        &self,
-        broadcast_mailbox: &BroadcastQueue<A>,
-    ) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
-        let message = broadcast_mailbox.lock().pop();
-
-        // Advance the broadcast tail if we successfully took a message.
-        if message.is_some() {
-            self.chan.lock().unwrap().try_advance_broadcast_tail();
-        }
-
-        Some(message?.0)
-    }
-
     /// Re-queue the given message.
     ///
     /// Normally, messages are delivered from the inbox straight to the actor. It can however happen
@@ -346,24 +343,39 @@ impl<A> ChanInner<A> {
         self.ordered_queue.pop_front()
     }
 
-    fn try_advance_broadcast_tail(&mut self) {
+    fn pop_broadcast(
+        &mut self,
+        broadcast_mailbox: &BroadcastQueue<A>,
+    ) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
+        let message = broadcast_mailbox.lock().pop();
+
+        // Advance the broadcast tail if we successfully took a message.
+        if message.is_some() {
+            self.broadcast_tail = self.longest_broadcast_queue();
+
+            // If len < cap, try fulfill a waiting sender
+            if self.capacity.map_or(false, |cap| self.broadcast_tail < cap) {
+                match self.try_fulfill_sender(MessageType::Broadcast) {
+                    Some(SentMessage::ToAllActors(m)) => self.send_broadcast(m),
+                    Some(_) => unreachable!(),
+                    None => {}
+                }
+            }
+        }
+
+        Some(message?.0)
+    }
+
+    fn longest_broadcast_queue(&self) -> usize {
         let mut longest = 0;
+
         for queue in &self.broadcast_queues {
             if let Some(queue) = queue.upgrade() {
                 longest = cmp::max(longest, queue.lock().len());
             }
         }
 
-        self.broadcast_tail = longest;
-
-        // If len < cap, try fulfill a waiting sender
-        if self.capacity.map_or(false, |cap| longest < cap) {
-            match self.try_fulfill_sender(MessageType::Broadcast) {
-                Some(SentMessage::ToAllActors(m)) => self.send_broadcast(m),
-                Some(_) => unreachable!(),
-                None => {}
-            }
-        }
+        longest
     }
 
     fn send_broadcast(&mut self, m: Arc<dyn BroadcastEnvelope<Actor = A>>) {

@@ -78,14 +78,11 @@ impl<A> WaitingReceiver<A> {
     /// In case we have been woken with a reason, we will attempt to produce an [`ActorMessage`].
     /// Wake-ups can be false-positives in the case of a broadcast message which is why this
     /// function returns only [`Option<ActorMessage>`].
-    pub fn poll<Rc>(
+    pub fn poll(
         &mut self,
-        receiver: &Receiver<A, Rc>,
+        receiver: &Receiver<A>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<ActorMessage<A>>>
-    where
-        Rc: RefCountPolicy,
-    {
+    ) -> Poll<Option<ActorMessage<A>>> {
         let ctrl_msg = match futures_util::ready!(self.0.poll_unpin(cx)) {
             Ok(reason) => reason,
             Err(_) => return Poll::Ready(None), // TODO: Not sure if this is correct.

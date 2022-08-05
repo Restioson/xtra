@@ -8,30 +8,31 @@ use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use crate::envelope::BroadcastEnvelope;
-use crate::inbox::chan_ptr::{ChanPtr, RefCountPolicy, RxStrong};
+use crate::inbox::chan_ptr::{ChanPtr, RefCountPolicy, Rx};
 use crate::inbox::chan_ptr::{TxStrong, TxWeak};
 use crate::inbox::waiting_receiver::WaitingReceiver;
 use crate::inbox::{ActorMessage, BroadcastQueue, Chan};
 
-pub struct Receiver<A, Rc>
-where
-    Rc: RefCountPolicy,
-{
-    inner: ChanPtr<A, Rc>,
+pub struct Receiver<A> {
+    inner: ChanPtr<A, Rx>,
     broadcast_mailbox: Arc<BroadcastQueue<A>>,
 }
 
-impl<A, Rc: RefCountPolicy> Receiver<A, Rc> {
+impl<A> Receiver<A> {
     pub fn next_broadcast_message(&self) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
-        self.inner.pop_broadcast_message(&self.broadcast_mailbox)
+        self.inner
+            .chan
+            .lock()
+            .unwrap()
+            .pop_broadcast(&self.broadcast_mailbox)
     }
 }
 
-impl<A> Receiver<A, RxStrong> {
+impl<A> Receiver<A> {
     pub(super) fn new(inner: Arc<Chan<A>>) -> Self {
         Receiver {
             broadcast_mailbox: inner.new_broadcast_mailbox(),
-            inner: ChanPtr::<A, RxStrong>::new(inner),
+            inner: ChanPtr::<A, Rx>::new(inner),
         }
     }
 
@@ -40,22 +41,23 @@ impl<A> Receiver<A, RxStrong> {
     }
 }
 
-impl<A, Rc: RefCountPolicy> Receiver<A, Rc> {
+impl<A> Receiver<A> {
     pub fn weak_sender(&self) -> ChanPtr<A, TxWeak> {
         self.inner.to_tx_weak()
     }
 
-    pub fn receive(&self) -> ReceiveFuture<A, Rc> {
+    pub fn receive(&self) -> ReceiveFuture<A> {
         let receiver_with_same_broadcast_mailbox = Receiver {
             inner: self.inner.clone(),
             broadcast_mailbox: self.broadcast_mailbox.clone(),
         };
+        self.inner.increment_receiver_count();
 
         ReceiveFuture::New(receiver_with_same_broadcast_mailbox)
     }
 }
 
-impl<A, Rc: RefCountPolicy> Clone for Receiver<A, Rc> {
+impl<A> Clone for Receiver<A> {
     fn clone(&self) -> Self {
         Receiver {
             inner: self.inner.clone(),
@@ -64,9 +66,9 @@ impl<A, Rc: RefCountPolicy> Clone for Receiver<A, Rc> {
     }
 }
 
-pub enum ReceiveFuture<A, Rc: RefCountPolicy> {
-    New(Receiver<A, Rc>),
-    Waiting(Waiting<A, Rc>),
+pub enum ReceiveFuture<A> {
+    New(Receiver<A>),
+    Waiting(Waiting<A>),
     Done,
 }
 
@@ -77,19 +79,13 @@ pub enum ReceiveFuture<A, Rc: RefCountPolicy> {
 ///
 /// To avoid losing a message, this type implements [`Drop`] and re-queues the message into the
 /// mailbox in such a scenario.
-pub struct Waiting<A, Rc>
-where
-    Rc: RefCountPolicy,
-{
-    channel_receiver: Receiver<A, Rc>,
+pub struct Waiting<A> {
+    channel_receiver: Receiver<A>,
     waiting_receiver: WaitingReceiver<A>,
 }
 
-impl<A, Rc> Future for Waiting<A, Rc>
-where
-    Rc: RefCountPolicy,
-{
-    type Output = Result<ActorMessage<A>, Receiver<A, Rc>>;
+impl<A> Future for Waiting<A> {
+    type Output = Result<ActorMessage<A>, Receiver<A>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -104,10 +100,7 @@ where
     }
 }
 
-impl<A, Rc> Drop for Waiting<A, Rc>
-where
-    Rc: RefCountPolicy,
-{
+impl<A> Drop for Waiting<A> {
     fn drop(&mut self) {
         if let Some(msg) = self.waiting_receiver.cancel() {
             self.channel_receiver.inner.requeue_message(msg);
@@ -115,7 +108,7 @@ where
     }
 }
 
-impl<A, Rc: RefCountPolicy> Future for ReceiveFuture<A, Rc> {
+impl<A> Future for ReceiveFuture<A> {
     type Output = ActorMessage<A>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<ActorMessage<A>> {
@@ -149,7 +142,7 @@ impl<A, Rc: RefCountPolicy> Future for ReceiveFuture<A, Rc> {
     }
 }
 
-impl<A, Rc: RefCountPolicy> FusedFuture for ReceiveFuture<A, Rc> {
+impl<A> FusedFuture for ReceiveFuture<A> {
     fn is_terminated(&self) -> bool {
         matches!(self, ReceiveFuture::Done)
     }

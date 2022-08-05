@@ -86,9 +86,7 @@ pub enum TxEither {
     Weak(TxWeak),
 }
 
-pub struct RxStrong(());
-
-pub struct RxWeak(());
+pub struct Rx(());
 
 impl<A, P> ChanPtr<A, P>
 where
@@ -134,9 +132,9 @@ impl<A> ChanPtr<A, TxWeak> {
     }
 }
 
-impl<A> ChanPtr<A, RxStrong> {
+impl<A> ChanPtr<A, Rx> {
     pub fn new(inner: Arc<Chan<A>>) -> Self {
-        let policy = RxStrong(()).increment(inner.as_ref());
+        let policy = Rx(()).increment(inner.as_ref());
 
         Self { policy, inner }
     }
@@ -268,10 +266,10 @@ impl RefCountPolicy for TxEither {
     }
 }
 
-impl RefCountPolicy for RxStrong {
+impl RefCountPolicy for Rx {
     fn increment<A>(&self, inner: &Chan<A>) -> Self {
         inner.receiver_count.fetch_add(1, atomic::Ordering::Relaxed);
-        RxStrong(())
+        Rx(())
     }
 
     fn decrement<A>(&self, inner: &Chan<A>) -> bool {
@@ -293,22 +291,6 @@ impl RefCountPolicy for RxStrong {
     }
 }
 
-impl RefCountPolicy for RxWeak {
-    fn increment<A>(&self, _: &Chan<A>) -> Self {
-        RxWeak(())
-    }
-
-    fn decrement<A>(&self, _: &Chan<A>) -> bool {
-        false
-    }
-
-    fn on_last_drop<A>(&self, _: &Chan<A>) {}
-
-    fn is_strong(&self) -> bool {
-        false
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::mem::size_of;
@@ -319,8 +301,7 @@ mod tests {
     fn size_of_ptr() {
         assert_eq!(size_of::<ChanPtr<Foo, TxStrong>>(), 8);
         assert_eq!(size_of::<ChanPtr<Foo, TxWeak>>(), 8);
-        assert_eq!(size_of::<ChanPtr<Foo, RxStrong>>(), 8);
-        assert_eq!(size_of::<ChanPtr<Foo, RxWeak>>(), 8);
+        assert_eq!(size_of::<ChanPtr<Foo, Rx>>(), 8);
         assert_eq!(size_of::<ChanPtr<Foo, TxEither>>(), 16);
     }
 
