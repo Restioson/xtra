@@ -185,6 +185,17 @@ where
 }
 
 /// Defines a reference counting policy for a channel pointer.
+///
+/// # Implementation note
+///
+/// This trait only exists because we cannot specialise `Drop` impls in Rust, otherwise, we could
+/// write:
+///
+/// - `impl Drop for ChanPtr<A, TxStrong> { }`
+/// - `impl Drop for ChanPtr<A, TxEither> { }`
+/// - `impl Drop for ChanPtr<A, Rx> { }`
+///
+/// and call the appropriate functions on [`Chan`].
 pub trait RefCounter: Send + Sync + 'static + Unpin {
     /// Make a new instance of this reference counting policy.
     fn make_new<A>(&self, chan: &Chan<A>) -> Self;
