@@ -29,7 +29,7 @@ impl<A> Receiver<A> {
 
 impl<A> Receiver<A> {
     pub(super) fn new(inner: Arc<Chan<A>>) -> Self {
-        inner.increment_receiver_count();
+        inner.on_receiver_created();
 
         Receiver {
             broadcast_mailbox: inner.new_broadcast_mailbox(),
@@ -52,7 +52,7 @@ impl<A> Receiver<A> {
             inner: self.inner.clone(),
             broadcast_mailbox: self.broadcast_mailbox.clone(),
         };
-        self.inner.increment_receiver_count();
+        self.inner.on_receiver_created();
 
         ReceiveFuture::New(receiver_with_same_broadcast_mailbox)
     }
@@ -60,7 +60,7 @@ impl<A> Receiver<A> {
 
 impl<A> Clone for Receiver<A> {
     fn clone(&self) -> Self {
-        self.inner.increment_receiver_count();
+        self.inner.on_receiver_created();
 
         Receiver {
             inner: self.inner.clone(),
@@ -71,7 +71,7 @@ impl<A> Clone for Receiver<A> {
 
 impl<A> Drop for Receiver<A> {
     fn drop(&mut self) {
-        self.inner.decrement_receiver_count()
+        self.inner.on_receiver_dropped()
     }
 }
 

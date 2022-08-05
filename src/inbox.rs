@@ -55,11 +55,13 @@ impl<A> Chan<A> {
         }
     }
 
-    pub fn increment_receiver_count(&self) {
+    /// Callback to be invoked every time a receiver is created.
+    pub fn on_receiver_created(&self) {
         self.receiver_count.fetch_add(1, atomic::Ordering::Relaxed);
     }
 
-    pub fn decrement_receiver_count(&self) {
+    /// Callback to be invoked every time a receiver is destroyed.
+    pub fn on_receiver_dropped(&self) {
         // Memory orderings copied from Arc::drop
         if self.receiver_count.fetch_sub(1, atomic::Ordering::Release) != 1 {
             return;
@@ -70,12 +72,14 @@ impl<A> Chan<A> {
         self.shutdown_waiting_senders();
     }
 
-    pub fn increment_sender_count(&self) {
+    /// Callback to be invoked every time a sender is created.
+    pub fn on_sender_created(&self) {
         // Memory orderings copied from Arc::clone
         self.sender_count.fetch_add(1, atomic::Ordering::Relaxed);
     }
 
-    pub fn decrement_sender_count(&self) {
+    /// Callback to be invoked every time a sender is destroyed (i.e. dropped).
+    pub fn on_sender_dropped(&self) {
         // Memory orderings copied from Arc::drop
         if self.sender_count.fetch_sub(1, atomic::Ordering::Release) != 1 {
             return;

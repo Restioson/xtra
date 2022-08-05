@@ -194,13 +194,13 @@ mod private {
 
     impl RefCounterInner for TxStrong {
         fn increment<A>(&self, inner: &Chan<A>) -> Self {
-            inner.increment_sender_count();
+            inner.on_sender_created();
 
             TxStrong(())
         }
 
         fn decrement<A>(&self, inner: &Chan<A>) {
-            inner.decrement_sender_count();
+            inner.on_sender_dropped();
         }
 
         fn into_either(self) -> TxEither {
