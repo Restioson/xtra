@@ -11,9 +11,9 @@ use futures_util::future::{self, Either};
 use futures_util::FutureExt;
 
 use crate::envelope::{Shutdown, Span};
-use crate::inbox::rx::ReceiveFuture as InboxReceiveFuture;
 use crate::inbox::ActorMessage;
-use crate::{inbox, Actor, Address, Error, WeakAddress};
+use crate::mailbox::Mailbox;
+use crate::{inbox, mailbox, Actor, Address, Error, WeakAddress};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
@@ -27,7 +27,7 @@ pub struct Context<A> {
     /// to achieve this.
     pub running: bool,
     /// The actor's mailbox.
-    mailbox: inbox::Receiver<A>,
+    mailbox: Mailbox<A>,
 }
 
 impl<A: Actor> Context<A> {
@@ -65,7 +65,7 @@ impl<A: Actor> Context<A> {
 
         let context = Context {
             running: true,
-            mailbox: rx,
+            mailbox: Mailbox::new(rx),
         };
 
         (Address(tx), context)
@@ -331,7 +331,7 @@ pub struct Message<A>(pub(crate) ActorMessage<A>);
 /// poll on the future. [`ReceiveFuture`] is guaranteed to complete in a single poll if it has
 /// remaining work to do.
 #[must_use = "Futures do nothing unless polled"]
-pub struct ReceiveFuture<A>(InboxReceiveFuture<A>);
+pub struct ReceiveFuture<A>(mailbox::ReceiveFuture<A>);
 
 impl<A> Future for ReceiveFuture<A> {
     type Output = Message<A>;

@@ -7,21 +7,21 @@ use std::task::{Context, Poll};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
-use crate::inbox::chan_ptr::{ChanPtr, Rx};
-use crate::inbox::chan_ptr::{TxStrong, TxWeak};
-use crate::inbox::waiting_receiver::WaitingReceiver;
-use crate::inbox::{ActorMessage, BroadcastQueue, Chan};
+use crate::inbox::WaitingReceiver;
+use crate::inbox::{ActorMessage, BroadcastQueue};
+use crate::inbox::{ChanPtr, Rx};
+use crate::inbox::{TxStrong, TxWeak};
 
-pub struct Receiver<A> {
+pub struct Mailbox<A> {
     inner: ChanPtr<A, Rx>,
     broadcast_mailbox: Arc<BroadcastQueue<A>>,
 }
 
-impl<A> Receiver<A> {
-    pub(super) fn new(inner: Arc<Chan<A>>) -> Self {
-        Receiver {
+impl<A> Mailbox<A> {
+    pub(super) fn new(inner: ChanPtr<A, Rx>) -> Self {
+        Mailbox {
             broadcast_mailbox: inner.new_broadcast_mailbox(),
-            inner: ChanPtr::<A, Rx>::new(inner),
+            inner,
         }
     }
 
@@ -30,7 +30,7 @@ impl<A> Receiver<A> {
     }
 }
 
-impl<A> Receiver<A> {
+impl<A> Mailbox<A> {
     pub fn weak_sender(&self) -> ChanPtr<A, TxWeak> {
         self.inner.to_tx_weak()
     }
@@ -43,9 +43,9 @@ impl<A> Receiver<A> {
     }
 }
 
-impl<A> Clone for Receiver<A> {
+impl<A> Clone for Mailbox<A> {
     fn clone(&self) -> Self {
-        Receiver {
+        Mailbox {
             inner: self.inner.clone(),
             broadcast_mailbox: self.inner.new_broadcast_mailbox(),
         }

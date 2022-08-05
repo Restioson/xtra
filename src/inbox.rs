@@ -2,7 +2,6 @@
 //! message may be handled before piled-up higher priority messages will be handled.
 
 mod chan_ptr;
-pub mod rx;
 mod waiting_receiver;
 
 use std::cmp::Ordering;
@@ -16,10 +15,10 @@ use std::{cmp, mem};
 
 pub use chan_ptr::{ChanPtr, RefCounter, Rx, TxEither, TxStrong, TxWeak};
 use event_listener::{Event, EventListener};
-pub use rx::Receiver;
+pub use waiting_receiver::WaitingReceiver;
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
-use crate::inbox::waiting_receiver::{FulfillHandle, WaitingReceiver};
+use crate::inbox::waiting_receiver::FulfillHandle;
 use crate::{Actor, Error};
 
 type Spinlock<T> = spin::Mutex<T>;
@@ -28,11 +27,11 @@ pub type BroadcastQueue<A> =
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
-pub fn new<A>(capacity: Option<usize>) -> (ChanPtr<A, TxStrong>, Receiver<A>) {
+pub fn new<A>(capacity: Option<usize>) -> (ChanPtr<A, TxStrong>, ChanPtr<A, Rx>) {
     let inner = Arc::new(Chan::new(capacity));
 
     let tx = ChanPtr::<A, TxStrong>::new(inner.clone());
-    let rx = Receiver::new(inner);
+    let rx = ChanPtr::<A, Rx>::new(inner);
 
     (tx, rx)
 }
@@ -91,7 +90,7 @@ impl<A> Chan<A> {
     }
 
     /// Creates a new broadcast mailbox on this channel.
-    fn new_broadcast_mailbox(&self) -> Arc<BroadcastQueue<A>> {
+    pub fn new_broadcast_mailbox(&self) -> Arc<BroadcastQueue<A>> {
         let mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
         self.chan
             .lock()
@@ -155,7 +154,7 @@ impl<A> Chan<A> {
         Ok(result)
     }
 
-    fn try_recv(
+    pub fn try_recv(
         &self,
         broadcast_mailbox: &BroadcastQueue<A>,
     ) -> Result<ActorMessage<A>, WaitingReceiver<A>> {
@@ -292,7 +291,7 @@ impl<A> Chan<A> {
     /// given message so it does not get lost.
     ///
     /// Note that the ordering of messages in the queues may be slightly off with this function.
-    fn requeue_message(&self, msg: Box<dyn MessageEnvelope<Actor = A>>) {
+    pub fn requeue_message(&self, msg: Box<dyn MessageEnvelope<Actor = A>>) {
         let mut inner = match self.chan.lock() {
             Ok(lock) => lock,
             Err(_) => return, // If we can't lock the inner channel, there is nothing we can do.
