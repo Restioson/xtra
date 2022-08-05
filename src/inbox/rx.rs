@@ -8,7 +8,7 @@ use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use crate::envelope::BroadcastEnvelope;
-use crate::inbox::chan_ptr::{ChanPtr, RefCountPolicy, Rx};
+use crate::inbox::chan_ptr::{ChanPtr, Rx};
 use crate::inbox::chan_ptr::{TxStrong, TxWeak};
 use crate::inbox::waiting_receiver::WaitingReceiver;
 use crate::inbox::{ActorMessage, BroadcastQueue, Chan};

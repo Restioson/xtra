@@ -3,7 +3,6 @@ use std::task::{Context, Poll};
 use futures_util::FutureExt;
 
 use crate::envelope::MessageEnvelope;
-use crate::inbox::chan_ptr::RefCountPolicy;
 use crate::inbox::rx::Receiver;
 use crate::inbox::ActorMessage;
 

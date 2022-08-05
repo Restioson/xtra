@@ -13,7 +13,6 @@ use futures_util::FutureExt;
 use crate::envelope::{Shutdown, Span};
 use crate::inbox::rx::ReceiveFuture as InboxReceiveFuture;
 use crate::inbox::ActorMessage;
-use crate::inbox::Rx;
 use crate::{inbox, Actor, Address, Error, WeakAddress};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
