@@ -42,6 +42,35 @@ pub mod refcount {
     pub use crate::inbox::tx::TxWeak as Weak;
 }
 
+/// Provides a default implementation of the [`Actor`] trait for the given type with a [`Stop`](Actor::Stop) type of `()` and empty lifecycle functions.
+///
+/// The [`Actor`] custom derive takes away some boilerplate for a standard actor:
+///
+/// ```rust
+/// #[derive(xtra::Actor)]
+/// pub struct MyActor;
+/// #
+/// # fn assert_actor<T: xtra::Actor>() { }
+/// #
+/// # fn main() {
+/// #    assert_actor::<MyActor>()
+/// # }
+/// ```
+/// This macro will generate the following [`Actor`] implementation:
+///
+/// ```rust,no_run
+/// # use xtra::prelude::*;
+/// pub struct MyActor;
+///
+/// #[async_trait]
+/// impl xtra::Actor for MyActor {
+///     type Stop = ();
+///
+///     async fn stopped(self) { }
+/// }
+/// ```
+///
+/// Please note that implementing the [`Actor`] trait is still very easy and this macro purposely does not support a plethora of usecases but is meant to handle the most common ones.
 #[cfg(feature = "macros")]
 pub use macros::Actor;
 
