@@ -10,4 +10,4 @@ publish = false
 xtra = { path = "../", features = ["macros"] }
 
 [dev-dependencies]
-trybuild = "1"
+trybuild = "1.0.64"
