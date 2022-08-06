@@ -6,13 +6,13 @@ use syn::{parse_quote, DeriveInput, GenericParam, WherePredicate};
 pub fn actor_derive(input: TokenStream) -> TokenStream {
     let derive_input = syn::parse::<DeriveInput>(input).expect("macro to be used as custom-derive");
 
-    let send_and_static_bound = send_and_static_bounds(&derive_input);
+    let send_and_static_bounds = send_and_static_bounds(&derive_input);
     let actor_ident = derive_input.ident;
     let (impl_generics, type_generics, where_clause) = derive_input.generics.split_for_impl();
     let where_clause = match where_clause.cloned() {
-        None => parse_quote! { where #(#send_and_static_bound),* },
+        None => parse_quote! { where #(#send_and_static_bounds),* },
         Some(mut existing) => {
-            existing.predicates.extend(send_and_static_bound);
+            existing.predicates.extend(send_and_static_bounds);
 
             existing
         }
