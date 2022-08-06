@@ -42,6 +42,9 @@ pub mod refcount {
     pub use crate::inbox::tx::TxWeak as Weak;
 }
 
+#[cfg(feature = "macros")]
+pub use macros::Actor;
+
 /// Defines that an [`Actor`] can handle a given message `M`.
 ///
 /// This is an [`async_trait`](https://docs.rs/async-trait), so implementations should
