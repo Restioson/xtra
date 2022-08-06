@@ -71,6 +71,7 @@ pub mod refcount {
 /// ```
 ///
 /// Please note that implementing the [`Actor`] trait is still very easy and this macro purposely does not support a plethora of usecases but is meant to handle the most common ones.
+/// For example, whilst it does support actors with type parameters, lifetimes are entirely unsupported.
 #[cfg(feature = "macros")]
 pub use macros::Actor;
 
