@@ -327,7 +327,7 @@ impl<A> ChanInner<A> {
             .capacity
             .map_or(false, |cap| cap == self.priority_queue.len())
         {
-            match self.try_fulfill_sender(MessageType::Priority) {
+            match self.try_fulfill_sender_priority() {
                 Some(SentMessage::ToOneActor(msg)) => self.priority_queue.push(ByPriority(msg)),
                 Some(_) => unreachable!(),
                 None => {}
@@ -343,7 +343,7 @@ impl<A> ChanInner<A> {
             .capacity
             .map_or(false, |cap| cap == self.ordered_queue.len())
         {
-            match self.try_fulfill_sender(MessageType::Ordered) {
+            match self.try_fulfill_sender_ordered() {
                 Some(SentMessage::ToOneActor(msg)) => self.ordered_queue.push_back(msg),
                 Some(_) => unreachable!(),
                 None => {}
@@ -365,7 +365,7 @@ impl<A> ChanInner<A> {
 
             // If len < cap, try fulfill a waiting sender
             if self.capacity.map_or(false, |cap| self.broadcast_tail < cap) {
-                match self.try_fulfill_sender(MessageType::Broadcast) {
+                match self.try_fulfill_sender_broadcast() {
                     Some(SentMessage::ToAllActors(m)) => self.send_broadcast(m),
                     Some(_) => unreachable!(),
                     None => {}
@@ -418,39 +418,67 @@ impl<A> ChanInner<A> {
         Err(msg)
     }
 
-    fn try_fulfill_sender(&mut self, for_type: MessageType) -> Option<SentMessage<A>> {
+    fn try_fulfill_sender_ordered(&mut self) -> Option<SentMessage<A>> {
         self.waiting_senders
             .retain(|tx| Weak::strong_count(tx) != 0);
 
         loop {
-            let pos = if for_type == MessageType::Ordered {
-                self.waiting_senders
-                    .iter()
-                    .position(|tx| match tx.upgrade() {
-                        Some(tx) => matches!(tx.lock().peek(), SentMessage::ToOneActor(m) if m.priority() == Priority::default()),
-                        None => false,
-                    })?
-            } else {
-                self.waiting_senders
-                    .iter()
-                    .enumerate()
-                    .max_by_key(|(_idx, tx)| match tx.upgrade() {
-                        Some(tx) => match tx.lock().peek() {
-                            SentMessage::ToOneActor(m)
-                                if for_type == MessageType::Priority
-                                    && m.priority() > Priority::default() =>
-                            {
-                                Some(m.priority())
-                            }
-                            SentMessage::ToAllActors(m) if for_type == MessageType::Broadcast => {
-                                Some(m.priority())
-                            }
-                            _ => None,
-                        },
-                        None => None,
-                    })?
-                    .0
-            };
+            let pos = self.waiting_senders
+                .iter()
+                .position(|tx| match tx.upgrade() {
+                    Some(tx) => matches!(tx.lock().peek(), SentMessage::ToOneActor(m) if m.priority() == Priority::default()),
+                    None => false,
+                })?;
+
+            if let Some(tx) = self.waiting_senders.remove(pos).unwrap().upgrade() {
+                return Some(tx.lock().fulfill());
+            }
+        }
+    }
+
+    fn try_fulfill_sender_priority(&mut self) -> Option<SentMessage<A>> {
+        self.waiting_senders
+            .retain(|tx| Weak::strong_count(tx) != 0);
+
+        loop {
+            let pos = self
+                .waiting_senders
+                .iter()
+                .enumerate()
+                .max_by_key(|(_idx, tx)| match tx.upgrade() {
+                    Some(tx) => match tx.lock().peek() {
+                        SentMessage::ToOneActor(m) if m.priority() > Priority::default() => {
+                            Some(m.priority())
+                        }
+                        _ => None,
+                    },
+                    None => None,
+                })?
+                .0;
+
+            if let Some(tx) = self.waiting_senders.remove(pos).unwrap().upgrade() {
+                return Some(tx.lock().fulfill());
+            }
+        }
+    }
+
+    fn try_fulfill_sender_broadcast(&mut self) -> Option<SentMessage<A>> {
+        self.waiting_senders
+            .retain(|tx| Weak::strong_count(tx) != 0);
+
+        loop {
+            let pos = self
+                .waiting_senders
+                .iter()
+                .enumerate()
+                .max_by_key(|(_idx, tx)| match tx.upgrade() {
+                    Some(tx) => match tx.lock().peek() {
+                        SentMessage::ToAllActors(m) => Some(m.priority()),
+                        _ => None,
+                    },
+                    None => None,
+                })?
+                .0;
 
             if let Some(tx) = self.waiting_senders.remove(pos).unwrap().upgrade() {
                 return Some(tx.lock().fulfill());
@@ -472,13 +500,6 @@ impl<A> ChanInner<A> {
         self.capacity
             .map_or(false, |cap| self.priority_queue.len() >= cap)
     }
-}
-
-#[derive(Eq, PartialEq)]
-enum MessageType {
-    Broadcast,
-    Ordered,
-    Priority,
 }
 
 pub enum SentMessage<A> {
