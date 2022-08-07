@@ -168,7 +168,7 @@ enum Sending<A, Rc: RefCounter> {
         msg: SentMessage<A>,
         sender: inbox::Sender<A, Rc>,
     },
-    WaitingToSend(Arc<spin::Mutex<WaitingSender<A>>>),
+    WaitingToSend(Arc<spin::Mutex<WaitingSender<SentMessage<A>>>>),
     Done,
 }
 

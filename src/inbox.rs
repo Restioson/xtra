@@ -301,7 +301,7 @@ impl<A> Chan<A> {
 struct ChanInner<A> {
     capacity: Option<usize>,
     ordered_queue: VecDeque<Box<dyn MessageEnvelope<Actor = A>>>,
-    waiting_senders: VecDeque<Weak<Spinlock<WaitingSender<A>>>>,
+    waiting_senders: VecDeque<Weak<Spinlock<WaitingSender<SentMessage<A>>>>>,
     waiting_receivers_handles: VecDeque<FulfillHandle<A>>,
     priority_queue: BinaryHeap<ByPriority<Box<dyn MessageEnvelope<Actor = A>>>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
@@ -493,7 +493,7 @@ impl<A> From<Box<dyn MessageEnvelope<Actor = A>>> for SentMessage<A> {
 }
 
 /// An error returned in case the mailbox of an actor is full.
-pub struct MailboxFull<A>(pub Arc<Spinlock<WaitingSender<A>>>);
+pub struct MailboxFull<A>(pub Arc<Spinlock<WaitingSender<SentMessage<A>>>>);
 
 pub enum ActorMessage<A> {
     ToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
@@ -513,17 +513,14 @@ impl<A> From<Arc<dyn BroadcastEnvelope<Actor = A>>> for ActorMessage<A> {
     }
 }
 
-pub enum WaitingSender<A> {
-    Active {
-        waker: Option<Waker>,
-        message: SentMessage<A>,
-    },
+pub enum WaitingSender<M> {
+    Active { waker: Option<Waker>, message: M },
     Delivered,
     Closed,
 }
 
-impl<A> WaitingSender<A> {
-    pub fn new(message: SentMessage<A>) -> Arc<Spinlock<Self>> {
+impl<M> WaitingSender<M> {
+    pub fn new(message: M) -> Arc<Spinlock<Self>> {
         let sender = WaitingSender::Active {
             waker: None,
             message,
@@ -531,14 +528,14 @@ impl<A> WaitingSender<A> {
         Arc::new(Spinlock::new(sender))
     }
 
-    pub fn peek(&self) -> &SentMessage<A> {
+    pub fn peek(&self) -> &M {
         match self {
             WaitingSender::Active { message, .. } => message,
             _ => panic!("WaitingSender should have message"),
         }
     }
 
-    pub fn fulfill(&mut self) -> SentMessage<A> {
+    pub fn fulfill(&mut self) -> M {
         match mem::replace(self, Self::Delivered) {
             WaitingSender::Active { mut waker, message } => {
                 if let Some(waker) = waker.take() {
@@ -566,7 +563,10 @@ impl<A> WaitingSender<A> {
     }
 }
 
-impl<A> Future for WaitingSender<A> {
+impl<M> Future for WaitingSender<M>
+where
+    M: Unpin,
+{
     type Output = Result<(), Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
