@@ -82,9 +82,16 @@ impl<A> Chan<A> {
         mailbox
     }
 
-    pub fn try_send(
+    pub fn try_send(&self, message: SentMessage<A>) -> Result<Result<(), MailboxFull<A>>, Error> {
+        match message {
+            SentMessage::ToOneActor(to_one) => self.try_send_to_one(to_one),
+            SentMessage::ToAllActors(to_all) => self.try_send_to_all(to_all),
+        }
+    }
+
+    fn try_send_to_one(
         &self,
-        mut message: SentMessage<A>,
+        mut message: Box<dyn MessageEnvelope<Actor = A>>,
     ) -> Result<Result<(), MailboxFull<A>>, Error> {
         if !self.is_connected() {
             return Err(Error::Disconnected);
@@ -94,45 +101,54 @@ impl<A> Chan<A> {
 
         let mut inner = self.chan.lock().unwrap();
 
-        let result = match message {
-            SentMessage::ToAllActors(m) => {
-                if inner.is_broadcast_full() {
-                    let waiting = WaitingSender::new(SentMessage::ToAllActors(m));
-                    inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+        let unfulfilled_msg = if let Err(msg) = inner.try_fulfill_receiver(message) {
+            msg
+        } else {
+            return Ok(Ok(()));
+        };
 
-                    return Ok(Err(MailboxFull(waiting)));
-                }
-
-                inner.send_broadcast(m);
-                Ok(())
+        match unfulfilled_msg {
+            m if m.priority() == Priority::default() && !inner.is_ordered_full() => {
+                inner.ordered_queue.push_back(m);
             }
-            SentMessage::ToOneActor(msg) => {
-                let unfulfilled_msg = if let Err(msg) = inner.try_fulfill_receiver(msg) {
-                    msg
-                } else {
-                    return Ok(Ok(()));
-                };
+            m if m.priority() != Priority::default() && !inner.is_priority_full() => {
+                inner.priority_queue.push(ByPriority(m));
+            }
+            _ => {
+                let waiting = WaitingSender::new(SentMessage::ToOneActor(unfulfilled_msg));
+                inner.waiting_senders.push_back(Arc::downgrade(&waiting));
 
-                match unfulfilled_msg {
-                    m if m.priority() == Priority::default() && !inner.is_ordered_full() => {
-                        inner.ordered_queue.push_back(m);
-                    }
-                    m if m.priority() != Priority::default() && !inner.is_priority_full() => {
-                        inner.priority_queue.push(ByPriority(m));
-                    }
-                    _ => {
-                        let waiting = WaitingSender::new(SentMessage::ToOneActor(unfulfilled_msg));
-                        inner.waiting_senders.push_back(Arc::downgrade(&waiting));
-
-                        return Ok(Err(MailboxFull(waiting)));
-                    }
-                };
-
-                Ok(())
+                return Ok(Err(MailboxFull(waiting)));
             }
         };
 
-        Ok(result)
+        Ok(Ok(()))
+    }
+
+    fn try_send_to_all(
+        &self,
+        mut message: Arc<dyn BroadcastEnvelope<Actor = A>>,
+    ) -> Result<Result<(), MailboxFull<A>>, Error> {
+        if !self.is_connected() {
+            return Err(Error::Disconnected);
+        }
+
+        Arc::get_mut(&mut message)
+            .expect("calling after try_send not supported")
+            .start_span();
+
+        let mut inner = self.chan.lock().unwrap();
+
+        if inner.is_broadcast_full() {
+            let waiting = WaitingSender::new(SentMessage::ToAllActors(message));
+            inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+
+            return Ok(Err(MailboxFull(waiting)));
+        }
+
+        inner.send_broadcast(message);
+
+        Ok(Ok(()))
     }
 
     fn try_recv(
@@ -475,22 +491,6 @@ enum MessageType {
 pub enum SentMessage<A> {
     ToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
     ToAllActors(Arc<dyn BroadcastEnvelope<Actor = A>>),
-}
-
-impl<A> SentMessage<A> {
-    pub fn start_span(&mut self) {
-        #[cfg(feature = "instrumentation")]
-        match self {
-            SentMessage::ToOneActor(m) => {
-                m.start_span();
-            }
-            SentMessage::ToAllActors(m) => {
-                Arc::get_mut(m)
-                    .expect("calling after try_send not supported")
-                    .start_span();
-            }
-        };
-    }
 }
 
 impl<A> From<Box<dyn MessageEnvelope<Actor = A>>> for SentMessage<A> {
