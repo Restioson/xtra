@@ -183,12 +183,19 @@ where
 
         loop {
             match mem::replace(this, Sending::Done) {
-                Sending::New { msg, sender } => match sender.try_send(msg)? {
-                    Ok(()) => return Poll::Ready(Ok(())),
-                    Err(MailboxFull(waiting)) => {
-                        *this = Sending::WaitingToSend(waiting);
+                Sending::New { msg, sender } => {
+                    let result = match msg {
+                        SentMessage::ToOneActor(to_one) => sender.try_send_to_one(to_one)?,
+                        SentMessage::ToAllActors(to_all) => sender.try_send_to_all(to_all)?,
+                    };
+
+                    match result {
+                        Ok(()) => return Poll::Ready(Ok(())),
+                        Err(MailboxFull(waiting)) => {
+                            *this = Sending::WaitingToSend(waiting);
+                        }
                     }
-                },
+                }
                 Sending::WaitingToSend(waiting) => {
                     let poll = { waiting.lock().poll_unpin(cx) }?; // Scoped separately to drop mutex guard asap.
 

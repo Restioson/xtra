@@ -82,14 +82,7 @@ impl<A> Chan<A> {
         mailbox
     }
 
-    pub fn try_send(&self, message: SentMessage<A>) -> Result<Result<(), MailboxFull<A>>, Error> {
-        match message {
-            SentMessage::ToOneActor(to_one) => self.try_send_to_one(to_one),
-            SentMessage::ToAllActors(to_all) => self.try_send_to_all(to_all),
-        }
-    }
-
-    fn try_send_to_one(
+    pub fn try_send_to_one(
         &self,
         mut message: Box<dyn MessageEnvelope<Actor = A>>,
     ) -> Result<Result<(), MailboxFull<A>>, Error> {
@@ -125,7 +118,7 @@ impl<A> Chan<A> {
         Ok(Ok(()))
     }
 
-    fn try_send_to_all(
+    pub fn try_send_to_all(
         &self,
         mut message: Arc<dyn BroadcastEnvelope<Actor = A>>,
     ) -> Result<Result<(), MailboxFull<A>>, Error> {
