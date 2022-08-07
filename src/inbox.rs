@@ -326,9 +326,8 @@ impl<A> ChanInner<A> {
             .capacity
             .map_or(false, |cap| cap == self.priority_queue.len())
         {
-            match self.try_fulfill_sender_priority() {
-                Some(msg) => self.priority_queue.push(ByPriority(msg)),
-                None => {}
+            if let Some(msg) = self.try_fulfill_sender_priority() {
+                self.priority_queue.push(ByPriority(msg))
             }
         }
 
@@ -341,9 +340,8 @@ impl<A> ChanInner<A> {
             .capacity
             .map_or(false, |cap| cap == self.ordered_queue.len())
         {
-            match self.try_fulfill_sender_ordered() {
-                Some(msg) => self.ordered_queue.push_back(msg),
-                None => {}
+            if let Some(msg) = self.try_fulfill_sender_ordered() {
+                self.ordered_queue.push_back(msg)
             }
         }
 
@@ -362,9 +360,8 @@ impl<A> ChanInner<A> {
 
             // If len < cap, try fulfill a waiting sender
             if self.capacity.map_or(false, |cap| self.broadcast_tail < cap) {
-                match self.try_fulfill_sender_broadcast() {
-                    Some(m) => self.send_broadcast(m),
-                    None => {}
+                if let Some(m) = self.try_fulfill_sender_broadcast() {
+                    self.send_broadcast(m)
                 }
             }
         }
