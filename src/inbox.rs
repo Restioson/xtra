@@ -85,7 +85,7 @@ impl<A> Chan<A> {
     pub fn try_send_to_one(
         &self,
         mut message: Box<dyn MessageEnvelope<Actor = A>>,
-    ) -> Result<Result<(), MailboxFull<A>>, Error> {
+    ) -> Result<Result<(), MailboxFull<Box<dyn MessageEnvelope<Actor = A>>>>, Error> {
         if !self.is_connected() {
             return Err(Error::Disconnected);
         }
@@ -108,8 +108,10 @@ impl<A> Chan<A> {
                 inner.priority_queue.push(ByPriority(m));
             }
             _ => {
-                let waiting = WaitingSender::new(SentMessage::ToOneActor(unfulfilled_msg));
-                inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+                let waiting = WaitingSender::new(unfulfilled_msg);
+                inner
+                    .waiting_send_to_one
+                    .push_back(Arc::downgrade(&waiting));
 
                 return Ok(Err(MailboxFull(waiting)));
             }
@@ -121,7 +123,7 @@ impl<A> Chan<A> {
     pub fn try_send_to_all(
         &self,
         mut message: Arc<dyn BroadcastEnvelope<Actor = A>>,
-    ) -> Result<Result<(), MailboxFull<A>>, Error> {
+    ) -> Result<Result<(), MailboxFull<Arc<dyn BroadcastEnvelope<Actor = A>>>>, Error> {
         if !self.is_connected() {
             return Err(Error::Disconnected);
         }
@@ -133,8 +135,10 @@ impl<A> Chan<A> {
         let mut inner = self.chan.lock().unwrap();
 
         if inner.is_broadcast_full() {
-            let waiting = WaitingSender::new(SentMessage::ToAllActors(message));
-            inner.waiting_senders.push_back(Arc::downgrade(&waiting));
+            let waiting = WaitingSender::new(message);
+            inner
+                .waiting_send_to_all
+                .push_back(Arc::downgrade(&waiting));
 
             return Ok(Err(MailboxFull(waiting)));
         }
@@ -235,7 +239,7 @@ impl<A> Chan<A> {
 
     /// Shutdown all [`WaitingSender`]s in this channel.
     fn shutdown_waiting_senders(&self) {
-        let waiting_tx = {
+        let (waiting_send_to_one, waiting_send_to_all) = {
             let mut inner = match self.chan.lock() {
                 Ok(lock) => lock,
                 Err(_) => return, // Poisoned, ignore
@@ -248,10 +252,17 @@ impl<A> Chan<A> {
             inner.priority_queue.clear();
             inner.broadcast_queues.clear();
 
-            mem::take(&mut inner.waiting_senders)
+            (
+                mem::take(&mut inner.waiting_send_to_one),
+                mem::take(&mut inner.waiting_send_to_all),
+            )
         };
 
-        for tx in waiting_tx.into_iter().flat_map(|w| w.upgrade()) {
+        for tx in waiting_send_to_one.into_iter().flat_map(|w| w.upgrade()) {
+            tx.lock().set_closed();
+        }
+
+        for tx in waiting_send_to_all.into_iter().flat_map(|w| w.upgrade()) {
             tx.lock().set_closed();
         }
     }
@@ -301,7 +312,10 @@ impl<A> Chan<A> {
 struct ChanInner<A> {
     capacity: Option<usize>,
     ordered_queue: VecDeque<Box<dyn MessageEnvelope<Actor = A>>>,
-    waiting_senders: VecDeque<Weak<Spinlock<WaitingSender<SentMessage<A>>>>>,
+    waiting_send_to_one:
+        VecDeque<Weak<Spinlock<WaitingSender<Box<dyn MessageEnvelope<Actor = A>>>>>>,
+    waiting_send_to_all:
+        VecDeque<Weak<Spinlock<WaitingSender<Arc<dyn BroadcastEnvelope<Actor = A>>>>>>,
     waiting_receivers_handles: VecDeque<FulfillHandle<A>>,
     priority_queue: BinaryHeap<ByPriority<Box<dyn MessageEnvelope<Actor = A>>>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
@@ -313,7 +327,8 @@ impl<A> ChanInner<A> {
         Self {
             capacity,
             ordered_queue: VecDeque::default(),
-            waiting_senders: VecDeque::default(),
+            waiting_send_to_one: VecDeque::default(),
+            waiting_send_to_all: VecDeque::default(),
             waiting_receivers_handles: VecDeque::default(),
             priority_queue: BinaryHeap::default(),
             broadcast_queues: Vec::default(),
@@ -328,8 +343,7 @@ impl<A> ChanInner<A> {
             .map_or(false, |cap| cap == self.priority_queue.len())
         {
             match self.try_fulfill_sender_priority() {
-                Some(SentMessage::ToOneActor(msg)) => self.priority_queue.push(ByPriority(msg)),
-                Some(_) => unreachable!(),
+                Some(msg) => self.priority_queue.push(ByPriority(msg)),
                 None => {}
             }
         }
@@ -344,8 +358,7 @@ impl<A> ChanInner<A> {
             .map_or(false, |cap| cap == self.ordered_queue.len())
         {
             match self.try_fulfill_sender_ordered() {
-                Some(SentMessage::ToOneActor(msg)) => self.ordered_queue.push_back(msg),
-                Some(_) => unreachable!(),
+                Some(msg) => self.ordered_queue.push_back(msg),
                 None => {}
             }
         }
@@ -366,8 +379,7 @@ impl<A> ChanInner<A> {
             // If len < cap, try fulfill a waiting sender
             if self.capacity.map_or(false, |cap| self.broadcast_tail < cap) {
                 match self.try_fulfill_sender_broadcast() {
-                    Some(SentMessage::ToAllActors(m)) => self.send_broadcast(m),
-                    Some(_) => unreachable!(),
+                    Some(m) => self.send_broadcast(m),
                     None => {}
                 }
             }
@@ -418,69 +430,64 @@ impl<A> ChanInner<A> {
         Err(msg)
     }
 
-    fn try_fulfill_sender_ordered(&mut self) -> Option<SentMessage<A>> {
-        self.waiting_senders
+    fn try_fulfill_sender_ordered(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+        self.waiting_send_to_one
             .retain(|tx| Weak::strong_count(tx) != 0);
 
         loop {
-            let pos = self.waiting_senders
+            let pos = self
+                .waiting_send_to_one
                 .iter()
                 .position(|tx| match tx.upgrade() {
-                    Some(tx) => matches!(tx.lock().peek(), SentMessage::ToOneActor(m) if m.priority() == Priority::default()),
+                    Some(tx) => {
+                        matches!(tx.lock().peek(), m if m.priority() == Priority::default())
+                    }
                     None => false,
                 })?;
 
-            if let Some(tx) = self.waiting_senders.remove(pos).unwrap().upgrade() {
+            if let Some(tx) = self.waiting_send_to_one.remove(pos).unwrap().upgrade() {
                 return Some(tx.lock().fulfill());
             }
         }
     }
 
-    fn try_fulfill_sender_priority(&mut self) -> Option<SentMessage<A>> {
-        self.waiting_senders
+    fn try_fulfill_sender_priority(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+        self.waiting_send_to_one
             .retain(|tx| Weak::strong_count(tx) != 0);
 
         loop {
             let pos = self
-                .waiting_senders
+                .waiting_send_to_one
                 .iter()
                 .enumerate()
                 .max_by_key(|(_idx, tx)| match tx.upgrade() {
                     Some(tx) => match tx.lock().peek() {
-                        SentMessage::ToOneActor(m) if m.priority() > Priority::default() => {
-                            Some(m.priority())
-                        }
+                        m if m.priority() > Priority::default() => Some(m.priority()),
                         _ => None,
                     },
                     None => None,
                 })?
                 .0;
 
-            if let Some(tx) = self.waiting_senders.remove(pos).unwrap().upgrade() {
+            if let Some(tx) = self.waiting_send_to_one.remove(pos).unwrap().upgrade() {
                 return Some(tx.lock().fulfill());
             }
         }
     }
 
-    fn try_fulfill_sender_broadcast(&mut self) -> Option<SentMessage<A>> {
-        self.waiting_senders
+    fn try_fulfill_sender_broadcast(&mut self) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
+        self.waiting_send_to_all
             .retain(|tx| Weak::strong_count(tx) != 0);
 
         loop {
             let pos = self
-                .waiting_senders
+                .waiting_send_to_all
                 .iter()
                 .enumerate()
-                .max_by_key(|(_idx, tx)| match tx.upgrade() {
-                    Some(tx) => match tx.lock().peek() {
-                        SentMessage::ToAllActors(m) => Some(m.priority()),
-                        _ => None,
-                    },
-                    None => None,
-                })?
+                .max_by_key(|(_idx, tx)| tx.upgrade().map(|tx| tx.lock().peek().priority()))?
                 .0;
 
-            if let Some(tx) = self.waiting_senders.remove(pos).unwrap().upgrade() {
+            if let Some(tx) = self.waiting_send_to_all.remove(pos).unwrap().upgrade() {
                 return Some(tx.lock().fulfill());
             }
         }
@@ -514,7 +521,7 @@ impl<A> From<Box<dyn MessageEnvelope<Actor = A>>> for SentMessage<A> {
 }
 
 /// An error returned in case the mailbox of an actor is full.
-pub struct MailboxFull<A>(pub Arc<Spinlock<WaitingSender<SentMessage<A>>>>);
+pub struct MailboxFull<M>(pub Arc<Spinlock<WaitingSender<M>>>);
 
 pub enum ActorMessage<A> {
     ToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
