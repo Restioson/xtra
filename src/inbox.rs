@@ -301,13 +301,15 @@ struct ChanInner<A> {
 
 impl<A> ChanInner<A> {
     fn new(capacity: Option<usize>) -> Self {
+        let pre_alloc_capacity = capacity.unwrap_or(0);
+
         Self {
             capacity,
-            ordered_queue: VecDeque::default(),
-            waiting_senders: VecDeque::default(),
-            waiting_receivers_handles: VecDeque::default(),
-            priority_queue: BinaryHeap::default(),
-            broadcast_queues: Vec::default(),
+            ordered_queue: VecDeque::with_capacity(pre_alloc_capacity),
+            waiting_senders: VecDeque::with_capacity(pre_alloc_capacity),
+            waiting_receivers_handles: VecDeque::with_capacity(pre_alloc_capacity),
+            priority_queue: BinaryHeap::with_capacity(pre_alloc_capacity),
+            broadcast_queues: Vec::with_capacity(pre_alloc_capacity),
             broadcast_tail: 0,
         }
     }
