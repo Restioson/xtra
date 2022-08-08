@@ -9,17 +9,17 @@ use crate::Error;
 
 pub struct WaitingSender<M>(Arc<spin::Mutex<Inner<M>>>);
 
-pub struct FulFillHandle<M>(Weak<spin::Mutex<Inner<M>>>);
+pub struct Handle<M>(Weak<spin::Mutex<Inner<M>>>);
 
 impl<M> WaitingSender<M> {
-    pub fn new(msg: M) -> (FulFillHandle<M>, WaitingSender<M>) {
+    pub fn new(msg: M) -> (Handle<M>, WaitingSender<M>) {
         let inner = Arc::new(spin::Mutex::new(Inner::new(msg)));
 
-        (FulFillHandle(Arc::downgrade(&inner)), WaitingSender(inner))
+        (Handle(Arc::downgrade(&inner)), WaitingSender(inner))
     }
 }
 
-impl<M> FulFillHandle<M> {
+impl<M> Handle<M> {
     pub fn is_active(&self) -> bool {
         Weak::strong_count(&self.0) > 0
     }
@@ -44,7 +44,7 @@ impl<M> FulFillHandle<M> {
     }
 }
 
-impl<M> Drop for FulFillHandle<M> {
+impl<M> Drop for Handle<M> {
     fn drop(&mut self) {
         if let Some(inner) = self.0.upgrade() {
             let mut this = inner.lock();
@@ -63,7 +63,7 @@ impl<M> Drop for FulFillHandle<M> {
     }
 }
 
-impl<M> FulFillHandle<M>
+impl<M> Handle<M>
 where
     M: HasPriority,
 {

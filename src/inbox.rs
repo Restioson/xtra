@@ -306,9 +306,9 @@ impl<A> TrySend<MessageToAll<A>> for Chan<A> {
 struct ChanInner<A> {
     capacity: Option<usize>,
     ordered_queue: VecDeque<MessageToOne<A>>,
-    waiting_send_to_one: VecDeque<waiting_sender::FulFillHandle<MessageToOne<A>>>,
-    waiting_send_to_all: VecDeque<waiting_sender::FulFillHandle<MessageToAll<A>>>,
-    waiting_receivers_handles: VecDeque<waiting_receiver::FulfillHandle<A>>,
+    waiting_send_to_one: VecDeque<waiting_sender::Handle<MessageToOne<A>>>,
+    waiting_send_to_all: VecDeque<waiting_sender::Handle<MessageToAll<A>>>,
+    waiting_receivers_handles: VecDeque<waiting_receiver::Handle<A>>,
     priority_queue: BinaryHeap<ByPriority<MessageToOne<A>>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
     broadcast_tail: usize,
@@ -460,8 +460,8 @@ impl<A> ChanInner<A> {
 }
 
 fn find_remove_highest_priority<M>(
-    queue: &mut VecDeque<waiting_sender::FulFillHandle<M>>,
-) -> Option<waiting_sender::FulFillHandle<M>>
+    queue: &mut VecDeque<waiting_sender::Handle<M>>,
+) -> Option<waiting_sender::Handle<M>>
 where
     M: HasPriority,
 {
@@ -477,8 +477,8 @@ where
 }
 
 fn find_remove_next_default_priority<M>(
-    queue: &mut VecDeque<waiting_sender::FulFillHandle<M>>,
-) -> Option<waiting_sender::FulFillHandle<M>>
+    queue: &mut VecDeque<waiting_sender::Handle<M>>,
+) -> Option<waiting_sender::Handle<M>>
 where
     M: HasPriority,
 {

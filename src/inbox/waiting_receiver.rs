@@ -14,9 +14,9 @@ pub struct WaitingReceiver<A>(catty::Receiver<CtrlMsg<A>>);
 ///
 /// It is stored internally in the channel and used by the channel implementation to notify a
 /// [`WaitingReceiver`] once a new message hits the mailbox.
-pub struct FulfillHandle<A>(catty::Sender<CtrlMsg<A>>);
+pub struct Handle<A>(catty::Sender<CtrlMsg<A>>);
 
-impl<A> FulfillHandle<A> {
+impl<A> Handle<A> {
     /// Notify the connected [`WaitingReceiver`] that the channel is shutting down.
     pub fn notify_channel_shutdown(self) {
         let _ = self.0.send(CtrlMsg::Shutdown);
@@ -48,10 +48,10 @@ impl<A> FulfillHandle<A> {
 }
 
 impl<A> WaitingReceiver<A> {
-    pub fn new() -> (WaitingReceiver<A>, FulfillHandle<A>) {
+    pub fn new() -> (WaitingReceiver<A>, Handle<A>) {
         let (sender, receiver) = catty::oneshot();
 
-        (WaitingReceiver(receiver), FulfillHandle(sender))
+        (WaitingReceiver(receiver), Handle(sender))
     }
 
     /// Cancel this [`WaitingReceiver`].
