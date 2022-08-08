@@ -41,11 +41,10 @@ impl<M> FulFillHandle<M> {
             }
         })
     }
+}
 
-    /// Mark this [`WaitingSender`] as closed.
-    ///
-    /// Should be called when the last [`Receiver`](crate::inbox::Receiver) goes away.
-    fn set_closed(&self) {
+impl<M> Drop for FulFillHandle<M> {
+    fn drop(&mut self) {
         if let Some(inner) = self.0.upgrade() {
             let mut this = inner.lock();
 
@@ -59,13 +58,7 @@ impl<M> FulFillHandle<M> {
                 Inner::Delivered => {}
                 Inner::Closed => {}
             }
-        }
-    }
-}
-
-impl<M> Drop for FulFillHandle<M> {
-    fn drop(&mut self) {
-        self.set_closed();
+        };
     }
 }
 
