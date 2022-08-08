@@ -418,15 +418,9 @@ impl<A> ChanInner<A> {
         self.waiting_send_to_one.retain(|handle| handle.is_active());
 
         loop {
-            let pos =
-                self.waiting_send_to_one
-                    .iter()
-                    .position(|handle| match handle.priority() {
-                        Some(p) => p == Priority::default(),
-                        None => false,
-                    })?;
-
-            if let Some(msg) = self.waiting_send_to_one.remove(pos).unwrap().fulfill() {
+            if let Some(msg) =
+                find_remove_next_default_priority(&mut self.waiting_send_to_one)?.fulfill()
+            {
                 return Some(msg);
             }
         }
@@ -436,17 +430,9 @@ impl<A> ChanInner<A> {
         self.waiting_send_to_one.retain(|handle| handle.is_active());
 
         loop {
-            let pos = self
-                .waiting_send_to_one
-                .iter()
-                .enumerate()
-                .max_by_key(|(_idx, handle)| match handle.priority() {
-                    Some(p) if p > Priority::default() => Some(p),
-                    _ => None,
-                })?
-                .0;
-
-            if let Some(msg) = self.waiting_send_to_one.remove(pos).unwrap().fulfill() {
+            if let Some(msg) =
+                find_remove_highest_priority(&mut self.waiting_send_to_one)?.fulfill()
+            {
                 return Some(msg);
             }
         }
@@ -456,14 +442,9 @@ impl<A> ChanInner<A> {
         self.waiting_send_to_all.retain(|handle| handle.is_active());
 
         loop {
-            let pos = self
-                .waiting_send_to_all
-                .iter()
-                .enumerate()
-                .max_by_key(|(_idx, handle)| handle.priority())?
-                .0;
-
-            if let Some(msg) = self.waiting_send_to_all.remove(pos).unwrap().fulfill() {
+            if let Some(msg) =
+                find_remove_highest_priority(&mut self.waiting_send_to_all)?.fulfill()
+            {
                 return Some(msg);
             }
         }
@@ -483,6 +464,35 @@ impl<A> ChanInner<A> {
         self.capacity
             .map_or(false, |cap| self.priority_queue.len() >= cap)
     }
+}
+
+fn find_remove_highest_priority<M>(
+    queue: &mut VecDeque<waiting_sender::FulFillHandle<M>>,
+) -> Option<waiting_sender::FulFillHandle<M>>
+where
+    M: HasPriority,
+{
+    let pos = queue
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, handle)| handle.priority())?
+        .0;
+
+    queue.remove(pos)
+}
+
+fn find_remove_next_default_priority<M>(
+    queue: &mut VecDeque<waiting_sender::FulFillHandle<M>>,
+) -> Option<waiting_sender::FulFillHandle<M>>
+where
+    M: HasPriority,
+{
+    let pos = queue.iter().position(|handle| match handle.priority() {
+        None => false,
+        Some(p) => p == Priority::default(),
+    })?;
+
+    queue.remove(pos)
 }
 
 pub enum SentMessage<A> {
