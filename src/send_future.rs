@@ -10,7 +10,7 @@ use futures_util::FutureExt;
 use crate::envelope::{
     BroadcastEnvelope, BroadcastEnvelopeConcrete, MessageEnvelope, ReturningEnvelope,
 };
-use crate::inbox::{MailboxFull, SentMessage, WaitingSender};
+use crate::inbox::{Chan, MailboxFull, TrySend, WaitingSender};
 use crate::refcount::RefCounter;
 use crate::{inbox, Error, Handler};
 
@@ -165,9 +165,9 @@ impl SendFuture<ActorErasedSending, Broadcast> {
 }
 
 /// The core state machine around sending a message to an actor's mailbox.
-enum Sending<A, Rc: RefCounter> {
+enum Sending<A, M, Rc: RefCounter> {
     New {
-        msg: SentMessage<A>,
+        msg: M,
         sender: inbox::Sender<A, Rc>,
     },
     WaitingToSendOne(WaitingSender<Box<dyn MessageEnvelope<Actor = A>>>),
@@ -175,9 +175,11 @@ enum Sending<A, Rc: RefCounter> {
     Done,
 }
 
-impl<A, Rc> Future for Sending<A, Rc>
+impl<A, M, Rc> Future for Sending<A, M, Rc>
 where
     Rc: RefCounter,
+    M: Unpin,
+    Chan<A>: TrySend<M>,
 {
     type Output = Result<(), Error>;
 
@@ -186,35 +188,16 @@ where
 
         loop {
             match mem::replace(this, Sending::Done) {
-                Sending::New { msg, sender } => {
-                    match msg {
-                        SentMessage::ToOneActor(to_one) => match sender.try_send_to_one(to_one)? {
-                            Ok(()) => return Poll::Ready(Ok(())),
-                            Err(MailboxFull(waiting)) => {
-                                *this = Sending::WaitingToSendOne(waiting);
-                            }
-                        },
-                        SentMessage::ToAllActors(to_all) => {
-                            match sender.try_send_to_all(to_all)? {
-                                Ok(()) => return Poll::Ready(Ok(())),
-                                Err(MailboxFull(waiting)) => {
-                                    *this = Sending::WaitingToSendAll(waiting);
-                                }
-                            }
-                        }
-                    };
-                }
-                Sending::WaitingToSendOne(mut waiting) => {
-                    return match waiting.poll_unpin(cx)? {
-                        Poll::Ready(()) => Poll::Ready(Ok(())),
-                        Poll::Pending => {
-                            *this = Sending::WaitingToSendOne(waiting);
-                            Poll::Pending
-                        }
-                    };
-                }
-                Sending::WaitingToSendAll(mut waiting) => {
-                    return match waiting.poll_unpin(cx)? {
+                Sending::New { msg, sender } => match sender.try_send(msg)? {
+                    Ok(()) => return Poll::Ready(Ok(())),
+                    Err(MailboxFull(waiting)) => {
+                        *this = Sending::WaitingToSend(waiting);
+                    }
+                },
+                Sending::WaitingToSend(waiting) => {
+                    let poll = { waiting.lock().poll_unpin(cx) }?; // Scoped separately to drop mutex guard asap.
+
+                    return match poll {
                         Poll::Ready(()) => Poll::Ready(Ok(())),
                         Poll::Pending => {
                             *this = Sending::WaitingToSendAll(waiting);
