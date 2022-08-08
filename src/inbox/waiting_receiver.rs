@@ -2,9 +2,8 @@ use std::task::{Context, Poll};
 
 use futures_util::FutureExt;
 
-use crate::envelope::MessageEnvelope;
 use crate::inbox::rx::Receiver;
-use crate::inbox::ActorMessage;
+use crate::inbox::{ActorMessage, MessageToOne};
 
 /// A [`WaitingReceiver`] is handed out by the channel any time [`Chan::try_recv`](crate::inbox::Chan::try_recv) is called on an empty mailbox.
 ///
@@ -38,10 +37,7 @@ impl<A> FulfillHandle<A> {
     ///
     /// This function will return the message in an `Err` if the [`WaitingReceiver`] has since called
     /// [`cancel`](WaitingReceiver::cancel) and is therefore unable to handle the message.
-    pub fn notify_new_message(
-        self,
-        msg: Box<dyn MessageEnvelope<Actor = A>>,
-    ) -> Result<(), Box<dyn MessageEnvelope<Actor = A>>> {
+    pub fn notify_new_message(self, msg: MessageToOne<A>) -> Result<(), MessageToOne<A>> {
         self.0
             .send(CtrlMsg::NewMessage(msg))
             .map_err(|reason| match reason {
@@ -65,7 +61,7 @@ impl<A> WaitingReceiver<A> {
     ///
     /// It is important to call this message over just dropping the [`WaitingReceiver`] as this
     /// message would otherwise be dropped.
-    pub fn cancel(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+    pub fn cancel(&mut self) -> Option<MessageToOne<A>> {
         match self.0.try_recv() {
             Ok(Some(CtrlMsg::NewMessage(msg))) => Some(msg),
             _ => None,
@@ -101,7 +97,7 @@ impl<A> WaitingReceiver<A> {
 }
 
 enum CtrlMsg<A> {
-    NewMessage(Box<dyn MessageEnvelope<Actor = A>>),
+    NewMessage(MessageToOne<A>),
     NewBroadcast,
     Shutdown,
 }

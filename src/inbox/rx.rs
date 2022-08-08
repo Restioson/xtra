@@ -7,10 +7,9 @@ use std::task::{Context, Poll};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
-use crate::envelope::BroadcastEnvelope;
 use crate::inbox::tx::{TxStrong, TxWeak};
 use crate::inbox::waiting_receiver::WaitingReceiver;
-use crate::inbox::{ActorMessage, BroadcastQueue, Chan, Sender};
+use crate::inbox::{ActorMessage, BroadcastQueue, Chan, MessageToAll, Sender};
 
 pub struct Receiver<A> {
     inner: Arc<Chan<A>>,
@@ -18,7 +17,7 @@ pub struct Receiver<A> {
 }
 
 impl<A> Receiver<A> {
-    pub fn next_broadcast_message(&self) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
+    pub fn next_broadcast_message(&self) -> Option<MessageToAll<A>> {
         self.inner
             .chan
             .lock()

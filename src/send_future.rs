@@ -7,10 +7,8 @@ use std::task::{Context, Poll};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
-use crate::envelope::{
-    BroadcastEnvelope, BroadcastEnvelopeConcrete, MessageEnvelope, ReturningEnvelope,
-};
-use crate::inbox::{Chan, MailboxFull, TrySend, WaitingSender};
+use crate::envelope::{BroadcastEnvelopeConcrete, ReturningEnvelope};
+use crate::inbox::{Chan, MailboxFull, MessageToAll, MessageToOne, TrySend, WaitingSender};
 use crate::refcount::RefCounter;
 use crate::{inbox, Error, Handler};
 
@@ -73,14 +71,10 @@ where
 }
 
 /// "Sending" state of [`SendFuture`] for cases where the actor type is named and we sent a single message.
-pub struct ActorNamedSending<A, Rc: RefCounter>(
-    Sending<A, Box<dyn MessageEnvelope<Actor = A>>, Rc>,
-);
+pub struct ActorNamedSending<A, Rc: RefCounter>(Sending<A, MessageToOne<A>, Rc>);
 
 /// "Sending" state of [`SendFuture`] for cases where the actor type is named and we broadcast a message.
-pub struct ActorNamedBroadcasting<A, Rc: RefCounter>(
-    Sending<A, Arc<dyn BroadcastEnvelope<Actor = A>>, Rc>,
-);
+pub struct ActorNamedBroadcasting<A, Rc: RefCounter>(Sending<A, MessageToAll<A>, Rc>);
 
 /// "Sending" state of [`SendFuture`] for cases where the actor type is erased.
 pub struct ActorErasedSending(Box<dyn private::ErasedSending>);
@@ -102,7 +96,7 @@ where
 
         Self {
             sending: ActorNamedSending(Sending::New {
-                msg: Box::new(envelope) as Box<dyn MessageEnvelope<Actor = A>>,
+                msg: Box::new(envelope) as MessageToOne<A>,
                 sender,
             }),
             state: ResolveToHandlerReturn::new(receiver),
@@ -122,7 +116,7 @@ impl<R> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
 
         Self {
             sending: ActorErasedSending(Box::new(Sending::New {
-                msg: Box::new(envelope) as Box<dyn MessageEnvelope<Actor = A>>,
+                msg: Box::new(envelope) as MessageToOne<A>,
                 sender,
             })),
             state: ResolveToHandlerReturn::new(receiver),
@@ -143,7 +137,7 @@ where
 
         Self {
             sending: ActorNamedBroadcasting(Sending::New {
-                msg: Arc::new(envelope) as Arc<dyn BroadcastEnvelope<Actor = A>>,
+                msg: Arc::new(envelope) as MessageToAll<A>,
                 sender,
             }),
             state: Broadcast(()),
@@ -163,7 +157,7 @@ impl SendFuture<ActorErasedSending, Broadcast> {
 
         Self {
             sending: ActorErasedSending(Box::new(Sending::New {
-                msg: Arc::new(envelope) as Arc<dyn BroadcastEnvelope<Actor = A>>,
+                msg: Arc::new(envelope) as MessageToAll<A>,
                 sender,
             })),
             state: Broadcast(()),
@@ -355,7 +349,7 @@ mod private {
         fn set_priority(&mut self, priority: u32);
     }
 
-    impl<A, Rc> SetPriority for Sending<A, Box<dyn MessageEnvelope<Actor = A>>, Rc>
+    impl<A, Rc> SetPriority for Sending<A, MessageToOne<A>, Rc>
     where
         Rc: RefCounter,
     {
@@ -367,7 +361,7 @@ mod private {
         }
     }
 
-    impl<A, Rc> SetPriority for Sending<A, Arc<dyn BroadcastEnvelope<Actor = A>>, Rc>
+    impl<A, Rc> SetPriority for Sending<A, MessageToAll<A>, Rc>
     where
         Rc: RefCounter,
     {

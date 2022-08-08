@@ -8,7 +8,7 @@ use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 
 use crate::context::Context;
-use crate::inbox::{HasPriority, Priority};
+use crate::inbox::{HasPriority, MessageToAll, MessageToOne, Priority};
 use crate::{Actor, Handler};
 
 /// A message envelope is a struct that encapsulates a message and its return channel sender (if applicable).
@@ -170,7 +170,7 @@ impl<A, M, R> HasPriority for ReturningEnvelope<A, M, R> {
     }
 }
 
-impl<A> HasPriority for Box<dyn MessageEnvelope<Actor = A>> {
+impl<A> HasPriority for MessageToOne<A> {
     fn priority(&self) -> Priority {
         self.as_ref().priority()
     }
@@ -236,7 +236,7 @@ pub trait BroadcastEnvelope: HasPriority + Send + Sync {
     ) -> (BoxFuture<'a, ControlFlow<()>>, Span);
 }
 
-impl<A> HasPriority for Arc<dyn BroadcastEnvelope<Actor = A>> {
+impl<A> HasPriority for MessageToAll<A> {
     fn priority(&self) -> Priority {
         self.as_ref().priority()
     }

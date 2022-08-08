@@ -22,7 +22,10 @@ use crate::inbox::tx::TxStrong;
 use crate::inbox::waiting_receiver::WaitingReceiver;
 use crate::{Actor, Error};
 
-type BroadcastQueue<A> = spin::Mutex<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelope<Actor = A>>>>>;
+pub type MessageToOne<A> = Box<dyn MessageEnvelope<Actor = A>>;
+pub type MessageToAll<A> = Arc<dyn BroadcastEnvelope<Actor = A>>;
+
+type BroadcastQueue<A> = spin::Mutex<BinaryHeap<ByPriority<MessageToAll<A>>>>;
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
@@ -213,7 +216,7 @@ impl<A> Chan<A> {
     /// given message so it does not get lost.
     ///
     /// Note that the ordering of messages in the queues may be slightly off with this function.
-    fn requeue_message(&self, msg: Box<dyn MessageEnvelope<Actor = A>>) {
+    fn requeue_message(&self, msg: MessageToOne<A>) {
         let mut inner = match self.chan.lock() {
             Ok(lock) => lock,
             Err(_) => return, // If we can't lock the inner channel, there is nothing we can do.
@@ -234,11 +237,11 @@ pub trait TrySend<M> {
     fn try_send(&self, message: M) -> Result<Result<(), MailboxFull<M>>, Error>;
 }
 
-impl<A> TrySend<Box<dyn MessageEnvelope<Actor = A>>> for Chan<A> {
+impl<A> TrySend<MessageToOne<A>> for Chan<A> {
     fn try_send(
         &self,
-        mut message: Box<dyn MessageEnvelope<Actor = A>>,
-    ) -> Result<Result<(), MailboxFull<Box<dyn MessageEnvelope<Actor = A>>>>, Error> {
+        mut message: MessageToOne<A>,
+    ) -> Result<Result<(), MailboxFull<MessageToOne<A>>>, Error> {
         if !self.is_connected() {
             return Err(Error::Disconnected);
         }
@@ -272,11 +275,11 @@ impl<A> TrySend<Box<dyn MessageEnvelope<Actor = A>>> for Chan<A> {
     }
 }
 
-impl<A> TrySend<Arc<dyn BroadcastEnvelope<Actor = A>>> for Chan<A> {
+impl<A> TrySend<MessageToAll<A>> for Chan<A> {
     fn try_send(
         &self,
-        mut message: Arc<dyn BroadcastEnvelope<Actor = A>>,
-    ) -> Result<Result<(), MailboxFull<Arc<dyn BroadcastEnvelope<Actor = A>>>>, Error> {
+        mut message: MessageToAll<A>,
+    ) -> Result<Result<(), MailboxFull<MessageToAll<A>>>, Error> {
         if !self.is_connected() {
             return Err(Error::Disconnected);
         }
@@ -302,13 +305,11 @@ impl<A> TrySend<Arc<dyn BroadcastEnvelope<Actor = A>>> for Chan<A> {
 
 struct ChanInner<A> {
     capacity: Option<usize>,
-    ordered_queue: VecDeque<Box<dyn MessageEnvelope<Actor = A>>>,
-    waiting_send_to_one:
-        VecDeque<waiting_sender::FulFillHandle<Box<dyn MessageEnvelope<Actor = A>>>>,
-    waiting_send_to_all:
-        VecDeque<waiting_sender::FulFillHandle<Arc<dyn BroadcastEnvelope<Actor = A>>>>,
+    ordered_queue: VecDeque<MessageToOne<A>>,
+    waiting_send_to_one: VecDeque<waiting_sender::FulFillHandle<MessageToOne<A>>>,
+    waiting_send_to_all: VecDeque<waiting_sender::FulFillHandle<MessageToAll<A>>>,
     waiting_receivers_handles: VecDeque<waiting_receiver::FulfillHandle<A>>,
-    priority_queue: BinaryHeap<ByPriority<Box<dyn MessageEnvelope<Actor = A>>>>,
+    priority_queue: BinaryHeap<ByPriority<MessageToOne<A>>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
     broadcast_tail: usize,
 }
@@ -327,7 +328,7 @@ impl<A> ChanInner<A> {
         }
     }
 
-    fn pop_priority(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+    fn pop_priority(&mut self) -> Option<MessageToOne<A>> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
         if self
             .capacity
@@ -341,7 +342,7 @@ impl<A> ChanInner<A> {
         Some(self.priority_queue.pop()?.0)
     }
 
-    fn pop_ordered(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+    fn pop_ordered(&mut self) -> Option<MessageToOne<A>> {
         // If len < cap after popping this message, try fulfill at most one waiting sender
         if self
             .capacity
@@ -355,10 +356,7 @@ impl<A> ChanInner<A> {
         self.ordered_queue.pop_front()
     }
 
-    fn pop_broadcast(
-        &mut self,
-        broadcast_mailbox: &BroadcastQueue<A>,
-    ) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
+    fn pop_broadcast(&mut self, broadcast_mailbox: &BroadcastQueue<A>) -> Option<MessageToAll<A>> {
         let message = broadcast_mailbox.lock().pop();
 
         // Advance the broadcast tail if we successfully took a message.
@@ -388,7 +386,7 @@ impl<A> ChanInner<A> {
         longest
     }
 
-    fn send_broadcast(&mut self, m: Arc<dyn BroadcastEnvelope<Actor = A>>) {
+    fn send_broadcast(&mut self, m: MessageToAll<A>) {
         self.broadcast_queues.retain(|queue| match queue.upgrade() {
             Some(q) => {
                 q.lock().push(ByPriority(m.clone()));
@@ -404,10 +402,7 @@ impl<A> ChanInner<A> {
         self.broadcast_tail += 1;
     }
 
-    fn try_fulfill_receiver(
-        &mut self,
-        mut msg: Box<dyn MessageEnvelope<Actor = A>>,
-    ) -> Result<(), Box<dyn MessageEnvelope<Actor = A>>> {
+    fn try_fulfill_receiver(&mut self, mut msg: MessageToOne<A>) -> Result<(), MessageToOne<A>> {
         while let Some(rx) = self.waiting_receivers_handles.pop_front() {
             match rx.notify_new_message(msg) {
                 Ok(()) => return Ok(()),
@@ -418,7 +413,7 @@ impl<A> ChanInner<A> {
         Err(msg)
     }
 
-    fn try_fulfill_sender_ordered(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+    fn try_fulfill_sender_ordered(&mut self) -> Option<MessageToOne<A>> {
         loop {
             if let Some(msg) =
                 find_remove_next_default_priority(&mut self.waiting_send_to_one)?.fulfill()
@@ -428,7 +423,7 @@ impl<A> ChanInner<A> {
         }
     }
 
-    fn try_fulfill_sender_priority(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+    fn try_fulfill_sender_priority(&mut self) -> Option<MessageToOne<A>> {
         loop {
             if let Some(msg) =
                 find_remove_highest_priority(&mut self.waiting_send_to_one)?.fulfill()
@@ -438,7 +433,7 @@ impl<A> ChanInner<A> {
         }
     }
 
-    fn try_fulfill_sender_broadcast(&mut self) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
+    fn try_fulfill_sender_broadcast(&mut self) -> Option<MessageToAll<A>> {
         loop {
             if let Some(msg) =
                 find_remove_highest_priority(&mut self.waiting_send_to_all)?.fulfill()
@@ -501,19 +496,19 @@ where
 pub struct MailboxFull<M>(pub WaitingSender<M>);
 
 pub enum ActorMessage<A> {
-    ToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
-    ToAllActors(Arc<dyn BroadcastEnvelope<Actor = A>>),
+    ToOneActor(MessageToOne<A>),
+    ToAllActors(MessageToAll<A>),
     Shutdown,
 }
 
-impl<A> From<Box<dyn MessageEnvelope<Actor = A>>> for ActorMessage<A> {
-    fn from(msg: Box<dyn MessageEnvelope<Actor = A>>) -> Self {
+impl<A> From<MessageToOne<A>> for ActorMessage<A> {
+    fn from(msg: MessageToOne<A>) -> Self {
         ActorMessage::ToOneActor(msg)
     }
 }
 
-impl<A> From<Arc<dyn BroadcastEnvelope<Actor = A>>> for ActorMessage<A> {
-    fn from(msg: Arc<dyn BroadcastEnvelope<Actor = A>>) -> Self {
+impl<A> From<MessageToAll<A>> for ActorMessage<A> {
+    fn from(msg: MessageToAll<A>) -> Self {
         ActorMessage::ToAllActors(msg)
     }
 }
