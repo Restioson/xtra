@@ -22,8 +22,7 @@ use crate::inbox::tx::TxStrong;
 use crate::inbox::waiting_receiver::WaitingReceiver;
 use crate::{Actor, Error};
 
-type Spinlock<T> = spin::Mutex<T>;
-type BroadcastQueue<A> = Spinlock<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelope<Actor = A>>>>>;
+type BroadcastQueue<A> = spin::Mutex<BinaryHeap<ByPriority<Arc<dyn BroadcastEnvelope<Actor = A>>>>>;
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
@@ -71,7 +70,7 @@ impl<A> Chan<A> {
 
     /// Creates a new broadcast mailbox on this channel.
     fn new_broadcast_mailbox(&self) -> Arc<BroadcastQueue<A>> {
-        let mailbox = Arc::new(Spinlock::new(BinaryHeap::new()));
+        let mailbox = Arc::new(spin::Mutex::new(BinaryHeap::new()));
         self.chan
             .lock()
             .unwrap()
