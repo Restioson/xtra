@@ -106,13 +106,13 @@ impl Handler<CreateInfoSpan> for Tracer {
 }
 
 #[derive(Debug)]
-pub struct MockWriter {
+struct MockWriter {
     buf: Arc<Mutex<Vec<u8>>>,
 }
 
 impl MockWriter {
     /// Create a new `MockWriter` that writes into the specified buffer (behind a mutex).
-    pub fn new(buf: Arc<Mutex<Vec<u8>>>) -> Self {
+    fn new(buf: Arc<Mutex<Vec<u8>>>) -> Self {
         Self { buf }
     }
 
@@ -154,7 +154,7 @@ impl MakeWriter<'_> for MockWriter {
 /// Return a new subscriber that writes to the specified [`MockWriter`].
 ///
 /// [`MockWriter`]: struct.MockWriter.html
-pub fn get_subscriber(mock_writer: MockWriter, env_filter: &str) -> Dispatch {
+fn get_subscriber(mock_writer: MockWriter, env_filter: &str) -> Dispatch {
     FmtSubscriber::builder()
         .with_env_filter(env_filter)
         .with_writer(mock_writer)
@@ -164,7 +164,7 @@ pub fn get_subscriber(mock_writer: MockWriter, env_filter: &str) -> Dispatch {
         .into()
 }
 
-pub fn with_logs<F>(buf: &Mutex<Vec<u8>>, f: F)
+fn with_logs<F>(buf: &Mutex<Vec<u8>>, f: F)
 where
     F: Fn(&[&str]),
 {
