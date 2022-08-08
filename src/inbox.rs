@@ -234,32 +234,21 @@ impl<A> Chan<A> {
 
     /// Shutdown all [`WaitingSender`]s in this channel.
     fn shutdown_waiting_senders(&self) {
-        let (waiting_send_to_one, waiting_send_to_all) = {
-            let mut inner = match self.chan.lock() {
-                Ok(lock) => lock,
-                Err(_) => return, // Poisoned, ignore
-            };
-
-            self.on_shutdown.notify(usize::MAX);
-
-            // Let any outstanding messages drop
-            inner.ordered_queue.clear();
-            inner.priority_queue.clear();
-            inner.broadcast_queues.clear();
-
-            (
-                mem::take(&mut inner.waiting_send_to_one),
-                mem::take(&mut inner.waiting_send_to_all),
-            )
+        let mut inner = match self.chan.lock() {
+            Ok(lock) => lock,
+            Err(_) => return, // Poisoned, ignore
         };
 
-        for tx in waiting_send_to_one {
-            tx.set_closed();
-        }
+        self.on_shutdown.notify(usize::MAX);
 
-        for tx in waiting_send_to_all {
-            tx.set_closed();
-        }
+        // Let any outstanding messages drop
+        inner.ordered_queue.clear();
+        inner.priority_queue.clear();
+        inner.broadcast_queues.clear();
+
+        // Close (and potentially wake) outstanding waiting senders
+        inner.waiting_send_to_one.clear();
+        inner.waiting_send_to_all.clear();
     }
 
     pub fn disconnect_listener(&self) -> Option<EventListener> {
