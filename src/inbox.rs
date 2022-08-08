@@ -415,8 +415,6 @@ impl<A> ChanInner<A> {
     }
 
     fn try_fulfill_sender_ordered(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
-        self.waiting_send_to_one.retain(|handle| handle.is_active());
-
         loop {
             if let Some(msg) =
                 find_remove_next_default_priority(&mut self.waiting_send_to_one)?.fulfill()
@@ -427,8 +425,6 @@ impl<A> ChanInner<A> {
     }
 
     fn try_fulfill_sender_priority(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
-        self.waiting_send_to_one.retain(|handle| handle.is_active());
-
         loop {
             if let Some(msg) =
                 find_remove_highest_priority(&mut self.waiting_send_to_one)?.fulfill()
@@ -439,8 +435,6 @@ impl<A> ChanInner<A> {
     }
 
     fn try_fulfill_sender_broadcast(&mut self) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
-        self.waiting_send_to_all.retain(|handle| handle.is_active());
-
         loop {
             if let Some(msg) =
                 find_remove_highest_priority(&mut self.waiting_send_to_all)?.fulfill()
@@ -472,6 +466,8 @@ fn find_remove_highest_priority<M>(
 where
     M: HasPriority,
 {
+    queue.retain(|handle| handle.is_active()); // Only process handles which are still active.
+
     let pos = queue
         .iter()
         .enumerate()
@@ -487,6 +483,8 @@ fn find_remove_next_default_priority<M>(
 where
     M: HasPriority,
 {
+    queue.retain(|handle| handle.is_active()); // Only process handles which are still active.
+
     let pos = queue.iter().position(|handle| match handle.priority() {
         None => false,
         Some(p) => p == Priority::default(),
