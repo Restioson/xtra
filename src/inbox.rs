@@ -262,10 +262,8 @@ impl<A> TrySend<Box<dyn MessageEnvelope<Actor = A>>> for Chan<A> {
                 inner.priority_queue.push(ByPriority(m));
             }
             _ => {
-                let waiting = WaitingSender::new(unfulfilled_msg);
-                inner
-                    .waiting_send_to_one
-                    .push_back(Arc::downgrade(&waiting));
+                let (handle, waiting) = WaitingSender::new(unfulfilled_msg);
+                inner.waiting_send_to_one.push_back(handle);
 
                 return Ok(Err(MailboxFull(waiting)));
             }
@@ -291,10 +289,8 @@ impl<A> TrySend<Arc<dyn BroadcastEnvelope<Actor = A>>> for Chan<A> {
         let mut inner = self.chan.lock().unwrap();
 
         if inner.is_broadcast_full() {
-            let waiting = WaitingSender::new(message);
-            inner
-                .waiting_send_to_all
-                .push_back(Arc::downgrade(&waiting));
+            let (handle, waiting) = WaitingSender::new(message);
+            inner.waiting_send_to_all.push_back(handle);
 
             return Ok(Err(MailboxFull(waiting)));
         }
@@ -500,17 +496,6 @@ where
     })?;
 
     queue.remove(pos)
-}
-
-pub enum SentMessage<A> {
-    ToOneActor(Box<dyn MessageEnvelope<Actor = A>>),
-    ToAllActors(Arc<dyn BroadcastEnvelope<Actor = A>>),
-}
-
-impl<A> From<Box<dyn MessageEnvelope<Actor = A>>> for SentMessage<A> {
-    fn from(msg: Box<dyn MessageEnvelope<Actor = A>>) -> Self {
-        SentMessage::ToOneActor(msg)
-    }
 }
 
 /// An error returned in case the mailbox of an actor is full.
