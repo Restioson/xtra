@@ -33,8 +33,7 @@ use xtra::prelude::*;
 
 #[tokio::test]
 async fn assert_send_is_child_of_span() {
-    let (buffer_writer, buf) = BufferWriter::new();
-    let subscriber = get_subscriber(buffer_writer, "instrumentation=trace,xtra=trace");
+    let (subscriber, buf) = get_subscriber("instrumentation=trace,xtra=trace");
     let _g = tracing::dispatcher::set_default(&subscriber);
 
     let addr = xtra::spawn_tokio(Tracer, None);
@@ -53,8 +52,7 @@ async fn assert_send_is_child_of_span() {
 
 #[tokio::test]
 async fn assert_handler_span_is_child_of_caller_span_with_min_level_info() {
-    let (buffer_writer, buf) = BufferWriter::new();
-    let subscriber = get_subscriber(buffer_writer, "instrumentation=info,xtra=info");
+    let (subscriber, buf) = get_subscriber("instrumentation=info,xtra=info");
     let _g = tracing::dispatcher::set_default(&subscriber);
 
     let addr = xtra::spawn_tokio(Tracer, None);
@@ -96,7 +94,7 @@ impl Handler<CreateInfoSpan> for Tracer {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct BufferWriter {
     buf: Buffer,
 }
@@ -125,13 +123,6 @@ impl fmt::Debug for Buffer {
 }
 
 impl BufferWriter {
-    /// Create a new [`BufferWriter`].
-    fn new() -> (Self, Buffer) {
-        let buf = Buffer::default();
-
-        (Self { buf: buf.clone() }, buf)
-    }
-
     /// Give access to the internal buffer (behind a `MutexGuard`).
     fn buf(&self) -> io::Result<MutexGuard<Vec<u8>>> {
         // Note: The `lock` will block. This would be a problem in production code,
@@ -170,13 +161,18 @@ impl MakeWriter<'_> for BufferWriter {
     }
 }
 
-/// Return a new subscriber that writes to the specified [`BufferWriter`]
-fn get_subscriber(writer: BufferWriter, env_filter: &str) -> Dispatch {
-    FmtSubscriber::builder()
+/// Return a new subscriber with the [`Buffer`] that all logs will be written to.
+fn get_subscriber(env_filter: &str) -> (Dispatch, Buffer) {
+    let writer = BufferWriter::default();
+    let buffer = writer.buf.clone();
+
+    let dispatch = FmtSubscriber::builder()
         .with_env_filter(env_filter)
         .with_writer(writer)
         .with_level(true)
         .with_ansi(false)
         .without_time()
-        .into()
+        .into();
+
+    (dispatch, buffer)
 }
