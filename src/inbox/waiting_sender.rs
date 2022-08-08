@@ -1,57 +1,75 @@
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Waker};
 
+use crate::inbox::{HasPriority, Priority};
 use crate::Error;
 
-pub enum WaitingSender<M> {
-    Active { waker: Option<Waker>, message: M },
-    Delivered,
-    Closed,
-}
+pub struct WaitingSender<M>(Arc<spin::Mutex<Inner<M>>>);
+
+pub struct FulFillHandle<M>(Weak<spin::Mutex<Inner<M>>>);
 
 impl<M> WaitingSender<M> {
-    pub fn new(message: M) -> Arc<spin::Mutex<Self>> {
-        let sender = WaitingSender::Active {
-            waker: None,
-            message,
-        };
-        Arc::new(spin::Mutex::new(sender))
+    pub fn new(msg: M) -> (FulFillHandle<M>, WaitingSender<M>) {
+        let inner = Arc::new(spin::Mutex::new(Inner::new(msg)));
+
+        (FulFillHandle(Arc::downgrade(&inner)), WaitingSender(inner))
+    }
+}
+
+impl<M> FulFillHandle<M> {
+    pub fn is_active(&self) -> bool {
+        Weak::strong_count(&self.0) > 0
     }
 
-    pub fn peek(&self) -> &M {
-        match self {
-            WaitingSender::Active { message, .. } => message,
-            _ => panic!("WaitingSender should have message"),
-        }
-    }
+    pub fn fulfill(&self) -> Option<M> {
+        let inner = self.0.upgrade()?;
+        let mut this = inner.lock();
 
-    pub fn fulfill(&mut self) -> M {
-        match mem::replace(self, Self::Delivered) {
-            WaitingSender::Active { mut waker, message } => {
+        Some(match mem::replace(&mut *this, Inner::Delivered) {
+            Inner::Active { mut waker, message } => {
                 if let Some(waker) = waker.take() {
                     waker.wake();
                 }
 
                 message
             }
-            WaitingSender::Delivered | WaitingSender::Closed => {
+            Inner::Delivered | Inner::Closed => {
                 panic!("WaitingSender is already fulfilled or closed")
             }
-        }
+        })
     }
 
     /// Mark this [`WaitingSender`] as closed.
     ///
     /// Should be called when the last [`Receiver`](crate::inbox::Receiver) goes away.
-    pub fn set_closed(&mut self) {
-        if let WaitingSender::Active {
-            waker: Some(waker), ..
-        } = mem::replace(self, Self::Closed)
-        {
-            waker.wake();
+    pub fn set_closed(&self) {
+        if let Some(inner) = self.0.upgrade() {
+            let mut this = inner.lock();
+
+            if let Inner::Active {
+                waker: Some(waker), ..
+            } = mem::replace(&mut *this, Inner::Closed)
+            {
+                waker.wake();
+            }
+        }
+    }
+}
+
+impl<M> FulFillHandle<M>
+where
+    M: HasPriority,
+{
+    pub fn priority(&self) -> Option<Priority> {
+        let inner = self.0.upgrade()?;
+        let this = inner.lock();
+
+        match &*this {
+            Inner::Active { message, .. } => Some(message.priority()),
+            Inner::Closed | Inner::Delivered => None,
         }
     }
 }
@@ -63,15 +81,30 @@ where
     type Output = Result<(), Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
+        let mut this = self.get_mut().0.lock();
 
-        match this {
-            WaitingSender::Active { waker, .. } => {
+        match &mut *this {
+            Inner::Active { waker, .. } => {
                 *waker = Some(cx.waker().clone());
                 Poll::Pending
             }
-            WaitingSender::Delivered => Poll::Ready(Ok(())),
-            WaitingSender::Closed => Poll::Ready(Err(Error::Disconnected)),
+            Inner::Delivered => Poll::Ready(Ok(())),
+            Inner::Closed => Poll::Ready(Err(Error::Disconnected)),
+        }
+    }
+}
+
+enum Inner<M> {
+    Active { waker: Option<Waker>, message: M },
+    Delivered,
+    Closed,
+}
+
+impl<M> Inner<M> {
+    fn new(message: M) -> Self {
+        Inner::Active {
+            waker: None,
+            message,
         }
     }
 }

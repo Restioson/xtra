@@ -170,8 +170,8 @@ enum Sending<A, Rc: RefCounter> {
         msg: SentMessage<A>,
         sender: inbox::Sender<A, Rc>,
     },
-    WaitingToSendOne(Arc<spin::Mutex<WaitingSender<Box<dyn MessageEnvelope<Actor = A>>>>>),
-    WaitingToSendAll(Arc<spin::Mutex<WaitingSender<Arc<dyn BroadcastEnvelope<Actor = A>>>>>),
+    WaitingToSendOne(WaitingSender<Box<dyn MessageEnvelope<Actor = A>>>),
+    WaitingToSendAll(WaitingSender<Arc<dyn BroadcastEnvelope<Actor = A>>>),
     Done,
 }
 
@@ -204,10 +204,8 @@ where
                         }
                     };
                 }
-                Sending::WaitingToSendOne(waiting) => {
-                    let poll = { waiting.lock().poll_unpin(cx) }?; // Scoped separately to drop mutex guard asap.
-
-                    return match poll {
+                Sending::WaitingToSendOne(mut waiting) => {
+                    return match waiting.poll_unpin(cx)? {
                         Poll::Ready(()) => Poll::Ready(Ok(())),
                         Poll::Pending => {
                             *this = Sending::WaitingToSendOne(waiting);
@@ -215,10 +213,8 @@ where
                         }
                     };
                 }
-                Sending::WaitingToSendAll(waiting) => {
-                    let poll = { waiting.lock().poll_unpin(cx) }?; // Scoped separately to drop mutex guard asap.
-
-                    return match poll {
+                Sending::WaitingToSendAll(mut waiting) => {
+                    return match waiting.poll_unpin(cx)? {
                         Poll::Ready(()) => Poll::Ready(Ok(())),
                         Poll::Pending => {
                             *this = Sending::WaitingToSendAll(waiting);
