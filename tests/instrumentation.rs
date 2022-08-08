@@ -23,8 +23,8 @@
 //! OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //! SOFTWARE.
 
-use std::io;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::{fmt, io};
 
 use tracing::{Dispatch, Instrument};
 use tracing_subscriber::fmt::MakeWriter;
@@ -33,8 +33,7 @@ use xtra::prelude::*;
 
 #[tokio::test]
 async fn assert_send_is_child_of_span() {
-    let buf = Arc::new(Mutex::new(vec![]));
-    let buffer_writer = BufferWriter::new(buf.clone());
+    let (buffer_writer, buf) = BufferWriter::new();
     let subscriber = get_subscriber(buffer_writer, "instrumentation=trace,xtra=trace");
     let _g = tracing::dispatcher::set_default(&subscriber);
 
@@ -44,20 +43,17 @@ async fn assert_send_is_child_of_span() {
         .instrument(tracing::info_span!("user_span"))
         .await;
 
-    with_logs(&buf, |lines: &[&str]| {
-        assert_eq!(
-            lines,
-            [" INFO user_span:xtra_actor_request\
+    assert_eq!(
+        buf,
+        [" INFO user_span:xtra_actor_request\
                 {actor_type=instrumentation::Tracer message_type=instrumentation::Hello}:\
                 xtra_message_handler: instrumentation: Hello world"]
-        );
-    });
+    );
 }
 
 #[tokio::test]
 async fn assert_handler_span_is_child_of_caller_span_with_min_level_info() {
-    let buf = Arc::new(Mutex::new(vec![]));
-    let buffer_writer = BufferWriter::new(buf.clone());
+    let (buffer_writer, buf) = BufferWriter::new();
     let subscriber = get_subscriber(buffer_writer, "instrumentation=info,xtra=info");
     let _g = tracing::dispatcher::set_default(&subscriber);
 
@@ -67,12 +63,7 @@ async fn assert_handler_span_is_child_of_caller_span_with_min_level_info() {
         .instrument(tracing::info_span!("sender_span"))
         .await;
 
-    with_logs(&buf, |lines: &[&str]| {
-        assert_eq!(
-            lines,
-            [" INFO sender_span:info_span: instrumentation: Test!"]
-        );
-    });
+    assert_eq!(buf, [" INFO sender_span:info_span: instrumentation: Test!"]);
 }
 
 struct Tracer;
@@ -107,13 +98,38 @@ impl Handler<CreateInfoSpan> for Tracer {
 
 #[derive(Debug)]
 struct BufferWriter {
-    buf: Arc<Mutex<Vec<u8>>>,
+    buf: Buffer,
+}
+
+#[derive(Default, Clone)]
+struct Buffer(Arc<Mutex<Vec<u8>>>);
+
+impl Buffer {
+    fn as_str(&self) -> String {
+        let buf = self.0.lock().unwrap().clone();
+
+        String::from_utf8(buf).expect("Logs contain invalid UTF8")
+    }
+}
+
+impl<const N: usize> PartialEq<[&str; N]> for Buffer {
+    fn eq(&self, other: &[&str; N]) -> bool {
+        self.as_str().lines().collect::<Vec<_>>().eq(other)
+    }
+}
+
+impl fmt::Debug for Buffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.as_str().lines().collect::<Vec<_>>().fmt(f)
+    }
 }
 
 impl BufferWriter {
-    /// Create a new `BufferWriter` that writes into the specified buffer (behind a mutex).
-    fn new(buf: Arc<Mutex<Vec<u8>>>) -> Self {
-        Self { buf }
+    /// Create a new [`BufferWriter`].
+    fn new() -> (Self, Buffer) {
+        let buf = Buffer::default();
+
+        (Self { buf: buf.clone() }, buf)
     }
 
     /// Give access to the internal buffer (behind a `MutexGuard`).
@@ -121,6 +137,7 @@ impl BufferWriter {
         // Note: The `lock` will block. This would be a problem in production code,
         // but is fine in tests.
         self.buf
+            .0
             .lock()
             .map_err(|_| io::Error::from(io::ErrorKind::Other))
     }
@@ -147,7 +164,9 @@ impl MakeWriter<'_> for BufferWriter {
     type Writer = Self;
 
     fn make_writer(&self) -> Self::Writer {
-        BufferWriter::new(self.buf.clone())
+        BufferWriter {
+            buf: self.buf.clone(),
+        }
     }
 }
 
@@ -160,16 +179,4 @@ fn get_subscriber(writer: BufferWriter, env_filter: &str) -> Dispatch {
         .with_ansi(false)
         .without_time()
         .into()
-}
-
-fn with_logs<F>(buf: &Mutex<Vec<u8>>, f: F)
-where
-    F: Fn(&[&str]),
-{
-    let buf = buf.lock().unwrap();
-    let logs: Vec<&str> = std::str::from_utf8(&buf)
-        .expect("Logs contain invalid UTF8")
-        .lines()
-        .collect();
-    f(&logs)
 }
