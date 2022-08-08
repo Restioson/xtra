@@ -24,10 +24,10 @@ impl<M> Handle<M> {
         Weak::strong_count(&self.0) > 0
     }
 
-    /// Fulfill the paired [`WaitingSender`] by taking out the waiting message.
+    /// Take the message out of the paired [`WaitingSender`].
     ///
-    /// This may return `None` in case the [`WaitingSender`] is no longer active or has already been closed or fulfill.
-    pub fn fulfill(self) -> Option<M> {
+    /// This may return `None` in case the [`WaitingSender`] is no longer active, has already been closed or the message was already taken.
+    pub fn take_message(self) -> Option<M> {
         let inner = self.0.upgrade()?;
         let mut this = inner.lock();
 

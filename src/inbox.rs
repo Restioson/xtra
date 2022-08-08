@@ -334,7 +334,7 @@ impl<A> ChanInner<A> {
             .capacity
             .map_or(false, |cap| cap == self.priority_queue.len())
         {
-            if let Some(msg) = self.try_fulfill_sender_priority() {
+            if let Some(msg) = self.try_take_waiting_priority_message() {
                 self.priority_queue.push(ByPriority(msg))
             }
         }
@@ -348,7 +348,7 @@ impl<A> ChanInner<A> {
             .capacity
             .map_or(false, |cap| cap == self.ordered_queue.len())
         {
-            if let Some(msg) = self.try_fulfill_sender_ordered() {
+            if let Some(msg) = self.try_take_waiting_ordered_message() {
                 self.ordered_queue.push_back(msg)
             }
         }
@@ -365,7 +365,7 @@ impl<A> ChanInner<A> {
 
             // If len < cap, try fulfill a waiting sender
             if self.capacity.map_or(false, |cap| self.broadcast_tail < cap) {
-                if let Some(m) = self.try_fulfill_sender_broadcast() {
+                if let Some(m) = self.try_take_waiting_broadcast_message() {
                     self.send_broadcast(m)
                 }
             }
@@ -413,30 +413,30 @@ impl<A> ChanInner<A> {
         Err(msg)
     }
 
-    fn try_fulfill_sender_ordered(&mut self) -> Option<MessageToOne<A>> {
+    fn try_take_waiting_ordered_message(&mut self) -> Option<MessageToOne<A>> {
         loop {
             if let Some(msg) =
-                find_remove_next_default_priority(&mut self.waiting_send_to_one)?.fulfill()
+                find_remove_next_default_priority(&mut self.waiting_send_to_one)?.take_message()
             {
                 return Some(msg);
             }
         }
     }
 
-    fn try_fulfill_sender_priority(&mut self) -> Option<MessageToOne<A>> {
+    fn try_take_waiting_priority_message(&mut self) -> Option<MessageToOne<A>> {
         loop {
             if let Some(msg) =
-                find_remove_highest_priority(&mut self.waiting_send_to_one)?.fulfill()
+                find_remove_highest_priority(&mut self.waiting_send_to_one)?.take_message()
             {
                 return Some(msg);
             }
         }
     }
 
-    fn try_fulfill_sender_broadcast(&mut self) -> Option<MessageToAll<A>> {
+    fn try_take_waiting_broadcast_message(&mut self) -> Option<MessageToAll<A>> {
         loop {
             if let Some(msg) =
-                find_remove_highest_priority(&mut self.waiting_send_to_all)?.fulfill()
+                find_remove_highest_priority(&mut self.waiting_send_to_all)?.take_message()
             {
                 return Some(msg);
             }
