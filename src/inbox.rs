@@ -20,7 +20,7 @@ pub use tx::Sender;
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
 use crate::inbox::tx::TxStrong;
-use crate::inbox::waiting_receiver::{FulfillHandle, WaitingReceiver};
+use crate::inbox::waiting_receiver::WaitingReceiver;
 use crate::{Actor, Error};
 
 type Spinlock<T> = spin::Mutex<T>;
@@ -316,7 +316,7 @@ struct ChanInner<A> {
         VecDeque<Weak<Spinlock<WaitingSender<Box<dyn MessageEnvelope<Actor = A>>>>>>,
     waiting_send_to_all:
         VecDeque<Weak<Spinlock<WaitingSender<Arc<dyn BroadcastEnvelope<Actor = A>>>>>>,
-    waiting_receivers_handles: VecDeque<FulfillHandle<A>>,
+    waiting_receivers_handles: VecDeque<waiting_receiver::FulfillHandle<A>>,
     priority_queue: BinaryHeap<ByPriority<Box<dyn MessageEnvelope<Actor = A>>>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
     broadcast_tail: usize,
