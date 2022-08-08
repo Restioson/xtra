@@ -24,22 +24,23 @@ impl<M> FulFillHandle<M> {
         Weak::strong_count(&self.0) > 0
     }
 
+    /// Fulfill the paired [`WaitingSender`] by taking out the waiting message.
+    ///
+    /// This may return `None` in case the [`WaitingSender`] is no longer active or has already been closed or fulfill.
     pub fn fulfill(self) -> Option<M> {
         let inner = self.0.upgrade()?;
         let mut this = inner.lock();
 
-        Some(match mem::replace(&mut *this, Inner::Delivered) {
+        match mem::replace(&mut *this, Inner::Delivered) {
             Inner::Active { mut waker, message } => {
                 if let Some(waker) = waker.take() {
                     waker.wake();
                 }
 
-                message
+                Some(message)
             }
-            Inner::Delivered | Inner::Closed => {
-                panic!("WaitingSender is already fulfilled or closed")
-            }
-        })
+            Inner::Delivered | Inner::Closed => None,
+        }
     }
 }
 
