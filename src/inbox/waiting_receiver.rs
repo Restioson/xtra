@@ -10,7 +10,7 @@ use crate::inbox::{ActorMessage, MessageToOne};
 /// [`WaitingReceiver`] implements [`Future`](std::future::Future) which will resolve once a message lands in the mailbox.
 pub struct WaitingReceiver<A>(catty::Receiver<CtrlMsg<A>>);
 
-/// A [`FulfillHandle`] is the counter-part to a [`WaitingReceiver`].
+/// A [`Handle`] is the counter-part to a [`WaitingReceiver`].
 ///
 /// It is stored internally in the channel and used by the channel implementation to notify a
 /// [`WaitingReceiver`] once a new message hits the mailbox.
