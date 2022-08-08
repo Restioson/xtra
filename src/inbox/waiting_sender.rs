@@ -24,7 +24,7 @@ impl<M> FulFillHandle<M> {
         Weak::strong_count(&self.0) > 0
     }
 
-    pub fn fulfill(&self) -> Option<M> {
+    pub fn fulfill(self) -> Option<M> {
         let inner = self.0.upgrade()?;
         let mut this = inner.lock();
 
