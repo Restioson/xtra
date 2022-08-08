@@ -34,8 +34,8 @@ use xtra::prelude::*;
 #[tokio::test]
 async fn assert_send_is_child_of_span() {
     let buf = Arc::new(Mutex::new(vec![]));
-    let mock_writer = MockWriter::new(buf.clone());
-    let subscriber = get_subscriber(mock_writer, "instrumentation=trace,xtra=trace");
+    let buffer_writer = BufferWriter::new(buf.clone());
+    let subscriber = get_subscriber(buffer_writer, "instrumentation=trace,xtra=trace");
     let _g = tracing::dispatcher::set_default(&subscriber);
 
     let addr = xtra::spawn_tokio(Tracer, None);
@@ -57,8 +57,8 @@ async fn assert_send_is_child_of_span() {
 #[tokio::test]
 async fn assert_handler_span_is_child_of_caller_span_with_min_level_info() {
     let buf = Arc::new(Mutex::new(vec![]));
-    let mock_writer = MockWriter::new(buf.clone());
-    let subscriber = get_subscriber(mock_writer, "instrumentation=info,xtra=info");
+    let buffer_writer = BufferWriter::new(buf.clone());
+    let subscriber = get_subscriber(buffer_writer, "instrumentation=info,xtra=info");
     let _g = tracing::dispatcher::set_default(&subscriber);
 
     let addr = xtra::spawn_tokio(Tracer, None);
@@ -106,12 +106,12 @@ impl Handler<CreateInfoSpan> for Tracer {
 }
 
 #[derive(Debug)]
-struct MockWriter {
+struct BufferWriter {
     buf: Arc<Mutex<Vec<u8>>>,
 }
 
-impl MockWriter {
-    /// Create a new `MockWriter` that writes into the specified buffer (behind a mutex).
+impl BufferWriter {
+    /// Create a new `BufferWriter` that writes into the specified buffer (behind a mutex).
     fn new(buf: Arc<Mutex<Vec<u8>>>) -> Self {
         Self { buf }
     }
@@ -126,7 +126,7 @@ impl MockWriter {
     }
 }
 
-impl io::Write for MockWriter {
+impl io::Write for BufferWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // Lock target buffer
         let mut target = self.buf()?;
@@ -143,21 +143,19 @@ impl io::Write for MockWriter {
     }
 }
 
-impl MakeWriter<'_> for MockWriter {
+impl MakeWriter<'_> for BufferWriter {
     type Writer = Self;
 
     fn make_writer(&self) -> Self::Writer {
-        MockWriter::new(self.buf.clone())
+        BufferWriter::new(self.buf.clone())
     }
 }
 
-/// Return a new subscriber that writes to the specified [`MockWriter`].
-///
-/// [`MockWriter`]: struct.MockWriter.html
-fn get_subscriber(mock_writer: MockWriter, env_filter: &str) -> Dispatch {
+/// Return a new subscriber that writes to the specified [`BufferWriter`]
+fn get_subscriber(writer: BufferWriter, env_filter: &str) -> Dispatch {
     FmtSubscriber::builder()
         .with_env_filter(env_filter)
-        .with_writer(mock_writer)
+        .with_writer(writer)
         .with_level(true)
         .with_ansi(false)
         .without_time()
