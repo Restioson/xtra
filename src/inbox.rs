@@ -352,7 +352,6 @@ impl<A> ChanInner<A> {
         Some(msg)
     }
 
-
     fn pop_broadcast(
         &mut self,
         broadcast_mailbox: &BroadcastQueue<A>,
