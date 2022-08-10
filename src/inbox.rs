@@ -328,50 +328,46 @@ impl<A> ChanInner<A> {
         }
     }
 
-    fn pop_priority(&mut self) -> Option<MessageToOne<A>> {
-        // If len < cap after popping this message, try fulfill at most one waiting sender
-        if self
-            .capacity
-            .map_or(false, |cap| cap == self.priority_queue.len())
-        {
+    fn pop_priority(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+        let msg = self.priority_queue.pop()?.0;
+
+        if !self.is_priority_full() {
             if let Some(msg) = self.try_take_waiting_priority_message() {
                 self.priority_queue.push(ByPriority(msg))
             }
         }
 
-        Some(self.priority_queue.pop()?.0)
+        Some(msg)
     }
 
-    fn pop_ordered(&mut self) -> Option<MessageToOne<A>> {
-        // If len < cap after popping this message, try fulfill at most one waiting sender
-        if self
-            .capacity
-            .map_or(false, |cap| cap == self.ordered_queue.len())
-        {
+    fn pop_ordered(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+        let msg = self.ordered_queue.pop_front()?;
+
+        if !self.is_ordered_full() {
             if let Some(msg) = self.try_take_waiting_ordered_message() {
                 self.ordered_queue.push_back(msg)
             }
         }
 
-        self.ordered_queue.pop_front()
+        Some(msg)
     }
 
-    fn pop_broadcast(&mut self, broadcast_mailbox: &BroadcastQueue<A>) -> Option<MessageToAll<A>> {
-        let message = broadcast_mailbox.lock().pop();
 
-        // Advance the broadcast tail if we successfully took a message.
-        if message.is_some() {
-            self.broadcast_tail = self.longest_broadcast_queue();
+    fn pop_broadcast(
+        &mut self,
+        broadcast_mailbox: &BroadcastQueue<A>,
+    ) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
+        let message = broadcast_mailbox.lock().pop()?.0;
 
-            // If len < cap, try fulfill a waiting sender
-            if self.capacity.map_or(false, |cap| self.broadcast_tail < cap) {
-                if let Some(m) = self.try_take_waiting_broadcast_message() {
-                    self.send_broadcast(m)
-                }
+        self.broadcast_tail = self.longest_broadcast_queue();
+
+        if !self.is_broadcast_full() {
+            if let Some(m) = self.try_take_waiting_broadcast_message() {
+                self.send_broadcast(m)
             }
         }
 
-        Some(message?.0)
+        Some(message)
     }
 
     fn longest_broadcast_queue(&self) -> usize {
