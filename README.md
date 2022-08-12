@@ -87,6 +87,7 @@ Keep in mind that `xtra` has a MSRV of 1.60.0.
 - `wasm_bindgen`: enables integration with [wasm-bindgen](https://github.com/rustwasm/wasm-bindgen), and particularly its futures crate.
 - `instrumentation`: Adds a dependency on `tracing` and creates spans for message sending and handling on actors.
 - `sink`: Adds `Address::into_sink` and `MessageChannel::into_sink`.
+- `macros`: Enables the `Actor` custom derive macro.
 
 ## Latest Breaking Changes
 To see the breaking changes for each version, see [here](https://github.com/Restioson/xtra/blob/master/BREAKING-CHANGES.md).
