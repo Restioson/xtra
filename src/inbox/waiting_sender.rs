@@ -78,10 +78,7 @@ where
     }
 }
 
-impl<A> Future for WaitingSender<A>
-where
-    A: Unpin,
-{
+impl<A> Future for WaitingSender<A> {
     type Output = Result<(), Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
