@@ -37,6 +37,7 @@ pub mod prelude {
 /// This module contains types representing the strength of an address's reference counting, which
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount {
+    pub use crate::inbox::RefCounter;
     pub use crate::inbox::TxEither as Either;
     pub use crate::inbox::TxStrong as Strong;
     pub use crate::inbox::TxWeak as Weak;

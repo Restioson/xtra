@@ -2,6 +2,8 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::{atomic, Arc};
 
+use private::RefCounter as _;
+
 use crate::inbox::Chan;
 
 /// A reference-counted pointer to the channel that is generic over its reference counting policy.
@@ -197,79 +199,92 @@ pub struct Rx(());
 /// - `impl Drop for ChanPtr<A, Rx> { }`
 ///
 /// and call the appropriate functions on [`Chan`].
-pub trait RefCounter: Send + Sync + 'static + Unpin {
-    /// Make a new instance of this reference counting policy.
-    fn make_new<A>(&self, chan: &Chan<A>) -> Self;
-    /// Destroy an instance of this reference counting policy.
-    fn destroy<A>(&self, chan: &Chan<A>);
-    /// Whether or not the given policy is strong.
-    fn is_strong(&self) -> bool;
-}
+pub trait RefCounter: Send + Sync + 'static + Unpin + private::RefCounter {}
 
-impl RefCounter for TxStrong {
-    fn make_new<A>(&self, inner: &Chan<A>) -> Self {
-        inner.on_sender_created();
+impl RefCounter for TxStrong {}
+impl RefCounter for TxWeak {}
+impl RefCounter for TxEither {}
+impl RefCounter for Rx {}
 
-        TxStrong(())
+/// Private module to ensure [`RefCounter`] is sealed and can neither be implemented on other types
+/// nor can a user outside of this crate call functions from [`RefCounter`].
+mod private {
+    use super::*;
+
+    pub trait RefCounter {
+        /// Make a new instance of this reference counting policy.
+        fn make_new<A>(&self, chan: &Chan<A>) -> Self;
+        /// Destroy an instance of this reference counting policy.
+        fn destroy<A>(&self, chan: &Chan<A>);
+        /// Whether or not the given policy is strong.
+        fn is_strong(&self) -> bool;
     }
 
-    fn destroy<A>(&self, inner: &Chan<A>) {
-        inner.on_sender_dropped();
-    }
+    impl RefCounter for TxStrong {
+        fn make_new<A>(&self, inner: &Chan<A>) -> Self {
+            inner.on_sender_created();
 
-    fn is_strong(&self) -> bool {
-        true
-    }
-}
+            TxStrong(())
+        }
 
-impl RefCounter for TxWeak {
-    fn make_new<A>(&self, _: &Chan<A>) -> Self {
-        TxWeak(())
-    }
+        fn destroy<A>(&self, inner: &Chan<A>) {
+            inner.on_sender_dropped();
+        }
 
-    fn destroy<A>(&self, _: &Chan<A>) {}
-
-    fn is_strong(&self) -> bool {
-        false
-    }
-}
-
-impl RefCounter for TxEither {
-    fn make_new<A>(&self, chan: &Chan<A>) -> Self {
-        match self {
-            TxEither::Strong(strong) => TxEither::Strong(strong.make_new(chan)),
-            TxEither::Weak(weak) => TxEither::Weak(weak.make_new(chan)),
+        fn is_strong(&self) -> bool {
+            true
         }
     }
 
-    fn destroy<A>(&self, chan: &Chan<A>) {
-        match self {
-            TxEither::Strong(strong) => strong.destroy(chan),
-            TxEither::Weak(weak) => weak.destroy(chan),
+    impl RefCounter for TxWeak {
+        fn make_new<A>(&self, _: &Chan<A>) -> Self {
+            TxWeak(())
+        }
+
+        fn destroy<A>(&self, _: &Chan<A>) {}
+
+        fn is_strong(&self) -> bool {
+            false
         }
     }
 
-    fn is_strong(&self) -> bool {
-        match self {
-            TxEither::Strong(_) => true,
-            TxEither::Weak(_) => false,
+    impl RefCounter for TxEither {
+        fn make_new<A>(&self, chan: &Chan<A>) -> Self {
+            match self {
+                TxEither::Strong(strong) => TxEither::Strong(strong.make_new(chan)),
+                TxEither::Weak(weak) => TxEither::Weak(weak.make_new(chan)),
+            }
+        }
+
+        fn destroy<A>(&self, chan: &Chan<A>) {
+            match self {
+                TxEither::Strong(strong) => strong.destroy(chan),
+                TxEither::Weak(weak) => weak.destroy(chan),
+            }
+        }
+
+        fn is_strong(&self) -> bool {
+            match self {
+                TxEither::Strong(_) => true,
+                TxEither::Weak(_) => false,
+            }
         }
     }
-}
 
-impl RefCounter for Rx {
-    fn make_new<A>(&self, inner: &Chan<A>) -> Self {
-        inner.on_receiver_created();
+    impl RefCounter for Rx {
+        fn make_new<A>(&self, inner: &Chan<A>) -> Self {
+            inner.on_receiver_created();
 
-        Rx(())
-    }
+            Rx(())
+        }
 
-    fn destroy<A>(&self, inner: &Chan<A>) {
-        inner.on_receiver_dropped();
-    }
+        fn destroy<A>(&self, inner: &Chan<A>) {
+            inner.on_receiver_dropped();
+        }
 
-    fn is_strong(&self) -> bool {
-        true
+        fn is_strong(&self) -> bool {
+            true
+        }
     }
 }
 
