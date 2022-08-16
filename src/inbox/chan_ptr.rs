@@ -54,7 +54,7 @@ where
         self.ref_counter.is_strong()
     }
 
-    pub fn downgrade(&self) -> ChanPtr<A, TxWeak> {
+    pub fn to_tx_weak(&self) -> ChanPtr<A, TxWeak> {
         ChanPtr {
             inner: self.inner.clone(),
             ref_counter: TxWeak(()),
@@ -362,7 +362,7 @@ mod tests {
         let inner = Arc::new(Chan::new(None));
 
         let strong_ptr = ChanPtr::<Foo, TxStrong>::new(inner.clone());
-        let _weak_ptr = strong_ptr.downgrade();
+        let _weak_ptr = strong_ptr.to_tx_weak();
 
         assert_eq!(inner.sender_count.load(atomic::Ordering::SeqCst), 1);
     }

@@ -83,7 +83,7 @@ impl<A> Address<A, Strong> {
     /// an actor will not be prevented from being dropped if only weak sinks, channels, and
     /// addresses exist.
     pub fn downgrade(&self) -> WeakAddress<A> {
-        Address(self.0.downgrade())
+        Address(self.0.to_tx_weak())
     }
 }
 
@@ -91,7 +91,7 @@ impl<A> Address<A, Strong> {
 impl<A> Address<A, Either> {
     /// Converts this address into a weak address.
     pub fn downgrade(&self) -> WeakAddress<A> {
-        Address(self.0.downgrade())
+        Address(self.0.to_tx_weak())
     }
 }
 
