@@ -86,18 +86,6 @@ impl<A> Address<A, Strong> {
     pub fn downgrade(&self) -> WeakAddress<A> {
         Address(self.0.to_tx_weak())
     }
-
-    /// Convert this address into a generic address which can be weak or strong.
-    pub fn as_either(&self) -> Address<A, Either> {
-        Address(self.0.to_tx_either())
-    }
-}
-
-impl<A> Address<A, Weak> {
-    /// Convert this address into a generic address which can be weak or strong.
-    pub fn as_either(&self) -> Address<A, Either> {
-        Address(self.0.to_tx_either())
-    }
 }
 
 /// Functions which apply only to addresses which can either be strong or weak.
@@ -105,6 +93,18 @@ impl<A> Address<A, Either> {
     /// Converts this address into a weak address.
     pub fn downgrade(&self) -> WeakAddress<A> {
         Address(self.0.to_tx_weak())
+    }
+}
+
+/// Functions which apply to any kind of address, be they strong or weak.
+impl<A, Rc> Address<A, Rc>
+where
+    Rc: RefCounter,
+    Rc::Either: RefCounter,
+{
+    /// Convert this address into a generic address which can be weak or strong.
+    pub fn as_either(&self) -> Address<A, Rc::Either> {
+        Address(self.0.to_either())
     }
 }
 

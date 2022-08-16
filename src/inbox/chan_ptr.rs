@@ -29,13 +29,6 @@ impl<A> ChanPtr<A, TxStrong> {
             inner,
         }
     }
-
-    pub fn to_tx_either(&self) -> ChanPtr<A, TxEither> {
-        ChanPtr {
-            inner: self.inner.clone(),
-            ref_counter: TxEither::Strong(self.ref_counter.make_new(self.inner.as_ref())),
-        }
-    }
 }
 
 impl<A> ChanPtr<A, Rx> {
@@ -50,15 +43,6 @@ impl<A> ChanPtr<A, Rx> {
             inner: self.inner.clone(),
             ref_counter: TxStrong::try_new(self.inner.as_ref())?,
         })
-    }
-}
-
-impl<A> ChanPtr<A, TxWeak> {
-    pub fn to_tx_either(&self) -> ChanPtr<A, TxEither> {
-        ChanPtr {
-            inner: self.inner.clone(),
-            ref_counter: TxEither::Weak(TxWeak(())),
-        }
     }
 }
 
@@ -79,6 +63,19 @@ where
 
     pub fn inner_ptr(&self) -> *const () {
         Arc::as_ptr(&self.inner) as *const ()
+    }
+}
+
+impl<A, Rc> ChanPtr<A, Rc>
+where
+    Rc: RefCounter,
+    Rc::Either: RefCounter,
+{
+    pub fn to_either(&self) -> ChanPtr<A, Rc::Either> {
+        ChanPtr {
+            inner: self.inner.clone(),
+            ref_counter: self.ref_counter.make_new(&self.inner).into_either(),
+        }
     }
 }
 
@@ -212,15 +209,21 @@ mod private {
     use super::*;
 
     pub trait RefCounter {
+        type Either;
+
         /// Make a new instance of this reference counting policy.
         fn make_new<A>(&self, chan: &Chan<A>) -> Self;
         /// Destroy an instance of this reference counting policy.
         fn destroy<A>(&self, chan: &Chan<A>);
         /// Whether or not the given policy is strong.
         fn is_strong(&self) -> bool;
+        /// Turn this ref counter into an either ref counter that can be dynamically weak or strong.
+        fn into_either(self) -> Self::Either;
     }
 
     impl RefCounter for TxStrong {
+        type Either = TxEither;
+
         fn make_new<A>(&self, inner: &Chan<A>) -> Self {
             inner.on_sender_created();
 
@@ -234,9 +237,15 @@ mod private {
         fn is_strong(&self) -> bool {
             true
         }
+
+        fn into_either(self) -> Self::Either {
+            TxEither::Strong(self)
+        }
     }
 
     impl RefCounter for TxWeak {
+        type Either = TxEither;
+
         fn make_new<A>(&self, _: &Chan<A>) -> Self {
             TxWeak(())
         }
@@ -246,9 +255,15 @@ mod private {
         fn is_strong(&self) -> bool {
             false
         }
+
+        fn into_either(self) -> Self::Either {
+            TxEither::Weak(self)
+        }
     }
 
     impl RefCounter for TxEither {
+        type Either = Self;
+
         fn make_new<A>(&self, chan: &Chan<A>) -> Self {
             match self {
                 TxEither::Strong(strong) => TxEither::Strong(strong.make_new(chan)),
@@ -269,9 +284,15 @@ mod private {
                 TxEither::Weak(_) => false,
             }
         }
+
+        fn into_either(self) -> Self::Either {
+            self
+        }
     }
 
     impl RefCounter for Rx {
+        type Either = ();
+
         fn make_new<A>(&self, inner: &Chan<A>) -> Self {
             inner.on_receiver_created();
 
@@ -284,6 +305,10 @@ mod private {
 
         fn is_strong(&self) -> bool {
             true
+        }
+
+        fn into_either(self) -> Self::Either {
+            unimplemented!("There is no RxWeak and hence no RxEither")
         }
     }
 }
@@ -347,7 +372,7 @@ mod tests {
         let inner = Arc::new(Chan::new(None));
 
         let strong_ptr = ChanPtr::<Foo, TxStrong>::new(inner.clone());
-        let either_ptr_1 = strong_ptr.to_tx_either();
+        let either_ptr_1 = strong_ptr.to_either();
         #[allow(clippy::redundant_clone)]
         let _either_ptr_2 = either_ptr_1.clone();
 
@@ -359,7 +384,7 @@ mod tests {
         let inner = Arc::new(Chan::new(None));
 
         let strong_ptr = ChanPtr::<Foo, TxStrong>::new(inner);
-        let either_ptr = strong_ptr.to_tx_either();
+        let either_ptr = strong_ptr.to_either();
 
         assert!(either_ptr.is_strong());
     }
