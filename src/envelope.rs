@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -9,6 +8,7 @@ use futures_util::FutureExt;
 
 use crate::context::Context;
 use crate::inbox::{HasPriority, MessageToAll, MessageToOne, Priority};
+use crate::instrumentation::{Instrumentation, Span};
 use crate::{Actor, Handler};
 
 /// A message envelope is a struct that encapsulates a message and its return channel sender (if applicable).
@@ -35,109 +35,6 @@ pub trait MessageEnvelope: HasPriority + Send {
         act: &'a mut Self::Actor,
         ctx: &'a mut Context<Self::Actor>,
     ) -> (BoxFuture<'a, ControlFlow<()>>, Span);
-}
-
-#[cfg_attr(not(feature = "instrumentation"), allow(dead_code))]
-#[derive(Clone)]
-struct Instrumentation {
-    parent: Span,
-    _waiting_for_actor: Span,
-}
-
-#[derive(Clone)]
-pub struct Span(#[cfg(feature = "instrumentation")] pub tracing::Span);
-
-impl Span {
-    pub fn in_scope<R>(&self, f: impl FnOnce() -> R) -> R {
-        #[cfg(feature = "instrumentation")]
-        let r = self.0.in_scope(f);
-
-        #[cfg(not(feature = "instrumentation"))]
-        let r = f();
-
-        r
-    }
-
-    fn none() -> Span {
-        #[cfg(feature = "instrumentation")]
-        let span = Span(tracing::Span::none());
-
-        #[cfg(not(feature = "instrumentation"))]
-        let span = Span();
-
-        span
-    }
-
-    fn is_none(&self) -> bool {
-        #[cfg(feature = "instrumentation")]
-        let none = self.0.is_none();
-
-        #[cfg(not(feature = "instrumentation"))]
-        let none = true;
-
-        none
-    }
-}
-
-impl Instrumentation {
-    fn empty() -> Self {
-        Instrumentation {
-            parent: Span::none(),
-            _waiting_for_actor: Span::none(),
-        }
-    }
-
-    #[cfg_attr(not(feature = "instrumentation"), allow(unused_variables))]
-    fn started<A, M>() -> Self {
-        #[cfg(feature = "instrumentation")]
-        {
-            let parent = Span(
-                tracing::debug_span!(
-                    "xtra_actor_request",
-                    actor_type = %std::any::type_name::<A>(),
-                    message_type = %std::any::type_name::<M>(),
-                )
-                .or_current(),
-            );
-
-            let _waiting_for_actor = Span(
-                tracing::debug_span!(
-                    parent: &parent.0,
-                    "xtra_message_waiting_for_actor",
-                )
-                .or_current(),
-            );
-
-            Instrumentation {
-                parent,
-                _waiting_for_actor,
-            }
-        }
-
-        #[cfg(not(feature = "instrumentation"))]
-        Instrumentation::empty()
-    }
-
-    fn apply<A, M, F>(self, fut: F) -> (impl Future<Output = F::Output>, Span)
-    where
-        F: Future,
-    {
-        #[cfg(feature = "instrumentation")]
-        {
-            let executing = self.parent.in_scope(|| {
-                tracing::debug_span!("xtra_message_handler", interrupted = tracing::field::Empty)
-                    .or_current()
-            });
-
-            (
-                tracing::Instrument::instrument(fut, executing.clone()),
-                Span(executing),
-            )
-        }
-
-        #[cfg(not(feature = "instrumentation"))]
-        (fut, Span())
-    }
 }
 
 /// An envelope that returns a result from a message. Constructed by the `AddressExt::do_send` method.
@@ -189,7 +86,7 @@ where
     }
 
     fn start_span(&mut self) {
-        assert!(self.instrumentation.parent.is_none());
+        assert!(self.instrumentation.is_parent_none());
         self.instrumentation = Instrumentation::started::<A, M>();
     }
 
@@ -272,7 +169,7 @@ where
     }
 
     fn start_span(&mut self) {
-        assert!(self.instrumentation.parent.is_none());
+        assert!(self.instrumentation.is_parent_none());
         self.instrumentation = Instrumentation::started::<A, M>();
     }
 
