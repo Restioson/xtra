@@ -106,6 +106,10 @@ name = "basic"
 required-features = ["tokio"]
 
 [[test]]
+name = "public_api"
+required-features = ["tokio"]
+
+[[test]]
 name = "instrumentation"
 required-features = ["tokio", "instrumentation"]
 
