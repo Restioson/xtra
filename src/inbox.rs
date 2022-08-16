@@ -83,6 +83,68 @@ impl<A> Chan<A> {
         mailbox
     }
 
+    pub fn try_send_to_one(
+        &self,
+        mut message: MessageToOne<A>,
+    ) -> Result<Result<(), MailboxFull<MessageToOne<A>>>, Error> {
+        if !self.is_connected() {
+            return Err(Error::Disconnected);
+        }
+
+        message.start_span();
+
+        let mut inner = self.chan.lock().unwrap();
+
+        let unfulfilled_msg = if let Err(msg) = inner.try_fulfill_receiver(message) {
+            msg
+        } else {
+            return Ok(Ok(()));
+        };
+
+        match unfulfilled_msg {
+            m if m.priority() == Priority::default() && !inner.is_ordered_full() => {
+                inner.ordered_queue.push_back(m);
+            }
+            m if m.priority() != Priority::default() && !inner.is_priority_full() => {
+                inner.priority_queue.push(ByPriority(m));
+            }
+            _ => {
+                let (handle, waiting) = WaitingSender::new(unfulfilled_msg);
+                inner.waiting_send_to_one.push_back(handle);
+
+                return Ok(Err(MailboxFull(waiting)));
+            }
+        };
+
+        Ok(Ok(()))
+    }
+
+    pub fn try_send_to_all(
+        &self,
+        mut message: MessageToAll<A>,
+    ) -> Result<Result<(), MailboxFull<MessageToAll<A>>>, Error> {
+        if !self.is_connected() {
+            return Err(Error::Disconnected);
+        }
+
+        Arc::get_mut(&mut message)
+            .expect("calling after try_send not supported")
+            .start_span();
+
+        let mut inner = self.chan.lock().unwrap();
+
+        if inner.is_broadcast_full() {
+            let (handle, waiting) = WaitingSender::new(message);
+            inner.waiting_send_to_all.push_back(handle);
+
+            return Ok(Err(MailboxFull(waiting)));
+        }
+
+        inner.send_broadcast(message);
+
+        Ok(Ok(()))
+    }
+
     fn try_recv(
         &self,
         broadcast_mailbox: &BroadcastQueue<A>,
@@ -230,76 +292,6 @@ impl<A> Chan<A> {
                 inner.priority_queue.push(ByPriority(msg));
             }
         }
-    }
-}
-
-pub trait TrySend<M> {
-    fn try_send(&self, message: M) -> Result<Result<(), MailboxFull<M>>, Error>;
-}
-
-impl<A> TrySend<MessageToOne<A>> for Chan<A> {
-    fn try_send(
-        &self,
-        mut message: MessageToOne<A>,
-    ) -> Result<Result<(), MailboxFull<MessageToOne<A>>>, Error> {
-        if !self.is_connected() {
-            return Err(Error::Disconnected);
-        }
-
-        message.start_span();
-
-        let mut inner = self.chan.lock().unwrap();
-
-        let unfulfilled_msg = if let Err(msg) = inner.try_fulfill_receiver(message) {
-            msg
-        } else {
-            return Ok(Ok(()));
-        };
-
-        match unfulfilled_msg {
-            m if m.priority() == Priority::default() && !inner.is_ordered_full() => {
-                inner.ordered_queue.push_back(m);
-            }
-            m if m.priority() != Priority::default() && !inner.is_priority_full() => {
-                inner.priority_queue.push(ByPriority(m));
-            }
-            _ => {
-                let (handle, waiting) = WaitingSender::new(unfulfilled_msg);
-                inner.waiting_send_to_one.push_back(handle);
-
-                return Ok(Err(MailboxFull(waiting)));
-            }
-        };
-
-        Ok(Ok(()))
-    }
-}
-
-impl<A> TrySend<MessageToAll<A>> for Chan<A> {
-    fn try_send(
-        &self,
-        mut message: MessageToAll<A>,
-    ) -> Result<Result<(), MailboxFull<MessageToAll<A>>>, Error> {
-        if !self.is_connected() {
-            return Err(Error::Disconnected);
-        }
-
-        Arc::get_mut(&mut message)
-            .expect("calling after try_send not supported")
-            .start_span();
-
-        let mut inner = self.chan.lock().unwrap();
-
-        if inner.is_broadcast_full() {
-            let (handle, waiting) = WaitingSender::new(message);
-            inner.waiting_send_to_all.push_back(handle);
-
-            return Ok(Err(MailboxFull(waiting)));
-        }
-
-        inner.send_broadcast(message);
-
-        Ok(Ok(()))
     }
 }
 

@@ -8,7 +8,7 @@ use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use crate::envelope::{BroadcastEnvelopeConcrete, ReturningEnvelope};
-use crate::inbox::{Chan, MailboxFull, MessageToAll, MessageToOne, TrySend, WaitingSender};
+use crate::inbox::{MailboxFull, MessageToAll, MessageToOne, WaitingSender};
 use crate::refcount::RefCounter;
 use crate::{inbox, Error, Handler};
 
@@ -175,11 +175,9 @@ enum Sending<A, M, Rc: RefCounter> {
     Done,
 }
 
-impl<A, M, Rc> Future for Sending<A, M, Rc>
+impl<A, Rc> Future for Sending<A, MessageToOne<A>, Rc>
 where
     Rc: RefCounter,
-    M: Unpin,
-    Chan<A>: TrySend<M>,
 {
     type Output = Result<(), Error>;
 
@@ -188,7 +186,39 @@ where
 
         loop {
             match mem::replace(this, Sending::Done) {
-                Sending::New { msg, sender } => match sender.try_send(msg)? {
+                Sending::New { msg, sender } => match sender.try_send_to_one(msg)? {
+                    Ok(()) => return Poll::Ready(Ok(())),
+                    Err(MailboxFull(waiting)) => {
+                        *this = Sending::WaitingToSend(waiting);
+                    }
+                },
+                Sending::WaitingToSend(mut waiting) => {
+                    return match waiting.poll_unpin(cx)? {
+                        Poll::Ready(()) => Poll::Ready(Ok(())),
+                        Poll::Pending => {
+                            *this = Sending::WaitingToSend(waiting);
+                            Poll::Pending
+                        }
+                    };
+                }
+                Sending::Done => panic!("Polled after completion"),
+            }
+        }
+    }
+}
+
+impl<A, Rc> Future for Sending<A, MessageToAll<A>, Rc>
+where
+    Rc: RefCounter,
+{
+    type Output = Result<(), Error>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        loop {
+            match mem::replace(this, Sending::Done) {
+                Sending::New { msg, sender } => match sender.try_send_to_all(msg)? {
                     Ok(()) => return Poll::Ready(Ok(())),
                     Err(MailboxFull(waiting)) => {
                         *this = Sending::WaitingToSend(waiting);
