@@ -32,7 +32,7 @@ impl<A> Mailbox<A> {
 
 impl<A> Mailbox<A> {
     pub fn weak_sender(&self) -> ChanPtr<A, TxWeak> {
-        self.inner.to_tx_weak()
+        self.inner.downgrade()
     }
 
     pub fn receive(&self) -> ReceiveFuture<A> {

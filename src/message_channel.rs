@@ -317,7 +317,7 @@ where
     fn to_weak(
         &self,
     ) -> Box<dyn MessageChannelTrait<M, Weak, Return = Self::Return> + Send + Sync + 'static> {
-        Box::new(Address(self.0.to_tx_weak()))
+        Box::new(Address(self.0.downgrade()))
     }
 
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

@@ -11,8 +11,7 @@ use std::task::{Context, Poll};
 use event_listener::EventListener;
 use futures_util::FutureExt;
 
-use crate::inbox::RefCounter;
-use crate::refcount::{Either, Strong, Weak};
+use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{Broadcast, ResolveToHandlerReturn};
 use crate::{inbox, ActorNamedSending, Handler, SendFuture};
 
@@ -84,7 +83,7 @@ impl<A> Address<A, Strong> {
     /// an actor will not be prevented from being dropped if only weak sinks, channels, and
     /// addresses exist.
     pub fn downgrade(&self) -> WeakAddress<A> {
-        Address(self.0.to_tx_weak())
+        Address(self.0.downgrade())
     }
 }
 
@@ -92,7 +91,7 @@ impl<A> Address<A, Strong> {
 impl<A> Address<A, Either> {
     /// Converts this address into a weak address.
     pub fn downgrade(&self) -> WeakAddress<A> {
-        Address(self.0.to_tx_weak())
+        Address(self.0.downgrade())
     }
 }
 
