@@ -119,7 +119,7 @@ where
         use atomic::Ordering::SeqCst;
 
         let act = std::any::type_name::<A>();
-        let rc = std::any::type_name::<Rc>();
+        let rc = std::any::type_name::<Rc>().trim_start_matches("xtra::inbox::chan_ptr::");
         f.debug_struct(&format!("ChanPtr<{}, {}>", act, rc))
             .field("rx_count", &self.inner.receiver_count.load(SeqCst))
             .field("tx_count", &self.inner.sender_count.load(SeqCst))
