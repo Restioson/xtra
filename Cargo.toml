@@ -96,7 +96,7 @@ required-features = ["tokio", "tokio/full"]
 
 [[example]]
 name = "scoped_actor_task"
-required-features = ["tokio", "futures-util/default"]
+required-features = ["tokio"]
 
 [[example]]
 name = "custom_event_loop"
