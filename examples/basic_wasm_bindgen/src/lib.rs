@@ -1,4 +1,5 @@
-use wasm_bindgen::{prelude::*, JsValue};
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsValue;
 use xtra::prelude::*;
 
 struct Echoer;
