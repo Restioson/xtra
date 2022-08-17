@@ -7,15 +7,9 @@ use xtra::refcount::Strong;
 use xtra::SendFuture;
 use xtra::{ActorErasedSending, ActorNamedSending};
 
+#[derive(xtra::Actor)]
 struct Counter {
     count: usize,
-}
-
-#[async_trait]
-impl Actor for Counter {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
 }
 
 struct Increment;
@@ -55,13 +49,6 @@ struct SendTimer {
     time: Duration,
 }
 
-#[async_trait]
-impl Actor for SendTimer {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
-}
-
 struct GetTime;
 
 #[async_trait]
@@ -74,13 +61,6 @@ impl Handler<GetTime> for SendTimer {
 }
 
 struct ReturnTimer;
-
-#[async_trait]
-impl Actor for ReturnTimer {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
-}
 
 struct TimeReturn;
 

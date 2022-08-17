@@ -53,65 +53,67 @@ smol = ["dep:smol"]
 tokio = ["dep:tokio"]
 wasm_bindgen = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures"]
 sink = ["dep:futures-sink", "futures-util/sink"]
+
 [[example]]
 name = "basic_tokio"
-required-features = ["tokio"]
+required-features = ["tokio", "macros"]
 
 [[example]]
 name = "basic_async_std"
-required-features = ["async_std"]
+required-features = ["async_std", "macros"]
 
 [[example]]
 name = "basic_smol"
 path = "examples/basic_smol.rs"
-required-features = ["smol"]
+required-features = ["smol", "macros"]
 
 [[example]]
 name = "interleaved_messages"
-required-features = ["smol"]
+required-features = ["smol", "macros"]
 
 [[example]]
 name = "message_stealing_multiple_actors"
-required-features = ["smol"]
+required-features = ["smol", "macros"]
 
 [[example]]
 name = "crude_bench"
-required-features = ["tokio"]
+required-features = ["tokio", "macros"]
 
 [[example]]
 name = "global_spawner_ext"
-required-features = ["smol"]
+required-features = ["smol", "macros"]
 
 [[example]]
 name = "backpressure"
-required-features = ["tokio"]
+required-features = ["tokio", "macros"]
 
 [[example]]
 name = "address_sink"
-required-features = ["tokio", "tokio/full", "sink"]
+required-features = ["tokio", "tokio/full", "sink", "macros"]
 
 [[example]]
 name = "send_interval"
-required-features = ["tokio", "tokio/full"]
+required-features = ["tokio", "tokio/full", "macros"]
 
 [[example]]
 name = "scoped_actor_task"
-required-features = ["tokio", "futures-util/default"]
+required-features = ["tokio", "macros", "futures-util/default"]
 
 [[example]]
 name = "custom_event_loop"
+required-features = ["macros"]
 
 [[test]]
 name = "basic"
-required-features = ["tokio"]
+required-features = ["tokio", "macros"]
 
 [[test]]
 name = "public_api"
-required-features = ["tokio"]
+required-features = ["tokio", "macros"]
 
 [[test]]
 name = "instrumentation"
-required-features = ["tokio", "instrumentation"]
+required-features = ["tokio", "instrumentation", "macros"]
 
 [workspace]
 members = ["examples/basic_wasm_bindgen", "macros", "macros-test"]

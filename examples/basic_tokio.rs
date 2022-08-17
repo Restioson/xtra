@@ -1,20 +1,8 @@
 use xtra::prelude::*;
 
+#[derive(Default, xtra::Actor)]
 struct Printer {
     times: usize,
-}
-
-impl Printer {
-    fn new() -> Self {
-        Printer { times: 0 }
-    }
-}
-
-#[async_trait]
-impl Actor for Printer {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
 }
 
 struct Print(String);
@@ -31,7 +19,7 @@ impl Handler<Print> for Printer {
 
 #[tokio::main]
 async fn main() {
-    let addr = xtra::spawn_tokio(Printer::new(), None);
+    let addr = xtra::spawn_tokio(Printer::default(), None);
     loop {
         addr.send(Print("hello".to_string()))
             .await

@@ -2,14 +2,8 @@ use futures_util::future;
 use xtra::prelude::*;
 use xtra::spawn::Tokio;
 
+#[derive(xtra::Actor)]
 struct MyActor;
-
-#[async_trait]
-impl Actor for MyActor {
-    type Stop = ();
-
-    async fn stopped(self) {}
-}
 
 struct Print(String);
 

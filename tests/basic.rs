@@ -11,17 +11,8 @@ use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
 use xtra::Error;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, xtra::Actor)]
 struct Accumulator(usize);
-
-#[async_trait]
-impl Actor for Accumulator {
-    type Stop = usize;
-
-    async fn stopped(self) -> usize {
-        self.0
-    }
-}
 
 struct Inc;
 
@@ -74,20 +65,12 @@ async fn accumulate_to_ten() {
     assert_eq!(addr.send(Report).await.unwrap().0, 10);
 }
 
+#[derive(xtra::Actor)]
 struct DropTester(Arc<AtomicUsize>);
 
 impl Drop for DropTester {
     fn drop(&mut self) {
         self.0.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
-#[async_trait]
-impl Actor for DropTester {
-    type Stop = ();
-
-    async fn stopped(self) {
-        self.0.fetch_add(5, Ordering::SeqCst);
     }
 }
 
@@ -273,16 +256,8 @@ async fn two_actors_on_address_with_stop_self_context_alive() {
     assert!(address.is_connected());
 }
 
+#[derive(xtra::Actor)]
 struct ActorStopSelf;
-
-#[async_trait]
-impl Actor for ActorStopSelf {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {
-        println!("Stopped");
-    }
-}
 
 #[async_trait]
 impl Handler<StopSelf> for ActorStopSelf {
@@ -293,14 +268,8 @@ impl Handler<StopSelf> for ActorStopSelf {
     }
 }
 
+#[derive(xtra::Actor)]
 struct LongRunningHandler;
-
-#[async_trait]
-impl Actor for LongRunningHandler {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
-}
 
 #[async_trait]
 impl Handler<Duration> for LongRunningHandler {
@@ -724,14 +693,8 @@ async fn broadcast_tail_does_not_advance_unless_both_handle() {
     );
 }
 
+#[derive(xtra::Actor)]
 struct Greeter;
-
-#[async_trait]
-impl Actor for Greeter {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
-}
 
 struct Hello(&'static str);
 

@@ -1,14 +1,8 @@
 use wasm_bindgen::{prelude::*, JsValue};
 use xtra::prelude::*;
 
+#[derive(xtra::Actor)]
 struct Echoer;
-
-#[async_trait]
-impl Actor for Echoer {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
-}
 
 struct Echo(String);
 

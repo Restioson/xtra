@@ -6,15 +6,8 @@ use futures_util::StreamExt;
 use xtra::prelude::*;
 use xtra::Error;
 
-#[derive(Default)]
+#[derive(Default, xtra::Actor)]
 struct Greeter;
-
-#[async_trait]
-impl Actor for Greeter {
-    type Stop = ();
-
-    async fn stopped(self) {}
-}
 
 struct Greet;
 
