@@ -79,10 +79,6 @@ name = "crude_bench"
 required-features = ["tokio"]
 
 [[example]]
-name = "global_spawner_ext"
-required-features = ["smol"]
-
-[[example]]
 name = "backpressure"
 required-features = ["tokio"]
 
