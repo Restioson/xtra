@@ -339,11 +339,9 @@ impl<A> ChanInner<A> {
     }
 
     fn pop_priority(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
-        // If len < cap after popping this message, try fulfill at most one waiting sender
-        if self
-            .capacity
-            .map_or(false, |cap| cap == self.priority_queue.len())
-        {
+        let msg = self.priority_queue.pop()?.0;
+
+        if !self.is_priority_full() {
             match self.try_fulfill_sender(MessageType::Priority) {
                 Some(SentMessage::ToOneActor(msg)) => self.priority_queue.push(ByPriority(msg)),
                 Some(_) => unreachable!(),
@@ -351,15 +349,13 @@ impl<A> ChanInner<A> {
             }
         }
 
-        Some(self.priority_queue.pop()?.0)
+        Some(msg)
     }
 
     fn pop_ordered(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
-        // If len < cap after popping this message, try fulfill at most one waiting sender
-        if self
-            .capacity
-            .map_or(false, |cap| cap == self.ordered_queue.len())
-        {
+        let msg = self.ordered_queue.pop_front()?;
+
+        if !self.is_ordered_full() {
             match self.try_fulfill_sender(MessageType::Ordered) {
                 Some(SentMessage::ToOneActor(msg)) => self.ordered_queue.push_back(msg),
                 Some(_) => unreachable!(),
@@ -367,30 +363,26 @@ impl<A> ChanInner<A> {
             }
         }
 
-        self.ordered_queue.pop_front()
+        Some(msg)
     }
 
     fn pop_broadcast(
         &mut self,
         broadcast_mailbox: &BroadcastQueue<A>,
     ) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
-        let message = broadcast_mailbox.lock().pop();
+        let message = broadcast_mailbox.lock().pop()?.0;
 
-        // Advance the broadcast tail if we successfully took a message.
-        if message.is_some() {
-            self.broadcast_tail = self.longest_broadcast_queue();
+        self.broadcast_tail = self.longest_broadcast_queue();
 
-            // If len < cap, try fulfill a waiting sender
-            if self.capacity.map_or(false, |cap| self.broadcast_tail < cap) {
-                match self.try_fulfill_sender(MessageType::Broadcast) {
-                    Some(SentMessage::ToAllActors(m)) => self.send_broadcast(m),
-                    Some(_) => unreachable!(),
-                    None => {}
-                }
+        if !self.is_broadcast_full() {
+            match self.try_fulfill_sender(MessageType::Broadcast) {
+                Some(SentMessage::ToAllActors(m)) => self.send_broadcast(m),
+                Some(_) => unreachable!(),
+                None => {}
             }
         }
 
-        Some(message?.0)
+        Some(message)
     }
 
     fn longest_broadcast_queue(&self) -> usize {

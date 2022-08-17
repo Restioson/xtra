@@ -7,10 +7,7 @@ use std::task::{Context, Poll};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
-use crate::inbox::WaitingReceiver;
-use crate::inbox::{ActorMessage, BroadcastQueue};
-use crate::inbox::{ChanPtr, Rx};
-use crate::inbox::{TxStrong, TxWeak};
+use crate::inbox::{ActorMessage, BroadcastQueue, ChanPtr, Rx, TxStrong, TxWeak, WaitingReceiver};
 
 pub struct Mailbox<A> {
     inner: ChanPtr<A, Rx>,
