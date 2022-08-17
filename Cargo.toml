@@ -31,6 +31,8 @@ wasm-bindgen-futures = { version = "0.4", optional = true, default-features = fa
 # Feature `instrumentation`
 tracing = { version = "0.1.35", optional = true, default-features = false }
 
+macros = { package = "xtra-macros", path = "./macros", optional = true }
+
 [dev-dependencies]
 rand = "0.8"
 smol = "1.1"
@@ -51,7 +53,6 @@ smol = ["dep:smol"]
 tokio = ["dep:tokio"]
 wasm_bindgen = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures"]
 sink = ["dep:futures-sink", "futures-util/sink"]
-
 [[example]]
 name = "basic_tokio"
 required-features = ["tokio"]
@@ -78,10 +79,6 @@ name = "crude_bench"
 required-features = ["tokio"]
 
 [[example]]
-name = "global_spawner_ext"
-required-features = ["smol"]
-
-[[example]]
 name = "backpressure"
 required-features = ["tokio"]
 
@@ -95,7 +92,7 @@ required-features = ["tokio", "tokio/full"]
 
 [[example]]
 name = "scoped_actor_task"
-required-features = ["tokio", "futures-util/default"]
+required-features = ["tokio"]
 
 [[example]]
 name = "custom_event_loop"
@@ -105,11 +102,15 @@ name = "basic"
 required-features = ["tokio"]
 
 [[test]]
+name = "public_api"
+required-features = ["tokio"]
+
+[[test]]
 name = "instrumentation"
 required-features = ["tokio", "instrumentation"]
 
 [workspace]
-members = ["examples/basic_wasm_bindgen"]
+members = ["examples/basic_wasm_bindgen", "macros", "macros-test"]
 
 [package.metadata.docs.rs]
 features = ["async_std", "smol", "tokio", "wasm_bindgen"]
