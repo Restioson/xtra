@@ -16,6 +16,7 @@ fn functions_on_address_with_generic_rc_counter<A, Rc, Rc2>(
     A: Actor,
     Rc: RefCounter,
     Rc2: RefCounter,
+    Rc::Either: RefCounter,
     A: Handler<(), Return = ()>,
 {
     address1.as_either();
