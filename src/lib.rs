@@ -15,6 +15,7 @@ pub mod address;
 mod context;
 mod envelope;
 mod inbox;
+mod instrumentation;
 mod mailbox;
 pub mod message_channel;
 /// This module contains a way to scope a future to the lifetime of an actor, stopping it before it
