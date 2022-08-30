@@ -196,7 +196,7 @@ pub struct Rx(());
 /// - `impl Drop for ChanPtr<A, TxEither> { }`
 /// - `impl Drop for ChanPtr<A, Rx> { }`
 ///
-/// and call the appropriate functions on [`Chan`].
+/// and call the appropriate functions on `Chan`.
 pub trait RefCounter: Send + Sync + 'static + Unpin + private::RefCounter {}
 
 impl RefCounter for TxStrong {}
