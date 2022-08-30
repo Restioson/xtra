@@ -104,54 +104,71 @@ impl Handler<StopAll> for StopTester {
 }
 
 #[tokio::test]
-async fn test_stop_and_drop() {
-    // Drop the address
+async fn actor_stops_on_last_drop_of_address() {
     let (addr, context) = Context::new(None);
     let handle = tokio::spawn(context.run(StopTester));
     let weak = addr.downgrade();
     let join = weak.join();
+
     drop(addr);
     handle.await.unwrap();
+
     assert!(!weak.is_connected());
     assert!(join.now_or_never().is_some());
+}
 
-    // Send a stop self message
+#[tokio::test]
+async fn actor_stops_on_stop_self_message() {
     let (addr, context) = Context::new(None);
     let handle = tokio::spawn(context.run(StopTester));
     let weak = addr.downgrade();
     let join = weak.join();
+
     let _ = addr.send(StopSelf).split_receiver().await;
     handle.await.unwrap();
+
     assert!(!weak.is_connected());
     assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
+}
 
-    // Send a stop all message
+#[tokio::test]
+async fn actor_stops_on_stop_all_message() {
     let (addr, context) = Context::new(None);
     let handle = tokio::spawn(context.run(StopTester));
     let weak = addr.downgrade();
     let join = weak.join();
+
     let _ = addr.send(StopAll).split_receiver().await;
     handle.await.unwrap();
+
     assert!(!weak.is_connected());
     assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
+}
 
-    // Drop address before future has even begun
+#[tokio::test]
+async fn actor_stops_on_last_drop_of_address_even_if_not_yet_running() {
     let (addr, context) = Context::new(None);
     let weak = addr.downgrade();
     let join = weak.join();
+
     drop(addr);
     tokio::spawn(context.run(StopTester)).await.unwrap();
+
     assert!(!weak.is_connected());
     assert!(join.now_or_never().is_some());
+}
 
-    // Send a stop message before future has even begun
+#[tokio::test]
+async fn actor_stops_on_stop_message_even_if_not_yet_running() {
     let (addr, context) = Context::new(None);
     let weak = addr.downgrade();
     let join = weak.join();
+
     let _ = addr.send(StopSelf).split_receiver().await;
     tokio::spawn(context.run(StopTester)).await.unwrap();
+
     assert!(!weak.is_connected());
     assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
