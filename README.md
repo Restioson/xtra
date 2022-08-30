@@ -11,8 +11,7 @@ For better ergonomics with xtra, try the [spaad](https://crates.io/crates/spaad)
 - Safe: there is no unsafe code in xtra.
 - Tiny: xtra is around 2kloc.
 - Lightweight: xtra has few dependencies, most of which are lightweight (except `futures`).
-- Asynchronous and synchronous message handlers.
-- Simple asynchronous message handling interface which allows `async`/`await` syntax even when borrowing `self`.
+- Asynchronous `Handler` interface which allows `async`/`await` syntax even when borrowing `self`.
 - Does not depend on its own runtime and can be run with any futures executor. Convenience `spawn` functions are provided
   for [Tokio](https://tokio.rs/), [async-std](https://async.rs/), [smol](https://github.com/stjepang/smol), and 
   [wasm-bindgen-futures](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/).
