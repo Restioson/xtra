@@ -98,12 +98,11 @@ impl<A> Address<A, Either> {
 /// Functions which apply to any kind of address, be they strong or weak.
 impl<A, Rc> Address<A, Rc>
 where
-    Rc: RefCounter,
-    Rc::Either: RefCounter,
+    Rc: RefCounter + Into<Either>,
 {
     /// Convert this address into a generic address which can be weak or strong.
-    pub fn as_either(&self) -> Address<A, Rc::Either> {
-        Address(self.0.to_either())
+    pub fn as_either(&self) -> Address<A, Either> {
+        Address(self.0.to_tx_either())
     }
 }
 

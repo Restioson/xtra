@@ -1,7 +1,7 @@
 //! Dedicated tests for checking the public API of xtra.
 
 use xtra::prelude::*;
-use xtra::refcount::RefCounter;
+use xtra::refcount::{Either, RefCounter};
 
 pub trait AddressExt {}
 
@@ -14,9 +14,8 @@ fn functions_on_address_with_generic_rc_counter<A, Rc, Rc2>(
     address2: Address<A, Rc2>,
 ) where
     A: Actor,
-    Rc: RefCounter,
+    Rc: RefCounter + Into<Either>,
     Rc2: RefCounter,
-    Rc::Either: RefCounter,
     A: Handler<(), Return = ()>,
 {
     address1.as_either();
