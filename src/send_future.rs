@@ -8,7 +8,7 @@ use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use crate::envelope::{BroadcastEnvelopeConcrete, ReturningEnvelope};
-use crate::inbox::{MailboxFull, SentMessage, WaitingSender};
+use crate::inbox::{MailboxFull, MessageToAll, MessageToOne, WaitingSender};
 use crate::refcount::RefCounter;
 use crate::{inbox, Error, Handler};
 
@@ -70,8 +70,11 @@ where
     }
 }
 
-/// "Sending" state of [`SendFuture`] for cases where the actor type is named.
-pub struct ActorNamedSending<A, Rc: RefCounter>(Sending<A, Rc>);
+/// "Sending" state of [`SendFuture`] for cases where the actor type is named and we sent a single message.
+pub struct ActorNamedSending<A, Rc: RefCounter>(Sending<A, MessageToOne<A>, Rc>);
+
+/// "Sending" state of [`SendFuture`] for cases where the actor type is named and we broadcast a message.
+pub struct ActorNamedBroadcasting<A, Rc: RefCounter>(Sending<A, MessageToAll<A>, Rc>);
 
 /// "Sending" state of [`SendFuture`] for cases where the actor type is erased.
 pub struct ActorErasedSending(Box<dyn private::ErasedSending>);
@@ -93,7 +96,7 @@ where
 
         Self {
             sending: ActorNamedSending(Sending::New {
-                msg: SentMessage::ToOneActor(Box::new(envelope)),
+                msg: Box::new(envelope) as MessageToOne<A>,
                 sender,
             }),
             state: ResolveToHandlerReturn::new(receiver),
@@ -113,7 +116,7 @@ impl<R> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
 
         Self {
             sending: ActorErasedSending(Box::new(Sending::New {
-                msg: SentMessage::ToOneActor(Box::new(envelope)),
+                msg: Box::new(envelope) as MessageToOne<A>,
                 sender,
             })),
             state: ResolveToHandlerReturn::new(receiver),
@@ -121,7 +124,7 @@ impl<R> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
     }
 }
 
-impl<A, Rc> SendFuture<ActorNamedSending<A, Rc>, Broadcast>
+impl<A, Rc> SendFuture<ActorNamedBroadcasting<A, Rc>, Broadcast>
 where
     Rc: RefCounter,
 {
@@ -133,8 +136,8 @@ where
         let envelope = BroadcastEnvelopeConcrete::new(msg, 0);
 
         Self {
-            sending: ActorNamedSending(Sending::New {
-                msg: SentMessage::ToAllActors(Arc::new(envelope)),
+            sending: ActorNamedBroadcasting(Sending::New {
+                msg: Arc::new(envelope) as MessageToAll<A>,
                 sender,
             }),
             state: Broadcast(()),
@@ -154,7 +157,7 @@ impl SendFuture<ActorErasedSending, Broadcast> {
 
         Self {
             sending: ActorErasedSending(Box::new(Sending::New {
-                msg: SentMessage::ToAllActors(Arc::new(envelope)),
+                msg: Arc::new(envelope) as MessageToAll<A>,
                 sender,
             })),
             state: Broadcast(()),
@@ -163,16 +166,16 @@ impl SendFuture<ActorErasedSending, Broadcast> {
 }
 
 /// The core state machine around sending a message to an actor's mailbox.
-enum Sending<A, Rc: RefCounter> {
+enum Sending<A, M, Rc: RefCounter> {
     New {
-        msg: SentMessage<A>,
+        msg: M,
         sender: inbox::Sender<A, Rc>,
     },
-    WaitingToSend(Arc<spin::Mutex<WaitingSender<A>>>),
+    WaitingToSend(WaitingSender<M>),
     Done,
 }
 
-impl<A, Rc> Future for Sending<A, Rc>
+impl<A, Rc> Future for Sending<A, MessageToOne<A>, Rc>
 where
     Rc: RefCounter,
 {
@@ -183,16 +186,14 @@ where
 
         loop {
             match mem::replace(this, Sending::Done) {
-                Sending::New { msg, sender } => match sender.try_send(msg)? {
+                Sending::New { msg, sender } => match sender.try_send_to_one(msg)? {
                     Ok(()) => return Poll::Ready(Ok(())),
                     Err(MailboxFull(waiting)) => {
                         *this = Sending::WaitingToSend(waiting);
                     }
                 },
-                Sending::WaitingToSend(waiting) => {
-                    let poll = { waiting.lock().poll_unpin(cx) }?; // Scoped separately to drop mutex guard asap.
-
-                    return match poll {
+                Sending::WaitingToSend(mut waiting) => {
+                    return match waiting.poll_unpin(cx)? {
                         Poll::Ready(()) => Poll::Ready(Ok(())),
                         Poll::Pending => {
                             *this = Sending::WaitingToSend(waiting);
@@ -206,7 +207,39 @@ where
     }
 }
 
-impl<A, Rc> FusedFuture for Sending<A, Rc>
+impl<A, Rc> Future for Sending<A, MessageToAll<A>, Rc>
+where
+    Rc: RefCounter,
+{
+    type Output = Result<(), Error>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        loop {
+            match mem::replace(this, Sending::Done) {
+                Sending::New { msg, sender } => match sender.try_send_to_all(msg)? {
+                    Ok(()) => return Poll::Ready(Ok(())),
+                    Err(MailboxFull(waiting)) => {
+                        *this = Sending::WaitingToSend(waiting);
+                    }
+                },
+                Sending::WaitingToSend(mut waiting) => {
+                    return match waiting.poll_unpin(cx)? {
+                        Poll::Ready(()) => Poll::Ready(Ok(())),
+                        Poll::Pending => {
+                            *this = Sending::WaitingToSend(waiting);
+                            Poll::Pending
+                        }
+                    };
+                }
+                Sending::Done => panic!("Polled after completion"),
+            }
+        }
+    }
+}
+
+impl<A, M, Rc> FusedFuture for Sending<A, M, Rc>
 where
     Self: Future,
     Rc: RefCounter,
@@ -225,6 +258,24 @@ impl<A, Rc: RefCounter> Future for ActorNamedSending<A, Rc> {
 }
 
 impl<A, Rc> FusedFuture for ActorNamedSending<A, Rc>
+where
+    Self: Future,
+    Rc: RefCounter,
+{
+    fn is_terminated(&self) -> bool {
+        self.0.is_terminated()
+    }
+}
+
+impl<A, Rc: RefCounter> Future for ActorNamedBroadcasting<A, Rc> {
+    type Output = Result<(), Error>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.get_mut().0.poll_unpin(cx)
+    }
+}
+
+impl<A, Rc> FusedFuture for ActorNamedBroadcasting<A, Rc>
 where
     Self: Future,
     Rc: RefCounter,
@@ -328,26 +379,42 @@ mod private {
         fn set_priority(&mut self, priority: u32);
     }
 
-    impl<A, Rc> SetPriority for Sending<A, Rc>
+    impl<A, Rc> SetPriority for Sending<A, MessageToOne<A>, Rc>
     where
         Rc: RefCounter,
     {
         fn set_priority(&mut self, new_priority: u32) {
-            let msg = match self {
-                Sending::New { msg, .. } => msg,
+            match self {
+                Sending::New { msg, .. } => msg.set_priority(new_priority),
                 _ => panic!("Cannot set priority after first poll"),
-            };
+            }
+        }
+    }
 
-            match msg {
-                SentMessage::ToOneActor(m) => m.set_priority(new_priority),
-                SentMessage::ToAllActors(m) => Arc::get_mut(m)
+    impl<A, Rc> SetPriority for Sending<A, MessageToAll<A>, Rc>
+    where
+        Rc: RefCounter,
+    {
+        fn set_priority(&mut self, new_priority: u32) {
+            match self {
+                Sending::New { msg, .. } => Arc::get_mut(msg)
                     .expect("envelope is not cloned until here")
                     .set_priority(new_priority),
+                _ => panic!("Cannot set priority after first poll"),
             }
         }
     }
 
     impl<A, Rc> SetPriority for ActorNamedSending<A, Rc>
+    where
+        Rc: RefCounter,
+    {
+        fn set_priority(&mut self, priority: u32) {
+            self.0.set_priority(priority)
+        }
+    }
+
+    impl<A, Rc> SetPriority for ActorNamedBroadcasting<A, Rc>
     where
         Rc: RefCounter,
     {
