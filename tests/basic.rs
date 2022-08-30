@@ -1,6 +1,6 @@
 use std::cmp::Ordering as CmpOrdering;
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
@@ -74,11 +74,11 @@ async fn accumulate_to_ten() {
     assert_eq!(addr.send(Report).await.unwrap().0, 10);
 }
 
-struct DropTester(Arc<AtomicUsize>);
+struct DropTester(Arc<AtomicBool>);
 
 impl Drop for DropTester {
     fn drop(&mut self) {
-        self.0.fetch_add(1, Ordering::SeqCst);
+        self.0.store(true, Ordering::SeqCst);
     }
 }
 
@@ -86,9 +86,7 @@ impl Drop for DropTester {
 impl Actor for DropTester {
     type Stop = ();
 
-    async fn stopped(self) {
-        self.0.fetch_add(5, Ordering::SeqCst);
-    }
+    async fn stopped(self) {}
 }
 
 struct StopAll;
@@ -116,58 +114,58 @@ impl Handler<StopAll> for DropTester {
 #[tokio::test]
 async fn test_stop_and_drop() {
     // Drop the address
-    let drop_count = Arc::new(AtomicUsize::new(0));
+    let dropped = Arc::new(AtomicBool::new(false));
     let (addr, context) = Context::new(None);
-    let handle = tokio::spawn(context.run(DropTester(drop_count.clone())));
+    let handle = tokio::spawn(context.run(DropTester(dropped.clone())));
     let weak = addr.downgrade();
     let join = weak.join();
     drop(addr);
     handle.await.unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert_eq!(dropped.load(Ordering::SeqCst), true);
     assert!(!weak.is_connected());
     assert!(join.now_or_never().is_some());
 
     // Send a stop self message
-    let drop_count = Arc::new(AtomicUsize::new(0));
+    let dropped = Arc::new(AtomicBool::new(false));
     let (addr, context) = Context::new(None);
-    let handle = tokio::spawn(context.run(DropTester(drop_count.clone())));
+    let handle = tokio::spawn(context.run(DropTester(dropped.clone())));
     let weak = addr.downgrade();
     let join = weak.join();
     let _ = addr.send(StopSelf).split_receiver().await;
     handle.await.unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert_eq!(dropped.load(Ordering::SeqCst), true);
     assert!(!weak.is_connected());
     assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
 
     // Send a stop all message
-    let drop_count = Arc::new(AtomicUsize::new(0));
+    let dropped = Arc::new(AtomicBool::new(false));
     let (addr, context) = Context::new(None);
-    let handle = tokio::spawn(context.run(DropTester(drop_count.clone())));
+    let handle = tokio::spawn(context.run(DropTester(dropped.clone())));
     let weak = addr.downgrade();
     let join = weak.join();
     let _ = addr.send(StopAll).split_receiver().await;
     handle.await.unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert_eq!(dropped.load(Ordering::SeqCst), true);
     assert!(!weak.is_connected());
     assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
 
     // Drop address before future has even begun
-    let drop_count = Arc::new(AtomicUsize::new(0));
+    let dropped = Arc::new(AtomicBool::new(false));
     let (addr, context) = Context::new(None);
     let weak = addr.downgrade();
     let join = weak.join();
     drop(addr);
-    tokio::spawn(context.run(DropTester(drop_count.clone())))
+    tokio::spawn(context.run(DropTester(dropped.clone())))
         .await
         .unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert_eq!(dropped.load(Ordering::SeqCst), true);
     assert!(!weak.is_connected());
     assert!(join.now_or_never().is_some());
 
     // Send a stop message before future has even begun
-    let drop_count = Arc::new(AtomicUsize::new(0));
+    let drop_count = Arc::new(AtomicBool::new(false));
     let (addr, context) = Context::new(None);
     let weak = addr.downgrade();
     let join = weak.join();
@@ -175,7 +173,7 @@ async fn test_stop_and_drop() {
     tokio::spawn(context.run(DropTester(drop_count.clone())))
         .await
         .unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert_eq!(drop_count.load(Ordering::SeqCst), true);
     assert!(!weak.is_connected());
     assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
