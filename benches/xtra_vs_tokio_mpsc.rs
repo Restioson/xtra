@@ -69,7 +69,7 @@ fn xtra_throughput(c: &mut Criterion) {
                     },
                     |xtra_address| async move {
                         for _ in 0..num_messages - 1 {
-                            let _ = xtra_address.send(Increment {}).await.unwrap();
+                            xtra_address.send(Increment {}).await.unwrap();
                         }
 
                         xtra_address.send(Stop).await.unwrap();
