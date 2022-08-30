@@ -11,8 +11,7 @@ For better ergonomics with xtra, try the [spaad](https://crates.io/crates/spaad)
 - Safe: there is no unsafe code in xtra.
 - Tiny: xtra is around 2kloc.
 - Lightweight: xtra has few dependencies, most of which are lightweight (except `futures`).
-- Asynchronous and synchronous message handlers.
-- Simple asynchronous message handling interface which allows `async`/`await` syntax even when borrowing `self`.
+- Asynchronous `Handler` interface which allows `async`/`await` syntax even when borrowing `self`.
 - Does not depend on its own runtime and can be run with any futures executor. Convenience `spawn` functions are provided
   for [Tokio](https://tokio.rs/), [async-std](https://async.rs/), [smol](https://github.com/stjepang/smol), and 
   [wasm-bindgen-futures](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/).
@@ -24,20 +23,9 @@ result on my development machine with an AMD Ryzen 3 3200G.
 ```rust
 use xtra::prelude::*;
 
+#[derive(Default, xtra::Actor)]
 struct Printer {
     times: usize,
-}
-
-impl Printer {
-    fn new() -> Self {
-        Printer { times: 0 }
-    }
-}
-
-#[async_trait]
-impl Actor for Printer {
-    type Stop = ();
-    async fn stopped(self) {}
 }
 
 struct Print(String);
@@ -54,7 +42,7 @@ impl Handler<Print> for Printer {
 
 #[tokio::main]
 async fn main() {
-    let addr = xtra::spawn_tokio(Printer::new(), None);
+    let addr = xtra::spawn_tokio(Printer::default(), None);
     loop {
         addr.send(Print("hello".to_string()))
             .await

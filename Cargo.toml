@@ -80,10 +80,6 @@ name = "crude_bench"
 required-features = ["tokio", "macros"]
 
 [[example]]
-name = "global_spawner_ext"
-required-features = ["smol", "macros"]
-
-[[example]]
 name = "backpressure"
 required-features = ["tokio", "macros"]
 
@@ -97,7 +93,7 @@ required-features = ["tokio", "tokio/full", "macros"]
 
 [[example]]
 name = "scoped_actor_task"
-required-features = ["tokio", "macros", "futures-util/default"]
+required-features = ["tokio", "macros"]
 
 [[example]]
 name = "custom_event_loop"
