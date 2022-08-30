@@ -115,7 +115,7 @@ async fn test_stop_and_drop() {
     let join = weak.join();
     drop(addr);
     handle.await.unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1);
     assert!(!weak.is_connected());
     assert!(join.now_or_never().is_some());
 
@@ -127,7 +127,7 @@ async fn test_stop_and_drop() {
     let join = weak.join();
     let _ = addr.send(StopSelf).split_receiver().await;
     handle.await.unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1);
     assert!(!weak.is_connected());
     assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
@@ -140,7 +140,7 @@ async fn test_stop_and_drop() {
     let join = weak.join();
     let _ = addr.send(StopAll).split_receiver().await;
     handle.await.unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1);
     assert!(!weak.is_connected());
     assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
@@ -154,7 +154,7 @@ async fn test_stop_and_drop() {
     tokio::spawn(context.run(DropTester(drop_count.clone())))
         .await
         .unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1);
     assert!(!weak.is_connected());
     assert!(join.now_or_never().is_some());
 
@@ -167,7 +167,7 @@ async fn test_stop_and_drop() {
     tokio::spawn(context.run(DropTester(drop_count.clone())))
         .await
         .unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    assert_eq!(drop_count.load(Ordering::SeqCst), 1);
     assert!(!weak.is_connected());
     assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
