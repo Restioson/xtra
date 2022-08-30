@@ -2,21 +2,20 @@ use std::task::{Context, Poll};
 
 use futures_util::FutureExt;
 
-use crate::envelope::MessageEnvelope;
-use crate::inbox::{ActorMessage, BroadcastQueue, ChanPtr, Rx};
+use crate::inbox::{ActorMessage, BroadcastQueue, ChanPtr, MessageToOne, Rx};
 
 /// A [`WaitingReceiver`] is handed out by the channel any time [`Chan::try_recv`](crate::inbox::Chan::try_recv) is called on an empty mailbox.
 ///
 /// [`WaitingReceiver`] implements [`Future`](std::future::Future) which will resolve once a message lands in the mailbox.
 pub struct WaitingReceiver<A>(catty::Receiver<CtrlMsg<A>>);
 
-/// A [`FulfillHandle`] is the counter-part to a [`WaitingReceiver`].
+/// A [`Handle`] is the counter-part to a [`WaitingReceiver`].
 ///
 /// It is stored internally in the channel and used by the channel implementation to notify a
 /// [`WaitingReceiver`] once a new message hits the mailbox.
-pub struct FulfillHandle<A>(catty::Sender<CtrlMsg<A>>);
+pub struct Handle<A>(catty::Sender<CtrlMsg<A>>);
 
-impl<A> FulfillHandle<A> {
+impl<A> Handle<A> {
     /// Notify the connected [`WaitingReceiver`] that the channel is shutting down.
     pub fn notify_channel_shutdown(self) {
         let _ = self.0.send(CtrlMsg::Shutdown);
@@ -37,10 +36,7 @@ impl<A> FulfillHandle<A> {
     ///
     /// This function will return the message in an `Err` if the [`WaitingReceiver`] has since called
     /// [`cancel`](WaitingReceiver::cancel) and is therefore unable to handle the message.
-    pub fn notify_new_message(
-        self,
-        msg: Box<dyn MessageEnvelope<Actor = A>>,
-    ) -> Result<(), Box<dyn MessageEnvelope<Actor = A>>> {
+    pub fn notify_new_message(self, msg: MessageToOne<A>) -> Result<(), MessageToOne<A>> {
         self.0
             .send(CtrlMsg::NewMessage(msg))
             .map_err(|reason| match reason {
@@ -51,10 +47,10 @@ impl<A> FulfillHandle<A> {
 }
 
 impl<A> WaitingReceiver<A> {
-    pub fn new() -> (WaitingReceiver<A>, FulfillHandle<A>) {
+    pub fn new() -> (WaitingReceiver<A>, Handle<A>) {
         let (sender, receiver) = catty::oneshot();
 
-        (WaitingReceiver(receiver), FulfillHandle(sender))
+        (WaitingReceiver(receiver), Handle(sender))
     }
 
     /// Cancel this [`WaitingReceiver`].
@@ -64,7 +60,7 @@ impl<A> WaitingReceiver<A> {
     ///
     /// It is important to call this message over just dropping the [`WaitingReceiver`] as this
     /// message would otherwise be dropped.
-    pub fn cancel(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+    pub fn cancel(&mut self) -> Option<MessageToOne<A>> {
         match self.0.try_recv() {
             Ok(Some(CtrlMsg::NewMessage(msg))) => Some(msg),
             _ => None,
@@ -101,7 +97,7 @@ impl<A> WaitingReceiver<A> {
 }
 
 enum CtrlMsg<A> {
-    NewMessage(Box<dyn MessageEnvelope<Actor = A>>),
+    NewMessage(MessageToOne<A>),
     NewBroadcast,
     Shutdown,
 }
