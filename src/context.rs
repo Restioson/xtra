@@ -9,8 +9,9 @@ use futures_core::future::BoxFuture;
 use futures_util::future::{self, Either};
 use futures_util::FutureExt;
 
-use crate::envelope::{Shutdown, Span};
+use crate::envelope::Shutdown;
 use crate::inbox::ActorMessage;
+use crate::instrumentation::Span;
 use crate::recv_future::{Message, ReceiveFuture};
 use crate::{inbox, Actor, Address, Error, WeakAddress};
 
@@ -355,17 +356,14 @@ impl<'a, A> TickFuture<'a, A> {
     /// ```
     ///
     #[cfg(feature = "instrumentation")]
-    pub fn get_or_create_span(&mut self) -> &tracing::Span {
-        let span = mem::replace(&mut self.span.0, tracing::Span::none());
+    pub fn get_or_create_span(&mut self) -> &Span {
+        let span = mem::replace(&mut self.span, Span::none());
         *self = match mem::replace(&mut self.state, TickState::Done) {
             TickState::New { msg, act, ctx } => TickFuture::running(msg, act, ctx),
-            state => TickFuture {
-                state,
-                span: Span(span),
-            },
+            state => TickFuture { state, span },
         };
 
-        &self.span.0
+        &self.span
     }
 
     fn running(msg: ActorMessage<A>, act: &'a mut A, ctx: &'a mut Context<A>) -> TickFuture<'a, A> {
@@ -402,10 +400,7 @@ impl<'a, A> TickFuture<'a, A> {
     fn new(msg: ActorMessage<A>, act: &'a mut A, ctx: &'a mut Context<A>) -> Self {
         TickFuture {
             state: TickState::New { msg, act, ctx },
-            span: Span(
-                #[cfg(feature = "instrumentation")]
-                tracing::Span::none(),
-            ),
+            span: Span::none(),
         }
     }
 }
