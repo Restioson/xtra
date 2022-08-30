@@ -99,6 +99,10 @@ required-features = ["tokio", "macros"]
 name = "custom_event_loop"
 required-features = ["macros"]
 
+[[example]]
+name = "manual_actor_impl"
+required-features = ["tokio"]
+
 [[test]]
 name = "basic"
 required-features = ["tokio", "macros"]
