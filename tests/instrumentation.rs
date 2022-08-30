@@ -23,83 +23,45 @@
 //! OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //! SOFTWARE.
 
-use std::io;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::{fmt, io};
 
 use tracing::{Dispatch, Instrument};
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::FmtSubscriber;
 use xtra::prelude::*;
 
-#[derive(Debug)]
-pub struct MockWriter {
-    buf: Arc<Mutex<Vec<u8>>>,
+#[tokio::test]
+async fn assert_send_is_child_of_span() {
+    let (subscriber, buf) = get_subscriber("instrumentation=trace,xtra=trace");
+    let _g = tracing::dispatcher::set_default(&subscriber);
+
+    let addr = xtra::spawn_tokio(Tracer, None);
+    let _ = addr
+        .send(Hello("world"))
+        .instrument(tracing::info_span!("user_span"))
+        .await;
+
+    assert_eq!(
+        buf,
+        [" INFO user_span:xtra_actor_request\
+                {actor_type=instrumentation::Tracer message_type=instrumentation::Hello}:\
+                xtra_message_handler: instrumentation: Hello world"]
+    );
 }
 
-impl MockWriter {
-    /// Create a new `MockWriter` that writes into the specified buffer (behind a mutex).
-    pub fn new(buf: Arc<Mutex<Vec<u8>>>) -> Self {
-        Self { buf }
-    }
+#[tokio::test]
+async fn assert_handler_span_is_child_of_caller_span_with_min_level_info() {
+    let (subscriber, buf) = get_subscriber("instrumentation=info,xtra=info");
+    let _g = tracing::dispatcher::set_default(&subscriber);
 
-    /// Give access to the internal buffer (behind a `MutexGuard`).
-    fn buf(&self) -> io::Result<MutexGuard<Vec<u8>>> {
-        // Note: The `lock` will block. This would be a problem in production code,
-        // but is fine in tests.
-        self.buf
-            .lock()
-            .map_err(|_| io::Error::from(io::ErrorKind::Other))
-    }
-}
+    let addr = xtra::spawn_tokio(Tracer, None);
+    let _ = addr
+        .send(CreateInfoSpan)
+        .instrument(tracing::info_span!("sender_span"))
+        .await;
 
-impl io::Write for MockWriter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        // Lock target buffer
-        let mut target = self.buf()?;
-
-        // Write to stdout in order to show up in tests
-        print!("{}", String::from_utf8(buf.to_vec()).unwrap());
-
-        // Write to buffer
-        target.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.buf()?.flush()
-    }
-}
-
-impl MakeWriter<'_> for MockWriter {
-    type Writer = Self;
-
-    fn make_writer(&self) -> Self::Writer {
-        MockWriter::new(self.buf.clone())
-    }
-}
-
-/// Return a new subscriber that writes to the specified [`MockWriter`].
-///
-/// [`MockWriter`]: struct.MockWriter.html
-pub fn get_subscriber(mock_writer: MockWriter, env_filter: &str) -> Dispatch {
-    FmtSubscriber::builder()
-        .with_env_filter(env_filter)
-        .with_writer(mock_writer)
-        .with_level(true)
-        .with_ansi(false)
-        .without_time()
-        .into()
-}
-
-pub fn with_logs<F>(buf: &Mutex<Vec<u8>>, f: F)
-where
-    F: Fn(&[&str]),
-{
-    let buf = buf.lock().unwrap();
-    let logs: Vec<&str> = std::str::from_utf8(&buf)
-        .expect("Logs contain invalid UTF8")
-        .lines()
-        .collect();
-    f(&logs)
+    assert_eq!(buf, [" INFO sender_span:info_span: instrumentation: Test!"]);
 }
 
 struct Tracer;
@@ -132,46 +94,85 @@ impl Handler<CreateInfoSpan> for Tracer {
     }
 }
 
-#[tokio::test]
-async fn assert_send_is_child_of_span() {
-    let buf = Arc::new(Mutex::new(vec![]));
-    let mock_writer = MockWriter::new(buf.clone());
-    let subscriber = get_subscriber(mock_writer, "instrumentation=trace,xtra=trace");
-    let _g = tracing::dispatcher::set_default(&subscriber);
-
-    let addr = xtra::spawn_tokio(Tracer, None);
-    let _ = addr
-        .send(Hello("world"))
-        .instrument(tracing::info_span!("user_span"))
-        .await;
-
-    with_logs(&buf, |lines: &[&str]| {
-        assert_eq!(
-            lines,
-            [" INFO user_span:xtra_actor_request\
-                {actor_type=instrumentation::Tracer message_type=instrumentation::Hello}:\
-                xtra_message_handler: instrumentation: Hello world"]
-        );
-    });
+#[derive(Debug, Default)]
+struct BufferWriter {
+    buf: Buffer,
 }
 
-#[tokio::test]
-async fn assert_handler_span_is_child_of_caller_span_with_min_level_info() {
-    let buf = Arc::new(Mutex::new(vec![]));
-    let mock_writer = MockWriter::new(buf.clone());
-    let subscriber = get_subscriber(mock_writer, "instrumentation=info,xtra=info");
-    let _g = tracing::dispatcher::set_default(&subscriber);
+#[derive(Default, Clone)]
+struct Buffer(Arc<Mutex<Vec<u8>>>);
 
-    let addr = xtra::spawn_tokio(Tracer, None);
-    let _ = addr
-        .send(CreateInfoSpan)
-        .instrument(tracing::info_span!("sender_span"))
-        .await;
+impl Buffer {
+    fn as_str(&self) -> String {
+        let buf = self.0.lock().unwrap().clone();
 
-    with_logs(&buf, |lines: &[&str]| {
-        assert_eq!(
-            lines,
-            [" INFO sender_span:info_span: instrumentation: Test!"]
-        );
-    });
+        String::from_utf8(buf).expect("Logs contain invalid UTF8")
+    }
+}
+
+impl<const N: usize> PartialEq<[&str; N]> for Buffer {
+    fn eq(&self, other: &[&str; N]) -> bool {
+        self.as_str().lines().collect::<Vec<_>>().eq(other)
+    }
+}
+
+impl fmt::Debug for Buffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.as_str().lines().collect::<Vec<_>>().fmt(f)
+    }
+}
+
+impl BufferWriter {
+    /// Give access to the internal buffer (behind a `MutexGuard`).
+    fn buf(&self) -> io::Result<MutexGuard<Vec<u8>>> {
+        // Note: The `lock` will block. This would be a problem in production code,
+        // but is fine in tests.
+        self.buf
+            .0
+            .lock()
+            .map_err(|_| io::Error::from(io::ErrorKind::Other))
+    }
+}
+
+impl io::Write for BufferWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        // Lock target buffer
+        let mut target = self.buf()?;
+
+        // Write to stdout in order to show up in tests
+        print!("{}", String::from_utf8(buf.to_vec()).unwrap());
+
+        // Write to buffer
+        target.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.buf()?.flush()
+    }
+}
+
+impl MakeWriter<'_> for BufferWriter {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self::Writer {
+        BufferWriter {
+            buf: self.buf.clone(),
+        }
+    }
+}
+
+/// Return a new subscriber with the [`Buffer`] that all logs will be written to.
+fn get_subscriber(env_filter: &str) -> (Dispatch, Buffer) {
+    let writer = BufferWriter::default();
+    let buffer = writer.buf.clone();
+
+    let dispatch = FmtSubscriber::builder()
+        .with_env_filter(env_filter)
+        .with_writer(writer)
+        .with_level(true)
+        .with_ansi(false)
+        .without_time()
+        .into();
+
+    (dispatch, buffer)
 }

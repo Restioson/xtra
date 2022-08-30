@@ -12,7 +12,7 @@ use event_listener::EventListener;
 use futures_util::FutureExt;
 
 use crate::refcount::{Either, RefCounter, Strong, Weak};
-use crate::send_future::{Broadcast, ResolveToHandlerReturn};
+use crate::send_future::{ActorNamedBroadcasting, Broadcast, ResolveToHandlerReturn};
 use crate::{inbox, ActorNamedSending, Handler, SendFuture};
 
 /// An [`Address`] is a reference to an actor through which messages can be sent.
@@ -174,7 +174,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///
     /// The actor must implement [`Handler<Message>`] for this to work where [`Handler::Return`] is
     /// set to `()`.
-    pub fn broadcast<M>(&self, msg: M) -> SendFuture<ActorNamedSending<A, Rc>, Broadcast>
+    pub fn broadcast<M>(&self, msg: M) -> SendFuture<ActorNamedBroadcasting<A, Rc>, Broadcast>
     where
         M: Clone + Send + Sync + 'static,
         A: Handler<M, Return = ()>,
@@ -186,7 +186,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// address, it will only ever trigger if the actor calls [`Context::stop_self`](crate::Context::stop_self),
     /// as the address would prevent the actor being dropped due to too few strong addresses.
     pub fn join(&self) -> ActorJoinHandle {
-        ActorJoinHandle(self.0.disconnect_notice())
+        ActorJoinHandle(self.0.disconnect_listener())
     }
 
     /// Returns true if this address and the other address point to the same actor. This is

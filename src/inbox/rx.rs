@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use crate::envelope::{BroadcastEnvelope, MessageEnvelope};
+use crate::envelope::MessageEnvelope;
 use crate::inbox::tx::{TxStrong, TxWeak};
-use crate::inbox::{ActorMessage, BroadcastQueue, Chan, Sender, WaitingReceiver};
+use crate::inbox::{ActorMessage, BroadcastQueue, Chan, MessageToAll, Sender, WaitingReceiver};
 use crate::recv_future::ReceiveFuture;
 
 pub struct Receiver<A> {
@@ -30,7 +30,7 @@ impl<A> Receiver<A> {
         })
     }
 
-    pub fn pop_broadcast_message(&self) -> Option<Arc<dyn BroadcastEnvelope<Actor=A>>> {
+    pub fn pop_broadcast_message(&self) -> Option<MessageToAll<A>> {
         self.inner
             .chan
             .lock()
@@ -46,7 +46,7 @@ impl<A> Receiver<A> {
         Sender::new_weak(self.inner.clone())
     }
 
-    pub fn requeue_message(&self, msg: Box<dyn MessageEnvelope<Actor=A>>) {
+    pub fn requeue_message(&self, msg: Box<dyn MessageEnvelope<Actor = A>>) {
         self.inner.requeue_message(msg)
     }
 
