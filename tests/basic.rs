@@ -11,8 +11,17 @@ use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
 use xtra::Error;
 
-#[derive(Clone, Debug, Eq, PartialEq, xtra::Actor)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
+
+#[async_trait]
+impl xtra::Actor for Accumulator {
+    type Stop = usize;
+
+    async fn stopped(self) -> Self::Stop {
+        self.0
+    }
+}
 
 struct Inc;
 

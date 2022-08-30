@@ -44,6 +44,7 @@ impl Handler<GetCount> for Counter {
     }
 }
 
+#[derive(xtra::Actor)]
 struct SendTimer {
     time: Duration,
 }
@@ -59,6 +60,7 @@ impl Handler<GetTime> for SendTimer {
     }
 }
 
+#[derive(xtra::Actor)]
 struct ReturnTimer;
 
 struct TimeReturn;
