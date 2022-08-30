@@ -119,3 +119,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [[bench]]
 name = "throughput"
 harness = false
+
+[[bench]]
+name = "xtra_vs_tokio_mpsc"
+harness = false
