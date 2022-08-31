@@ -7,35 +7,30 @@ use std::fmt;
 use std::future::Future;
 use std::ops::ControlFlow;
 
-use futures_util::future;
 use futures_util::future::Either;
+use futures_util::{future, FutureExt};
 
 pub use self::address::{Address, WeakAddress};
-pub use self::broadcast_future::BroadcastFuture;
 pub use self::context::Context;
 pub use self::mailbox::Mailbox;
-pub use self::manager::ActorManager;
-pub use self::receiver::Receiver;
 pub use self::scoped_task::scoped;
-pub use self::send_future::{ActorErasedSending, NameableSending, SendFuture};
+pub use self::send_future::{ActorErasedSending, ActorNamedSending, Receiver, SendFuture};
+pub use self::spawn::*;
 use crate::context::TickFuture;
-use crate::mailbox::Message;
+use crate::mailbox::Message; // Star export so we don't have to write `cfg` attributes here.
 
 pub mod address;
-mod broadcast_future;
 mod context;
 mod envelope;
 mod inbox;
+mod instrumentation;
 mod mailbox;
-mod manager;
 pub mod message_channel;
-mod receiver;
 /// This module contains a way to scope a future to the lifetime of an actor, stopping it before it
 /// completes if the actor it is associated with stops too.
 pub mod scoped_task;
 mod send_future;
-/// This module contains a trait to spawn actors, implemented for all major async runtimes by default.
-pub mod spawn;
+mod spawn;
 
 /// Commonly used types from xtra
 pub mod prelude {
@@ -51,11 +46,43 @@ pub mod prelude {
 /// This module contains types representing the strength of an address's reference counting, which
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount {
-    pub use crate::inbox::tx::TxEither as Either;
-    pub use crate::inbox::tx::TxRefCounter as RefCounter;
-    pub use crate::inbox::tx::TxStrong as Strong;
-    pub use crate::inbox::tx::TxWeak as Weak;
+    pub use crate::inbox::tx::{
+        TxEither as Either, TxRefCounter as RefCounter, TxStrong as Strong, TxWeak as Weak,
+    };
 }
+
+/// Provides a default implementation of the [`Actor`] trait for the given type with a [`Stop`](Actor::Stop) type of `()` and empty lifecycle functions.
+///
+/// The [`Actor`] custom derive takes away some boilerplate for a standard actor:
+///
+/// ```rust
+/// #[derive(xtra::Actor)]
+/// pub struct MyActor;
+/// #
+/// # fn assert_actor<T: xtra::Actor>() { }
+/// #
+/// # fn main() {
+/// #    assert_actor::<MyActor>()
+/// # }
+/// ```
+/// This macro will generate the following [`Actor`] implementation:
+///
+/// ```rust,no_run
+/// # use xtra::prelude::*;
+/// pub struct MyActor;
+///
+/// #[async_trait]
+/// impl xtra::Actor for MyActor {
+///     type Stop = ();
+///
+///     async fn stopped(self) { }
+/// }
+/// ```
+///
+/// Please note that implementing the [`Actor`] trait is still very easy and this macro purposely does not support a plethora of usecases but is meant to handle the most common ones.
+/// For example, whilst it does support actors with type parameters, lifetimes are entirely unsupported.
+#[cfg(feature = "macros")]
+pub use macros::Actor;
 
 /// Defines that an [`Actor`] can handle a given message `M`.
 ///
@@ -82,7 +109,7 @@ pub mod refcount {
 /// fn main() {
 /// #   #[cfg(feature = "smol")]
 ///     smol::block_on(async {
-///         let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
+///         let addr = xtra::spawn_smol(MyActor, None);
 ///         assert_eq!(addr.send(Msg).await, Ok(20));
 ///     })
 /// }
@@ -141,7 +168,7 @@ pub trait Handler<M>: Actor {
 /// // Will print "Started!", "Goodbye!", and then "Finally stopping."
 /// # #[cfg(feature = "smol")]
 /// smol::block_on(async {
-///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
+///     let addr = xtra::spawn_smol(MyActor, None);
 ///     addr.send(Goodbye).await;
 ///
 ///     smol::Timer::after(Duration::from_secs(1)).await; // Give it time to run
@@ -166,34 +193,6 @@ pub trait Actor: 'static + Send + Sized {
     /// - An actor called [`Context::stop_all`].
     /// - The last [`Address`] with a [`Strong`](crate::refcount::Strong) reference count was dropped.
     async fn stopped(self) -> Self::Stop;
-
-    /// Returns the actor's address and manager in a ready-to-start state, given the cap for the
-    /// actor's mailbox. If `None` is passed, it will be of unbounded size. To spawn the actor,
-    /// the [`ActorManager::spawn`] must be called, or
-    /// the [`ActorManager::run`] method must be called
-    /// and the future it returns spawned onto an executor.
-    /// # Example
-    ///
-    /// ```rust
-    /// # use xtra::prelude::*;
-    /// # use std::time::Duration;
-    /// # use smol::Timer;
-    /// # struct MyActor;
-    /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
-    /// smol::block_on(async {
-    ///     let (addr, fut) = MyActor.create(None).run();
-    ///     smol::spawn(fut).detach(); // Actually spawn the actor onto an executor
-    ///     Timer::after(Duration::from_secs(1)).await; // Give it time to run
-    /// })
-    /// ```
-    fn create(self, message_cap: Option<usize>) -> ActorManager<Self> {
-        let (address, mailbox) = Mailbox::new(message_cap);
-        ActorManager {
-            address,
-            actor: self,
-            mailbox,
-        }
-    }
 }
 
 /// An error related to the actor system
@@ -330,7 +329,7 @@ where
             let mut next_msg = mailbox.next();
             match future::select(fut, &mut next_msg).await {
                 Either::Left((future_res, _)) => {
-                    if let Some(msg) = next_msg.cancel() {
+                    if let Some(msg) = next_msg.now_or_never() {
                         TickFuture::new(msg.0, actor, mailbox).await;
                     }
 

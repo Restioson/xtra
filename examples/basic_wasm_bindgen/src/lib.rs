@@ -1,6 +1,6 @@
-use wasm_bindgen::{prelude::*, JsValue};
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsValue;
 use xtra::prelude::*;
-use xtra::spawn::WasmBindgen;
 
 struct Echoer;
 
@@ -24,7 +24,7 @@ impl Handler<Echo> for Echoer {
 
 #[wasm_bindgen]
 pub async fn start() -> Result<(), JsValue> {
-    let addr = Echoer.create(None).spawn(&mut WasmBindgen);
+    let addr = xtra::spawn_wasm_bindgen(Echoer, None);
     let response = addr
         .send(Echo("hello world".to_string()))
         .await

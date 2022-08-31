@@ -5,14 +5,13 @@ use std::task::{Context, Poll};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
-use crate::inbox::rx::RxStrong;
 use crate::inbox::ActorMessage;
 use crate::{inbox, Address, WeakAddress};
 
 /// The mailbox of an actor.
 ///
 /// This is where all messages sent to an actor's address land.
-pub struct Mailbox<A>(inbox::Receiver<A, RxStrong>);
+pub struct Mailbox<A>(inbox::Receiver<A>);
 
 impl<A> Clone for Mailbox<A> {
     fn clone(&self) -> Self {
@@ -46,21 +45,7 @@ pub struct Message<A>(pub(crate) ActorMessage<A>);
 
 /// A future which will resolve to the next message to be handled by the actor.
 #[must_use = "Futures do nothing unless polled"]
-pub struct ReceiveFuture<A>(pub(crate) inbox::rx::ReceiveFuture<A, RxStrong>);
-
-impl<A> ReceiveFuture<A> {
-    /// Cancel the receiving future, returning a message if it had been fulfilled with one, but had
-    /// not yet been polled after wakeup. Future calls to `Future::poll` will return `Poll::Pending`,
-    /// and `FusedFuture::is_terminated` will return `true`.
-    ///
-    /// This is important to do over `Drop`, as with `Drop` messages may be sent back into the
-    /// channel and could be observed as received out of order, if multiple receives are concurrent
-    /// on one thread.
-    #[must_use = "If dropped, messages could be lost"]
-    pub fn cancel(&mut self) -> Option<Message<A>> {
-        self.0.cancel().map(Message)
-    }
-}
+pub struct ReceiveFuture<A>(pub(crate) inbox::rx::ReceiveFuture<A>);
 
 impl<A> Future for ReceiveFuture<A> {
     type Output = Message<A>;

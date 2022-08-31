@@ -1,166 +1,63 @@
-use std::future::Future;
-
-#[cfg(feature = "async_std")]
-pub use async_std_impl::*;
-#[cfg(feature = "smol")]
-pub use smol_impl::*;
+/// Spawns the given actor into the tokio runtime, returning an [`Address`](crate::Address) to it.
+///
+/// The 2nd parameter is the mailbox size with `None` creating an unbounded mailbox.
 #[cfg(feature = "tokio")]
-pub use tokio_impl::*;
-#[cfg(feature = "wasm_bindgen")]
-pub use wasm_bindgen_impl::*;
+#[cfg_attr(docsrs, doc(cfg(feature = "tokio")))]
+pub fn spawn_tokio<A>(actor: A, mailbox_size: Option<usize>) -> crate::Address<A>
+where
+    A: crate::Actor<Stop = ()>,
+{
+    let (address, mailbox) = crate::Mailbox::new(mailbox_size);
 
-/// An `Spawner` represents anything that can spawn a future to be run in the background. This is
-/// used to spawn actors.
-pub trait Spawner {
-    /// Spawn the given future.
-    fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F);
+    tokio::spawn(crate::run(mailbox, actor));
+
+    address
 }
 
+/// Spawns the given actor into the async_std runtime, returning an [`Address`](crate::Address) to it.
+///
+/// The 2nd parameter is the mailbox size with `None` creating an unbounded mailbox.
 #[cfg(feature = "async_std")]
-mod async_std_impl {
-    use super::*;
-    use crate::{Actor, ActorManager, Address};
+#[cfg_attr(docsrs, doc(cfg(feature = "async_std")))]
+pub fn spawn_async_std<A>(actor: A, mailbox_size: Option<usize>) -> crate::Address<A>
+where
+    A: crate::Actor<Stop = ()>,
+{
+    let (address, mailbox) = crate::Mailbox::new(mailbox_size);
 
-    /// The async std runtime.
-    #[derive(Copy, Clone, Debug, Default)]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async_std")))]
-    pub struct AsyncStd;
+    async_std::task::spawn(crate::run(mailbox, actor));
 
-    impl Spawner for AsyncStd {
-        fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
-            async_std::task::spawn(fut);
-        }
-    }
-
-    /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
-    #[cfg_attr(docsrs, doc(cfg(feature = "async_std")))]
-    pub trait AsyncStdGlobalSpawnExt<A: Actor> {
-        /// Spawn the actor onto the global runtime
-        fn spawn_global(self) -> Address<A>;
-    }
-
-    impl<A: Actor<Stop = ()>> AsyncStdGlobalSpawnExt<A> for ActorManager<A> {
-        fn spawn_global(self) -> Address<A> {
-            self.spawn(&mut AsyncStd)
-        }
-    }
+    address
 }
 
+/// Spawns the given actor into the smol runtime, returning an [`Address`](crate::Address) to it.
+///
+/// The 2nd parameter is the mailbox size with `None` creating an unbounded mailbox.
 #[cfg(feature = "smol")]
-mod smol_impl {
-    use super::*;
-    use crate::{Actor, ActorManager, Address};
+#[cfg_attr(docsrs, doc(cfg(feature = "smol")))]
+pub fn spawn_smol<A>(actor: A, mailbox_size: Option<usize>) -> crate::Address<A>
+where
+    A: crate::Actor<Stop = ()>,
+{
+    let (address, mailbox) = crate::Mailbox::new(mailbox_size);
 
-    /// The smol runtime.
-    #[derive(Copy, Clone, Debug)]
-    #[cfg_attr(docsrs, doc(cfg(feature = "smol")))]
-    pub enum Smol<'a> {
-        /// The global executor.
-        Global,
-        /// A specific smol executor.
-        Handle(&'a smol::Executor<'a>),
-    }
+    smol::spawn(crate::run(mailbox, actor)).detach();
 
-    impl<'a> Default for Smol<'a> {
-        fn default() -> Self {
-            Smol::Global
-        }
-    }
-
-    impl<'a> Spawner for Smol<'a> {
-        fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
-            let task = match self {
-                Smol::Global => smol::spawn(fut),
-                Smol::Handle(e) => e.spawn(fut),
-            };
-            task.detach();
-        }
-    }
-
-    /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
-    #[cfg_attr(docsrs, doc(cfg(feature = "smol")))]
-    pub trait SmolGlobalSpawnExt<A: Actor> {
-        /// Spawn the actor onto the global runtime
-        fn spawn_global(self) -> Address<A>;
-    }
-
-    impl<A: Actor<Stop = ()>> SmolGlobalSpawnExt<A> for ActorManager<A> {
-        fn spawn_global(self) -> Address<A> {
-            self.spawn(&mut Smol::Global)
-        }
-    }
+    address
 }
 
-#[cfg(feature = "tokio")]
-mod tokio_impl {
-    use super::*;
-    use crate::{Actor, ActorManager, Address};
-
-    /// The Tokio runtime.
-    #[derive(Copy, Clone, Debug)]
-    #[cfg_attr(docsrs, doc(cfg(feature = "tokio")))]
-    pub enum Tokio<'a> {
-        /// The global executor.
-        Global,
-        /// A handle to a specific executor.
-        Handle(&'a tokio::runtime::Runtime),
-    }
-
-    impl<'a> Default for Tokio<'a> {
-        fn default() -> Self {
-            Tokio::Global
-        }
-    }
-
-    impl<'a> Spawner for Tokio<'a> {
-        fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
-            match self {
-                Tokio::Global => tokio::spawn(fut),
-                Tokio::Handle(handle) => handle.spawn(fut),
-            };
-        }
-    }
-
-    /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
-    #[cfg_attr(docsrs, doc(cfg(feature = "tokio")))]
-    pub trait TokioGlobalSpawnExt<A: Actor> {
-        /// Spawn the actor onto the global runtime
-        fn spawn_global(self) -> Address<A>;
-    }
-
-    impl<A: Actor<Stop = ()>> TokioGlobalSpawnExt<A> for ActorManager<A> {
-        fn spawn_global(self) -> Address<A> {
-            self.spawn(&mut Tokio::Global)
-        }
-    }
-}
-
+/// Spawns the given actor onto the thread-local runtime via `wasm_bindgen_futures`, returning an [`Address`](crate::Address) to it.
+///
+/// The 2nd parameter is the mailbox size with `None` creating an unbounded mailbox.
 #[cfg(feature = "wasm_bindgen")]
-mod wasm_bindgen_impl {
-    use super::*;
-    use crate::{Actor, ActorManager, Address};
+#[cfg_attr(docsrs, doc(cfg(feature = "wasm_bindgen")))]
+pub fn spawn_wasm_bindgen<A>(actor: A, mailbox_size: Option<usize>) -> crate::Address<A>
+where
+    A: crate::Actor<Stop = ()>,
+{
+    let (address, mailbox) = crate::Mailbox::new(mailbox_size);
 
-    /// Spawn rust futures in WASM on the current thread in the background.
-    #[derive(Copy, Clone, Debug, Default)]
-    #[cfg_attr(docsrs, doc(cfg(feature = "wasm-bindgen")))]
-    pub struct WasmBindgen;
+    wasm_bindgen_futures::spawn_local(crate::run(mailbox, actor));
 
-    impl Spawner for WasmBindgen {
-        fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
-            wasm_bindgen_futures::spawn_local(fut)
-        }
-    }
-
-    /// An extension trait used to allow ergonomic spawning of an actor onto the global runtime.
-    #[cfg_attr(docsrs, doc(cfg(feature = "wasm-bindgen")))]
-    pub trait WasmBindgenGlobalSpawnExt<A: Actor> {
-        /// Spawn the actor onto the global runtime
-        fn spawn_global(self) -> Address<A>;
-    }
-
-    impl<A: Actor<Stop = ()>> WasmBindgenGlobalSpawnExt<A> for ActorManager<A> {
-        fn spawn_global(self) -> Address<A> {
-            self.spawn(&mut WasmBindgen)
-        }
-    }
+    address
 }

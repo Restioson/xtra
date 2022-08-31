@@ -4,8 +4,6 @@
 
 - Sealed `RefCounter` trait
 - `Message` no longer exists - `Return` is now specified on the `Handler` trait itself.
-- `Context::notify_interval` and `Context::notify_after` are now subject to back-pressure, in case the address mailbox
-  is full. These aren't API breaking but a semantic changes.
 - `stopping` has been removed in favour of `stop_self` and `stop_all`. If logic to determine if the actor should stop
   must be executed, it should be done rather at the point of calling `stop_{self,all}`.
 - Previously, `stop_all` would immediately disconnect the address. However, `stop_self` done on every actor would actually
@@ -26,6 +24,8 @@
 - Remove `Context::notify_interval` without a direct replacement. Users are encouraged to write their own loop within
   which they call `Address:send`.
 - Rename features from `with-crate-version` to just `crate`. For example, `with-tokio-1` has been renamed to `tokio`. 
+- Redesign "spawn" interface: Remove `Actor::create`, `ActorManager` and extension traits for spawning in favor of
+  `xtra::spawn_tokio`, `xtra::spawn_smol`, `xtra::spawn_async_std` and `xtra::spawn_wasm_bindgen`. 
 
 ## 0.5.0
 

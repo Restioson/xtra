@@ -9,8 +9,7 @@ use futures_util::task::noop_waker_ref;
 use futures_util::FutureExt;
 use smol_timeout::TimeoutExt;
 use xtra::prelude::*;
-use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::{ActorManager, Error, Mailbox};
+use xtra::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Accumulator(usize);
@@ -66,8 +65,8 @@ impl Handler<StopSelf> for Accumulator {
 
 #[tokio::test]
 async fn accumulate_to_ten() {
-    let (addr, fut) = Accumulator(0).create(None).run();
-    tokio::spawn(fut);
+    let (addr, mailbox) = Mailbox::new(None);
+    tokio::spawn(xtra::run(mailbox, Accumulator(0)));
     for _ in 0..10 {
         let _ = addr.send(Inc).split_receiver().await;
     }
@@ -118,8 +117,8 @@ impl Handler<StopAll> for DropTester {
 async fn test_stop_and_drop() {
     // Drop the address
     let drop_count = Arc::new(AtomicUsize::new(0));
-    let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
-    let handle = tokio::spawn(fut);
+    let (addr, mailbox) = Mailbox::new(None);
+    let handle = tokio::spawn(xtra::run(mailbox, DropTester(drop_count.clone())));
     let weak = addr.downgrade();
     let join = weak.join();
     drop(addr);
@@ -130,8 +129,8 @@ async fn test_stop_and_drop() {
 
     // Send a stop self message
     let drop_count = Arc::new(AtomicUsize::new(0));
-    let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
-    let handle = tokio::spawn(fut);
+    let (addr, mailbox) = Mailbox::new(None);
+    let handle = tokio::spawn(xtra::run(mailbox, DropTester(drop_count.clone())));
     let weak = addr.downgrade();
     let join = weak.join();
     let _ = addr.send(StopSelf).split_receiver().await;
@@ -143,8 +142,8 @@ async fn test_stop_and_drop() {
 
     // Send a stop all message
     let drop_count = Arc::new(AtomicUsize::new(0));
-    let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
-    let handle = tokio::spawn(fut);
+    let (addr, mailbox) = Mailbox::new(None);
+    let handle = tokio::spawn(xtra::run(mailbox, DropTester(drop_count.clone())));
     let weak = addr.downgrade();
     let join = weak.join();
     let _ = addr.send(StopAll).split_receiver().await;
@@ -156,22 +155,26 @@ async fn test_stop_and_drop() {
 
     // Drop address before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
-    let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
+    let (addr, mailbox) = Mailbox::new(None);
     let weak = addr.downgrade();
     let join = weak.join();
     drop(addr);
-    tokio::spawn(fut).await.unwrap();
+    tokio::spawn(xtra::run(mailbox, DropTester(drop_count.clone())))
+        .await
+        .unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
     assert!(!weak.is_connected());
     assert!(join.now_or_never().is_some());
 
     // Send a stop message before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
-    let (addr, fut) = DropTester(drop_count.clone()).create(None).run();
+    let (addr, mailbox) = Mailbox::new(None);
     let weak = addr.downgrade();
     let join = weak.join();
     let _ = addr.send(StopSelf).split_receiver().await;
-    tokio::spawn(fut).await.unwrap();
+    tokio::spawn(xtra::run(mailbox, DropTester(drop_count.clone())))
+        .await
+        .unwrap();
     assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
     assert!(!weak.is_connected());
     assert!(!addr.is_connected());
@@ -180,7 +183,7 @@ async fn test_stop_and_drop() {
 
 #[tokio::test]
 async fn handle_left_messages() {
-    let (addr, fut) = Accumulator(0).create(None).run();
+    let (addr, mailbox) = Mailbox::new(None);
 
     for _ in 0..10 {
         let _ = addr.send(Inc).split_receiver().await;
@@ -188,12 +191,12 @@ async fn handle_left_messages() {
 
     drop(addr);
 
-    assert_eq!(fut.await, 10);
+    assert_eq!(xtra::run(mailbox, Accumulator(0)).await, 10);
 }
 
 #[tokio::test]
 async fn actor_can_be_restarted() {
-    let (addr, fut) = Accumulator(0).create(None).run();
+    let (addr, mailbox) = Mailbox::new(None);
 
     for _ in 0..5 {
         let _ = addr.send(Inc).split_receiver().await;
@@ -205,7 +208,7 @@ async fn actor_can_be_restarted() {
         let _ = addr.send(Inc).split_receiver().await;
     }
 
-    assert_eq!(fut.await, 5);
+    assert_eq!(xtra::run(mailbox, Accumulator(0)).await, 5);
 
     let (addr, ctx) = Mailbox::new(None);
     let fut1 = xtra::run(ctx.clone(), Accumulator(0));
@@ -232,7 +235,8 @@ async fn actor_can_be_restarted() {
 
 #[tokio::test]
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
-    let (address, fut) = ActorStopSelf.create(None).run();
+    let (address, mailbox) = Mailbox::new(None);
+    let fut = xtra::run(mailbox, ActorStopSelf);
     let _ = address.send(StopSelf).split_receiver().await;
     assert!(fut.now_or_never().is_some());
     assert!(address.join().now_or_never().is_some());
@@ -309,25 +313,27 @@ impl Handler<Duration> for LongRunningHandler {
 
 #[tokio::test]
 async fn receiving_async_on_address_returns_immediately_after_dispatch() {
-    let address = LongRunningHandler.create(None).spawn_global();
+    let address = xtra::spawn_tokio(LongRunningHandler, None);
 
     let send_future = address.send(Duration::from_secs(3)).split_receiver();
     let handler_future = send_future
         .now_or_never()
-        .expect("Dispatch should be immediate on first poll");
+        .expect("Dispatch should be immediate on first poll")
+        .expect("Actor is not disconnected");
 
     handler_future.await.unwrap();
 }
 
 #[tokio::test]
 async fn receiving_async_on_message_channel_returns_immediately_after_dispatch() {
-    let address = LongRunningHandler.create(None).spawn_global();
+    let address = xtra::spawn_tokio(LongRunningHandler, None);
     let channel = MessageChannel::new(address);
 
     let send_future = channel.send(Duration::from_secs(3)).split_receiver();
     let handler_future = send_future
         .now_or_never()
-        .expect("Dispatch should be immediate on first poll");
+        .expect("Dispatch should be immediate on first poll")
+        .expect("Actor is not disconnected");
 
     handler_future.await.unwrap();
 }
@@ -406,7 +412,8 @@ async fn handle_order() {
     let mut expected = vec![];
 
     let fut = {
-        let (ele, fut) = Elephant::default().create(None).run();
+        let (ele, mailbox) = Mailbox::new(None);
+        let fut = xtra::run(mailbox, Elephant::default());
 
         let mut send = |msg: Message| {
             expected.push(msg.clone());
@@ -521,7 +528,8 @@ async fn waiting_sender_order() {
 #[tokio::test]
 async fn set_priority_msg_channel() {
     let fut = {
-        let (addr, fut) = Elephant::default().create(None).run();
+        let (addr, mailbox) = Mailbox::new(None);
+        let fut = xtra::run(mailbox, Elephant::default());
 
         let channel = MessageChannel::new(addr);
 
@@ -928,8 +936,8 @@ fn scoped_task() {
 
 #[test]
 fn test_addr_cmp_hash_eq() {
-    let addr1 = Greeter.create(None).run().0;
-    let addr2 = Greeter.create(None).run().0;
+    let addr1 = Mailbox::<Greeter>::new(None).0;
+    let addr2 = Mailbox::<Greeter>::new(None).0;
 
     assert_ne!(addr1, addr2);
     assert_ne!(addr1, addr1.downgrade());
@@ -961,11 +969,8 @@ impl Handler<Pending> for Greeter {
 
 #[tokio::test]
 async fn timeout_returns_interrupted() {
-    let ActorManager {
-        address,
-        mut actor,
-        mut mailbox,
-    } = Greeter.create(None);
+    let (address, mut mailbox) = Mailbox::new(None);
+    let mut actor = Greeter;
 
     tokio::spawn(async move {
         actor.started(&mut mailbox).await;
@@ -986,6 +991,7 @@ async fn timeout_returns_interrupted() {
         .split_receiver()
         .now_or_never()
         .expect("Boundless message should be sent instantly")
+        .expect("Actor is not disconnected")
         .timeout(Duration::from_secs(3))
         .await
         .expect("Message should not time out")
@@ -1002,6 +1008,7 @@ async fn timeout_returns_interrupted() {
         .split_receiver()
         .now_or_never()
         .expect("Boundless message should be sent instantly")
+        .expect("Actor is not disconnected")
         .timeout(Duration::from_secs(3))
         .await
         .expect("Message should not time out")
@@ -1024,4 +1031,29 @@ fn no_sender_returns_disconnected() {
     let (addr, ctx) = Mailbox::<Greeter>::new(None);
     drop(addr);
     assert!(!ctx.address().is_connected());
+}
+
+#[tokio::test]
+async fn receive_future_can_dispatch_in_one_poll() {
+    let (addr, ctx) = Mailbox::<Greeter>::new(None);
+
+    let _ = addr.send(Hello("world")).split_receiver().await;
+    let receive_future = ctx.next();
+
+    assert!(receive_future.now_or_never().is_some())
+}
+
+#[tokio::test]
+async fn receive_future_can_dispatch_in_one_poll_after_it_has_been_polled() {
+    let (addr, ctx) = Mailbox::<Greeter>::new(None);
+    let mut receive_future = ctx.next();
+
+    let poll = receive_future.poll_unpin(&mut std::task::Context::from_waker(
+        futures_util::task::noop_waker_ref(),
+    ));
+    assert!(poll.is_pending());
+
+    let _ = addr.send(Hello("world")).split_receiver().await;
+
+    assert!(receive_future.now_or_never().is_some())
 }

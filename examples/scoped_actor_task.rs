@@ -1,6 +1,5 @@
 use futures_util::future;
 use xtra::prelude::*;
-use xtra::spawn::Tokio;
 
 struct MyActor;
 
@@ -32,7 +31,7 @@ impl Drop for DropChecker {
 
 #[tokio::main]
 async fn main() {
-    let addr = MyActor.create(None).spawn(&mut Tokio::Global);
+    let addr = xtra::spawn_tokio(MyActor, None);
     addr.send(Print("hello".to_string()))
         .await
         .expect("Actor should not be dropped");

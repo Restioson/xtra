@@ -9,14 +9,11 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use event_listener::EventListener;
-use futures_sink::Sink;
 use futures_util::FutureExt;
 
-use crate::envelope::ReturningEnvelope;
-use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
-use crate::send_future::ResolveToHandlerReturn;
-use crate::{inbox, BroadcastFuture, Error, Handler, NameableSending, SendFuture};
+use crate::send_future::{ActorNamedBroadcasting, Broadcast, ResolveToHandlerReturn};
+use crate::{inbox, ActorNamedSending, Handler, SendFuture};
 
 /// An [`Address`] is a reference to an actor through which messages can be sent.
 ///
@@ -128,7 +125,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///
     /// # #[cfg(feature = "smol")]
     /// smol::block_on(async {
-    ///     let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
+    ///     let addr = xtra::spawn_smol(MyActor, None);
     ///     assert!(addr.is_connected());
     ///     addr.send(Shutdown).await;
     ///     smol::Timer::after(Duration::from_secs(1)).await; // Give it time to shut down
@@ -172,37 +169,32 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     pub fn send<M>(
         &self,
         message: M,
-    ) -> SendFuture<
-        <A as Handler<M>>::Return,
-        NameableSending<A, <A as Handler<M>>::Return, Rc>,
-        ResolveToHandlerReturn,
-    >
+    ) -> SendFuture<ActorNamedSending<A, Rc>, ResolveToHandlerReturn<<A as Handler<M>>::Return>>
     where
         M: Send + 'static,
         A: Handler<M>,
     {
-        let (envelope, rx) = ReturningEnvelope::<A, M, <A as Handler<M>>::Return>::new(message);
-        let msg = SentMessage::ToOneActor(PriorityMessageToOne::new(0, Box::new(envelope)));
-        let tx = self.0.send(msg);
-        SendFuture::sending_named(tx, rx)
+        SendFuture::sending_named(message, self.0.clone())
     }
 
-    /// Send a message to all actors on this address.
+    /// Send a message to all actors on this address. The message will, by default, have a priority
+    /// of 0. This can be configured through [`SendFuture::priority`].
     ///
-    /// For details, please see the documentation on [`BroadcastFuture`].
-    pub fn broadcast<M>(&self, msg: M) -> BroadcastFuture<A, M, Rc>
+    /// The actor must implement [`Handler<Message>`] for this to work where [`Handler::Return`] is
+    /// set to `()`.
+    pub fn broadcast<M>(&self, msg: M) -> SendFuture<ActorNamedBroadcasting<A, Rc>, Broadcast>
     where
-        M: Clone + Sync + Send + 'static,
+        M: Clone + Send + Sync + 'static,
         A: Handler<M, Return = ()>,
     {
-        BroadcastFuture::new(msg, self.0.clone())
+        SendFuture::broadcast_named(msg, self.0.clone())
     }
 
     /// Waits until this address becomes disconnected. Note that if this is called on a strong
     /// address, it will only ever trigger if the actor calls [`Context::stop_self`](crate::Context::stop_self),
     /// as the address would prevent the actor being dropped due to too few strong addresses.
     pub fn join(&self) -> ActorJoinHandle {
-        ActorJoinHandle(self.0.disconnect_notice())
+        ActorJoinHandle(self.0.disconnect_listener())
     }
 
     /// Returns true if this address and the other address point to the same actor. This is
@@ -227,7 +219,10 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///
     /// Because [`Sink`]s do not return anything, this function is only available for messages with
     /// a [`Handler`] implementation that sets [`Return`](Handler::Return) to `()`.
-    pub fn into_sink<M>(self) -> impl Sink<M, Error = Error>
+    ///
+    /// [`Sink`]: futures_sink::Sink
+    #[cfg(feature = "sink")]
+    pub fn into_sink<M>(self) -> impl futures_sink::Sink<M, Error = crate::Error>
     where
         A: Handler<M, Return = ()>,
         M: Send + 'static,

@@ -4,14 +4,10 @@
 
 use std::fmt;
 
-use futures_sink::Sink;
-
 use crate::address::{ActorJoinHandle, Address};
-use crate::envelope::ReturningEnvelope;
-use crate::inbox::{PriorityMessageToOne, SentMessage};
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture};
-use crate::{Error, Handler};
+use crate::Handler;
 
 /// A message channel is a channel through which you can send only one kind of message, but to
 /// any actor that can handle it. It is like [`Address`], but associated with the message type rather
@@ -56,8 +52,8 @@ use crate::{Error, Handler};
 /// fn main() {
 /// # #[cfg(feature = "smol")]
 /// smol::block_on(async {
-///         let alice = Alice.create(None).spawn(&mut xtra::spawn::Smol::Global);
-///         let bob = Bob.create(None).spawn(&mut xtra::spawn::Smol::Global);
+///         let alice = xtra::spawn_smol(Alice, None);
+///         let bob = xtra::spawn_smol(Bob, None);
 ///
 ///         let channels = [
 ///             MessageChannel::new(alice),
@@ -124,7 +120,7 @@ where
     ///
     /// This function returns a [`Future`](SendFuture) that resolves to the [`Return`](crate::Handler::Return) value of the handler.
     /// The [`SendFuture`] will resolve to [`Err(Disconnected)`] in case the actor is stopped and not accepting messages.
-    pub fn send(&self, message: M) -> SendFuture<R, ActorErasedSending<R>, ResolveToHandlerReturn> {
+    pub fn send(&self, message: M) -> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
         self.inner.send(message)
     }
 
@@ -142,6 +138,7 @@ where
     }
 }
 
+#[cfg(feature = "sink")]
 impl<M, Rc> MessageChannel<M, (), Rc>
 where
     M: Send + 'static,
@@ -156,7 +153,9 @@ where
     ///
     /// The provided [`Sink`] will process one message at a time completely and thus enforces
     /// back-pressure according to the bounds of the actor's mailbox.
-    pub fn into_sink(self) -> impl Sink<M, Error = Error> {
+    ///
+    /// [`Sink`]: futures_sink::Sink
+    pub fn into_sink(self) -> impl futures_sink::Sink<M, Error = crate::Error> {
         futures_util::sink::unfold((), move |(), message| self.send(message))
     }
 }
@@ -253,7 +252,7 @@ trait MessageChannelTrait<M, Rc> {
     fn send(
         &self,
         message: M,
-    ) -> SendFuture<Self::Return, ActorErasedSending<Self::Return>, ResolveToHandlerReturn>;
+    ) -> SendFuture<ActorErasedSending, ResolveToHandlerReturn<Self::Return>>;
 
     fn clone_channel(
         &self,
@@ -292,15 +291,8 @@ where
         self.capacity()
     }
 
-    fn send(
-        &self,
-        message: M,
-    ) -> SendFuture<R, ActorErasedSending<Self::Return>, ResolveToHandlerReturn> {
-        let (envelope, rx) = ReturningEnvelope::<A, M, R>::new(message);
-        let msg = PriorityMessageToOne::new(0, Box::new(envelope));
-        let sending = self.0.send(SentMessage::ToOneActor(msg));
-
-        SendFuture::sending_erased(sending, rx)
+    fn send(&self, message: M) -> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
+        SendFuture::sending_erased(message, self.0.clone())
     }
 
     fn clone_channel(

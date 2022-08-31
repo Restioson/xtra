@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use tokio::runtime::Runtime;
-use xtra::{Actor, Context, Handler};
+use xtra::{Actor, Context, Handler, Mailbox};
 
 struct Counter(u64);
 
@@ -38,8 +38,8 @@ fn throughput(c: &mut Criterion) {
     let _g = runtime.enter();
 
     for num_messages in [1, 10, 100, 1000] {
-        let (address, task) = Counter(0).create(Some(num_messages)).run();
-        let _task = smol::spawn(task);
+        let (address, mailbox) = Mailbox::new(Some(num_messages));
+        let _task = smol::spawn(xtra::run(mailbox, Counter(0)));
 
         group.bench_with_input(
             BenchmarkId::from_parameter(num_messages),

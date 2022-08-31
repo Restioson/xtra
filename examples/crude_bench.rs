@@ -3,9 +3,8 @@ use std::time::{Duration, Instant};
 
 use futures_util::FutureExt;
 use xtra::prelude::*;
-use xtra::spawn::Tokio;
-use xtra::{ActorErasedSending, NameableSending};
-use xtra::{Mailbox, SendFuture};
+use xtra::refcount::Strong;
+use xtra::{ActorErasedSending, ActorNamedSending, Mailbox, SendFuture};
 
 struct Counter {
     count: usize,
@@ -97,11 +96,11 @@ const COUNT: usize = 10_000_000; // May take a while on some machines
 
 async fn do_address_benchmark<R>(
     name: &str,
-    f: impl Fn(&Address<Counter>) -> SendFuture<(), NameableSending<Counter, ()>, R>,
+    f: impl Fn(&Address<Counter>) -> SendFuture<ActorNamedSending<Counter, Strong>, R>,
 ) where
-    SendFuture<(), NameableSending<Counter, ()>, R>: Future,
+    SendFuture<ActorNamedSending<Counter, Strong>, R>: Future,
 {
-    let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
+    let addr = xtra::spawn_tokio(Counter { count: 0 }, None);
 
     let start = Instant::now();
 
@@ -123,9 +122,9 @@ async fn do_address_benchmark<R>(
 async fn do_parallel_address_benchmark<R>(
     name: &str,
     workers: usize,
-    f: impl Fn(&Address<Counter>) -> SendFuture<(), NameableSending<Counter, ()>, R>,
+    f: impl Fn(&Address<Counter>) -> SendFuture<ActorNamedSending<Counter, Strong>, R>,
 ) where
-    SendFuture<(), NameableSending<Counter, ()>, R>: Future,
+    SendFuture<ActorNamedSending<Counter, Strong>, R>: Future,
 {
     let (addr, mailbox) = Mailbox::new(None);
     let start = Instant::now();
@@ -148,13 +147,13 @@ async fn do_parallel_address_benchmark<R>(
 
 async fn do_channel_benchmark<M, RM>(
     name: &str,
-    f: impl Fn(&MessageChannel<M, ()>) -> SendFuture<(), ActorErasedSending<()>, RM>,
+    f: impl Fn(&MessageChannel<M, ()>) -> SendFuture<ActorErasedSending, RM>,
 ) where
     Counter: Handler<M, Return = ()> + Send,
     M: Send + 'static,
-    SendFuture<(), ActorErasedSending<()>, RM>: Future,
+    SendFuture<ActorErasedSending, RM>: Future,
 {
-    let addr = Counter { count: 0 }.create(None).spawn(&mut Tokio::Global);
+    let addr = xtra::spawn_tokio(Counter { count: 0 }, None);
     let chan = MessageChannel::new(addr.clone());
 
     let start = Instant::now();

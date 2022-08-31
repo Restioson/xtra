@@ -1,5 +1,4 @@
 use xtra::prelude::*;
-use xtra::spawn::Tokio;
 
 struct Printer {
     times: usize,
@@ -32,7 +31,7 @@ impl Handler<Print> for Printer {
 
 #[tokio::main]
 async fn main() {
-    let addr = Printer::new().create(None).spawn(&mut Tokio::Global);
+    let addr = xtra::spawn_tokio(Printer::new(), None);
     loop {
         addr.send(Print("hello".to_string()))
             .await

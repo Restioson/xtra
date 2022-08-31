@@ -8,8 +8,9 @@ use std::{mem, task};
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 
-use crate::envelope::{HandlerSpan, Shutdown};
+use crate::envelope::Shutdown;
 use crate::inbox::ActorMessage;
+use crate::instrumentation::Span;
 use crate::{Actor, Mailbox};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
@@ -32,7 +33,7 @@ impl<'m, A: Actor> Context<'m, A> {
     pub fn stop_all(&mut self) {
         // We only need to shut down if there are still any strong senders left
         if let Some(address) = self.mailbox.address().try_upgrade() {
-            address.0.stop_all_receivers();
+            address.0.shutdown_all_receivers();
         }
     }
 
@@ -42,9 +43,10 @@ impl<'m, A: Actor> Context<'m, A> {
     }
 }
 
+#[must_use = "Futures do nothing unless polled"]
 pub struct TickFuture<'a, A> {
     state: TickState<'a, A>,
-    span: HandlerSpan,
+    span: Span,
 }
 
 impl<'a, A> TickFuture<'a, A> {
@@ -84,17 +86,14 @@ impl<'a, A> TickFuture<'a, A> {
     /// ```
     ///
     #[cfg(feature = "instrumentation")]
-    pub fn get_or_create_span(&mut self) -> &tracing::Span {
-        let span = mem::replace(&mut self.span.0, tracing::Span::none());
+    pub fn get_or_create_span(&mut self) -> &Span {
+        let span = mem::replace(&mut self.span, Span::none());
         *self = match mem::replace(&mut self.state, TickState::Done) {
             TickState::New { msg, act, mailbox } => TickFuture::running(msg, act, mailbox),
-            state => TickFuture {
-                state,
-                span: HandlerSpan(span),
-            },
+            state => TickFuture { state, span },
         };
 
-        &self.span.0
+        &self.span
     }
 
     fn running(
@@ -135,10 +134,7 @@ impl<'a, A> TickFuture<'a, A> {
     pub(crate) fn new(msg: ActorMessage<A>, act: &'a mut A, mailbox: &'a mut Mailbox<A>) -> Self {
         TickFuture {
             state: TickState::New { msg, act, mailbox },
-            span: HandlerSpan(
-                #[cfg(feature = "instrumentation")]
-                tracing::Span::none(),
-            ),
+            span: Span::none(),
         }
     }
 }
