@@ -38,7 +38,7 @@ fn throughput(c: &mut Criterion) {
     let _g = runtime.enter();
 
     for num_messages in [1, 10, 100, 1000] {
-        let (address, mailbox) = Mailbox::new(Some(num_messages));
+        let (address, mailbox) = Mailbox::bounded(num_messages);
         let _task = smol::spawn(xtra::run(mailbox, Counter(0)));
 
         group.bench_with_input(

@@ -63,7 +63,7 @@ impl<'a, A> TickFuture<'a, A> {
     /// # #[async_trait::async_trait] impl Actor for MyActor { type Stop = (); async fn stopped(self) {} }
     /// #
     /// # let mut actor = MyActor;
-    /// # let (addr, mut mailbox) = Mailbox::new(None);
+    /// # let (addr, mut mailbox) = Mailbox::unbounded();
     /// # drop(addr);
     /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
     /// # actor.started(&mut mailbox).await;

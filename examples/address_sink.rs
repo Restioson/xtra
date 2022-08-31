@@ -38,7 +38,7 @@ impl Handler<GetSum> for Accumulator {
 
 #[tokio::main]
 async fn main() {
-    let addr = xtra::spawn_tokio(Accumulator::default(), None);
+    let addr = xtra::spawn_tokio(Accumulator::default(), Mailbox::unbounded());
 
     repeat(10)
         .take(4)

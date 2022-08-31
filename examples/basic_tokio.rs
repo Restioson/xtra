@@ -31,7 +31,7 @@ impl Handler<Print> for Printer {
 
 #[tokio::main]
 async fn main() {
-    let addr = xtra::spawn_tokio(Printer::new(), None);
+    let addr = xtra::spawn_tokio(Printer::new(), Mailbox::unbounded());
     loop {
         addr.send(Print("hello".to_string()))
             .await

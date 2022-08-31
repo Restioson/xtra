@@ -65,7 +65,7 @@ impl Handler<StopSelf> for Accumulator {
 
 #[tokio::test]
 async fn accumulate_to_ten() {
-    let (addr, mailbox) = Mailbox::new(None);
+    let (addr, mailbox) = Mailbox::unbounded();
     tokio::spawn(xtra::run(mailbox, Accumulator(0)));
     for _ in 0..10 {
         let _ = addr.send(Inc).split_receiver().await;
@@ -117,7 +117,7 @@ impl Handler<StopAll> for DropTester {
 async fn test_stop_and_drop() {
     // Drop the address
     let drop_count = Arc::new(AtomicUsize::new(0));
-    let (addr, mailbox) = Mailbox::new(None);
+    let (addr, mailbox) = Mailbox::unbounded();
     let handle = tokio::spawn(xtra::run(mailbox, DropTester(drop_count.clone())));
     let weak = addr.downgrade();
     let join = weak.join();
@@ -129,7 +129,7 @@ async fn test_stop_and_drop() {
 
     // Send a stop self message
     let drop_count = Arc::new(AtomicUsize::new(0));
-    let (addr, mailbox) = Mailbox::new(None);
+    let (addr, mailbox) = Mailbox::unbounded();
     let handle = tokio::spawn(xtra::run(mailbox, DropTester(drop_count.clone())));
     let weak = addr.downgrade();
     let join = weak.join();
@@ -142,7 +142,7 @@ async fn test_stop_and_drop() {
 
     // Send a stop all message
     let drop_count = Arc::new(AtomicUsize::new(0));
-    let (addr, mailbox) = Mailbox::new(None);
+    let (addr, mailbox) = Mailbox::unbounded();
     let handle = tokio::spawn(xtra::run(mailbox, DropTester(drop_count.clone())));
     let weak = addr.downgrade();
     let join = weak.join();
@@ -155,7 +155,7 @@ async fn test_stop_and_drop() {
 
     // Drop address before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
-    let (addr, mailbox) = Mailbox::new(None);
+    let (addr, mailbox) = Mailbox::unbounded();
     let weak = addr.downgrade();
     let join = weak.join();
     drop(addr);
@@ -168,7 +168,7 @@ async fn test_stop_and_drop() {
 
     // Send a stop message before future has even begun
     let drop_count = Arc::new(AtomicUsize::new(0));
-    let (addr, mailbox) = Mailbox::new(None);
+    let (addr, mailbox) = Mailbox::unbounded();
     let weak = addr.downgrade();
     let join = weak.join();
     let _ = addr.send(StopSelf).split_receiver().await;
@@ -183,7 +183,7 @@ async fn test_stop_and_drop() {
 
 #[tokio::test]
 async fn handle_left_messages() {
-    let (addr, mailbox) = Mailbox::new(None);
+    let (addr, mailbox) = Mailbox::unbounded();
 
     for _ in 0..10 {
         let _ = addr.send(Inc).split_receiver().await;
@@ -196,7 +196,7 @@ async fn handle_left_messages() {
 
 #[tokio::test]
 async fn actor_can_be_restarted() {
-    let (addr, mailbox) = Mailbox::new(None);
+    let (addr, mailbox) = Mailbox::unbounded();
 
     for _ in 0..5 {
         let _ = addr.send(Inc).split_receiver().await;
@@ -210,7 +210,7 @@ async fn actor_can_be_restarted() {
 
     assert_eq!(xtra::run(mailbox, Accumulator(0)).await, 5);
 
-    let (addr, ctx) = Mailbox::new(None);
+    let (addr, ctx) = Mailbox::unbounded();
     let fut1 = xtra::run(ctx.clone(), Accumulator(0));
     let fut2 = xtra::run(ctx, Accumulator(0));
 
@@ -235,7 +235,7 @@ async fn actor_can_be_restarted() {
 
 #[tokio::test]
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
-    let (address, mailbox) = Mailbox::new(None);
+    let (address, mailbox) = Mailbox::unbounded();
     let fut = xtra::run(mailbox, ActorStopSelf);
     let _ = address.send(StopSelf).split_receiver().await;
     assert!(fut.now_or_never().is_some());
@@ -245,7 +245,7 @@ async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
 
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self() {
-    let (address, ctx) = Mailbox::new(None);
+    let (address, ctx) = Mailbox::unbounded();
     tokio::spawn(xtra::run(ctx.clone(), ActorStopSelf));
     tokio::spawn(xtra::run(ctx, ActorStopSelf));
     address.send(StopSelf).await.unwrap();
@@ -260,7 +260,7 @@ async fn two_actors_on_address_with_stop_self() {
 
 #[tokio::test]
 async fn two_actors_on_address_with_stop_self_context_alive() {
-    let (address, ctx) = Mailbox::new(None);
+    let (address, ctx) = Mailbox::unbounded();
     tokio::spawn(xtra::run(ctx.clone(), ActorStopSelf));
     tokio::spawn(xtra::run(ctx.clone(), ActorStopSelf)); // Context not dropped here
     address.send(StopSelf).await.unwrap();
@@ -313,7 +313,7 @@ impl Handler<Duration> for LongRunningHandler {
 
 #[tokio::test]
 async fn receiving_async_on_address_returns_immediately_after_dispatch() {
-    let address = xtra::spawn_tokio(LongRunningHandler, None);
+    let address = xtra::spawn_tokio(LongRunningHandler, Mailbox::unbounded());
 
     let send_future = address.send(Duration::from_secs(3)).split_receiver();
     let handler_future = send_future
@@ -326,7 +326,7 @@ async fn receiving_async_on_address_returns_immediately_after_dispatch() {
 
 #[tokio::test]
 async fn receiving_async_on_message_channel_returns_immediately_after_dispatch() {
-    let address = xtra::spawn_tokio(LongRunningHandler, None);
+    let address = xtra::spawn_tokio(LongRunningHandler, Mailbox::unbounded());
     let channel = MessageChannel::new(address);
 
     let send_future = channel.send(Duration::from_secs(3)).split_receiver();
@@ -412,7 +412,7 @@ async fn handle_order() {
     let mut expected = vec![];
 
     let fut = {
-        let (ele, mailbox) = Mailbox::new(None);
+        let (ele, mailbox) = Mailbox::unbounded();
         let fut = xtra::run(mailbox, Elephant::default());
 
         let mut send = |msg: Message| {
@@ -453,7 +453,7 @@ async fn handle_order() {
 
 #[tokio::test]
 async fn waiting_sender_order() {
-    let (addr, mut ctx) = Mailbox::new(Some(1));
+    let (addr, mut ctx) = Mailbox::bounded(1);
     let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
     let mut ele = Elephant::default();
 
@@ -528,7 +528,7 @@ async fn waiting_sender_order() {
 #[tokio::test]
 async fn set_priority_msg_channel() {
     let fut = {
-        let (addr, mailbox) = Mailbox::new(None);
+        let (addr, mailbox) = Mailbox::unbounded();
         let fut = xtra::run(mailbox, Elephant::default());
 
         let channel = MessageChannel::new(addr);
@@ -563,7 +563,7 @@ async fn set_priority_msg_channel() {
 
 #[tokio::test]
 async fn broadcast_tail_advances_bound_1() {
-    let (addr, mut ctx) = Mailbox::new(Some(1));
+    let (addr, mut ctx) = Mailbox::bounded(1);
     let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
     let mut ngwevu = Elephant {
         name: "Ngwevu",
@@ -674,7 +674,7 @@ async fn broadcast_tail_advances_bound_1() {
 
 #[tokio::test]
 async fn broadcast_tail_advances_bound_2() {
-    let (addr, mut ctx) = Mailbox::new(Some(2));
+    let (addr, mut ctx) = Mailbox::bounded(2);
     let mut ngwevu = Elephant {
         name: "Ngwevu",
         msgs: vec![],
@@ -706,7 +706,7 @@ async fn broadcast_tail_advances_bound_2() {
 
 #[tokio::test]
 async fn broadcast_tail_does_not_advance_unless_both_handle() {
-    let (addr, mut ctx) = Mailbox::new(Some(2));
+    let (addr, mut ctx) = Mailbox::bounded(2);
     let mut ngwevu = Elephant {
         name: "Ngwevu",
         msgs: vec![],
@@ -771,7 +771,7 @@ impl Handler<PrintHello> for Greeter {
 
 #[tokio::test]
 async fn address_send_exercises_backpressure() {
-    let (address, mut context) = Mailbox::new(Some(1));
+    let (address, mut context) = Mailbox::bounded(1);
 
     // Regular send
 
@@ -800,7 +800,7 @@ async fn address_send_exercises_backpressure() {
 
     // Priority send
 
-    let (address, mut context) = Mailbox::new(Some(1));
+    let (address, mut context) = Mailbox::bounded(1);
 
     let _ = address
         .send(Hello("world"))
@@ -856,7 +856,7 @@ async fn address_send_exercises_backpressure() {
 
 #[test]
 fn address_debug() {
-    let (addr1, _ctx) = Mailbox::<Greeter>::new(None);
+    let (addr1, _ctx) = Mailbox::<Greeter>::unbounded();
 
     let addr2 = addr1.clone();
     let weak_addr = addr2.downgrade();
@@ -880,7 +880,7 @@ fn address_debug() {
 
 #[test]
 fn message_channel_debug() {
-    let (addr1, _ctx) = Mailbox::<Greeter>::new(None);
+    let (addr1, _ctx) = Mailbox::<Greeter>::unbounded();
 
     let mc = MessageChannel::<Hello, String>::new(addr1);
     let weak_mc = mc.downgrade();
@@ -903,7 +903,7 @@ fn message_channel_debug() {
 #[test]
 fn scoped_task() {
     // Completes when address is connected
-    let (addr, ctx) = Mailbox::new(None);
+    let (addr, ctx) = Mailbox::unbounded();
     let scoped = xtra::scoped(&addr, futures_util::future::ready(()));
     assert!(scoped.now_or_never().is_some());
 
@@ -915,20 +915,20 @@ fn scoped_task() {
     assert_eq!(scoped.now_or_never(), Some(None));
 
     // Does not complete when address starts off from a disconnected strong
-    let (addr, ctx) = Mailbox::new(None);
+    let (addr, ctx) = Mailbox::unbounded();
     let _ = addr.send(StopSelf).split_receiver().now_or_never().unwrap();
     assert!(xtra::run(ctx, ActorStopSelf).now_or_never().is_some());
     let scoped = xtra::scoped(&addr, futures_util::future::ready(()));
     assert_eq!(scoped.now_or_never(), Some(None));
 
     // Does not complete when address disconnects after ScopedTask creation but before first poll
-    let (addr, ctx) = Mailbox::<Greeter>::new(None);
+    let (addr, ctx) = Mailbox::<Greeter>::unbounded();
     drop(ctx);
     let scoped = xtra::scoped(&addr, futures_util::future::ready(()));
     assert_eq!(scoped.now_or_never(), Some(None));
 
     // Does not complete when address disconnects after ScopedTask creation but before first poll
-    let (addr, act_ctx) = Mailbox::<Greeter>::new(None);
+    let (addr, act_ctx) = Mailbox::<Greeter>::unbounded();
     let mut scoped = xtra::scoped(&addr, futures_util::future::pending::<()>()).boxed();
     let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
     assert!(scoped.poll_unpin(&mut fut_ctx).is_pending());
@@ -938,8 +938,8 @@ fn scoped_task() {
 
 #[test]
 fn test_addr_cmp_hash_eq() {
-    let addr1 = Mailbox::<Greeter>::new(None).0;
-    let addr2 = Mailbox::<Greeter>::new(None).0;
+    let addr1 = Mailbox::<Greeter>::unbounded().0;
+    let addr2 = Mailbox::<Greeter>::unbounded().0;
 
     assert_ne!(addr1, addr2);
     assert_ne!(addr1, addr1.downgrade());
@@ -971,7 +971,7 @@ impl Handler<Pending> for Greeter {
 
 #[tokio::test]
 async fn timeout_returns_interrupted() {
-    let (address, mut mailbox) = Mailbox::new(None);
+    let (address, mut mailbox) = Mailbox::unbounded();
     let mut actor = Greeter;
 
     tokio::spawn(async move {
@@ -1030,14 +1030,14 @@ async fn timeout_returns_interrupted() {
 
 #[test]
 fn no_sender_returns_disconnected() {
-    let (addr, ctx) = Mailbox::<Greeter>::new(None);
+    let (addr, ctx) = Mailbox::<Greeter>::unbounded();
     drop(addr);
     assert!(!ctx.address().is_connected());
 }
 
 #[tokio::test]
 async fn receive_future_can_dispatch_in_one_poll() {
-    let (addr, mailbox) = Mailbox::<Greeter>::new(None);
+    let (addr, mailbox) = Mailbox::<Greeter>::unbounded();
 
     let _ = addr.send(Hello("world")).split_receiver().await;
     let receive_future = mailbox.next();
@@ -1047,7 +1047,7 @@ async fn receive_future_can_dispatch_in_one_poll() {
 
 #[tokio::test]
 async fn receive_future_can_dispatch_in_one_poll_after_it_has_been_polled() {
-    let (addr, mailbox) = Mailbox::<Greeter>::new(None);
+    let (addr, mailbox) = Mailbox::<Greeter>::unbounded();
     let mut receive_future = mailbox.next();
 
     let poll = receive_future.poll_unpin(&mut std::task::Context::from_waker(

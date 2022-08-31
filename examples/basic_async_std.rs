@@ -31,7 +31,7 @@ impl Handler<Print> for Printer {
 
 #[async_std::main]
 async fn main() {
-    let addr = xtra::spawn_async_std(Printer::new(), None);
+    let addr = xtra::spawn_async_std(Printer::new(), Mailbox::unbounded());
     loop {
         addr.send(Print("hello".to_string()))
             .await

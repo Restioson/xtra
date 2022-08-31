@@ -31,7 +31,7 @@ impl Drop for DropChecker {
 
 #[tokio::main]
 async fn main() {
-    let addr = xtra::spawn_tokio(MyActor, None);
+    let addr = xtra::spawn_tokio(MyActor, Mailbox::unbounded());
     addr.send(Print("hello".to_string()))
         .await
         .expect("Actor should not be dropped");

@@ -24,7 +24,7 @@ impl Handler<Echo> for Echoer {
 
 #[wasm_bindgen]
 pub async fn start() -> Result<(), JsValue> {
-    let addr = xtra::spawn_wasm_bindgen(Echoer, None);
+    let addr = xtra::spawn_wasm_bindgen(Echoer, Mailbox::unbounded());
     let response = addr
         .send(Echo("hello world".to_string()))
         .await

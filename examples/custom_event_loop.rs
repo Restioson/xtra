@@ -36,7 +36,7 @@ impl Handler<Inc> for Counter {
 
 #[tokio::main]
 async fn main() {
-    let (address, mut mailbox) = Mailbox::new(None);
+    let (address, mut mailbox) = Mailbox::unbounded();
     let mut actor = Counter::new();
 
     tokio::spawn(async move {

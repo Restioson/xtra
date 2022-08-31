@@ -15,8 +15,23 @@ pub struct Mailbox<A> {
 
 impl<A> Mailbox<A> {
     /// Creates a new [`Mailbox`] with the given capacity.
-    pub fn new(capacity: Option<usize>) -> (Address<A>, Mailbox<A>) {
-        let (sender, receiver) = crate::inbox::new(capacity);
+    pub fn bounded(capacity: usize) -> (Address<A>, Mailbox<A>) {
+        let (sender, receiver) = crate::inbox::new(Some(capacity));
+
+        let address = Address(sender);
+        let mailbox = Mailbox {
+            broadcast_mailbox: receiver.new_broadcast_mailbox(),
+            inner: receiver,
+        };
+
+        (address, mailbox)
+    }
+
+    /// Creates a new, unbounded [`Mailbox`].
+    ///
+    /// Unbounded mailboxes will not perform an back-pressure and can result in potentially unbounded memory growth. Use with care.
+    pub fn unbounded() -> (Address<A>, Mailbox<A>) {
+        let (sender, receiver) = crate::inbox::new(None);
 
         let address = Address(sender);
         let mailbox = Mailbox {

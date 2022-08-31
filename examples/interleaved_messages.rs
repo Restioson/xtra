@@ -60,12 +60,12 @@ impl Handler<Hello> for ActorB {
 
 fn main() {
     smol::block_on(async {
-        let actor_b = xtra::spawn_smol(ActorB, None);
+        let actor_b = xtra::spawn_smol(ActorB, Mailbox::unbounded());
         let actor_a = xtra::spawn_smol(
             ActorA {
                 actor_b: actor_b.clone(),
             },
-            None,
+            Mailbox::unbounded(),
         );
         actor_b.send(Initialized(actor_a.clone())).await.unwrap();
     })

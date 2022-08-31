@@ -51,7 +51,7 @@ impl Handler<Print> for Printer {
 
 #[smol_potat::main]
 async fn main() {
-    let (addr, mailbox) = Mailbox::new(Some(32));
+    let (addr, mailbox) = Mailbox::bounded(32);
     smol::spawn(xtra::run(mailbox.clone(), Printer::new(0))).detach();
     smol::spawn(xtra::run(mailbox.clone(), Printer::new(1))).detach();
     smol::spawn(xtra::run(mailbox.clone(), Printer::new(2))).detach();

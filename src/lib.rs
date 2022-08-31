@@ -109,7 +109,7 @@ use crate::recv_future::Message;
 /// fn main() {
 /// #   #[cfg(feature = "smol")]
 ///     smol::block_on(async {
-///         let addr = xtra::spawn_smol(MyActor, None);
+///         let addr = xtra::spawn_smol(MyActor, Mailbox::unbounded());
 ///         assert_eq!(addr.send(Msg).await, Ok(20));
 ///     })
 /// }
@@ -168,7 +168,7 @@ pub trait Handler<M>: Actor {
 /// // Will print "Started!", "Goodbye!", and then "Finally stopping."
 /// # #[cfg(feature = "smol")]
 /// smol::block_on(async {
-///     let addr = xtra::spawn_smol(MyActor, None);
+///     let addr = xtra::spawn_smol(MyActor, Mailbox::unbounded());
 ///     addr.send(Goodbye).await;
 ///
 ///     smol::Timer::after(Duration::from_secs(1)).await; // Give it time to run

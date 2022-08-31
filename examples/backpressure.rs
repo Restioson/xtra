@@ -59,9 +59,7 @@ impl Handler<Hello> for Greeter {
 /// The example ends after the loop and thus, the runtime is immediately destroyed after which means none of the queue handlers ever get to actually execute.
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let mailbox_capacity = None;
-
-    let address = xtra::spawn_tokio(Greeter, mailbox_capacity);
+    let address = xtra::spawn_tokio(Greeter, Mailbox::unbounded());
 
     for _ in 0..100 {
         let name = "world!".to_owned();
