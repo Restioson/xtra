@@ -12,6 +12,7 @@ use futures_util::FutureExt;
 use crate::envelope::Shutdown;
 use crate::inbox::ActorMessage;
 use crate::instrumentation::Span;
+use crate::mailbox::Mailbox;
 use crate::recv_future::{Message, ReceiveFuture};
 use crate::{inbox, Actor, Address, Error, WeakAddress};
 
@@ -27,7 +28,7 @@ pub struct Context<A> {
     /// to achieve this.
     pub running: bool,
     /// The actor's mailbox.
-    mailbox: inbox::Receiver<A>,
+    mailbox: Mailbox<A>,
 }
 
 impl<A: Actor> Context<A> {
@@ -65,7 +66,7 @@ impl<A: Actor> Context<A> {
 
         let context = Context {
             running: true,
-            mailbox: rx,
+            mailbox: Mailbox::new(rx),
         };
 
         (Address(tx), context)

@@ -1,12 +1,13 @@
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
-use crate::inbox::{ActorMessage, Receiver, WaitingReceiver};
+use crate::inbox::{ActorMessage, BroadcastQueue, ChanPtr, Rx, WaitingReceiver};
 
 /// A future which will resolve to the next message to be handled by the actor.
 ///
@@ -29,8 +30,11 @@ pub struct ReceiveFuture<A>(Receiving<A>);
 pub struct Message<A>(pub(crate) ActorMessage<A>);
 
 impl<A> ReceiveFuture<A> {
-    pub(crate) fn new(receiver: Receiver<A>) -> Self {
-        Self(Receiving::New(receiver))
+    pub(crate) fn new(channel: ChanPtr<A, Rx>, broadcast_mailbox: Arc<BroadcastQueue<A>>) -> Self {
+        Self(Receiving::New {
+            channel,
+            broadcast_mailbox,
+        })
     }
 }
 
@@ -47,8 +51,11 @@ impl<A> Future for ReceiveFuture<A> {
 /// This type only exists because the variants of an enum are public and we would leak
 /// implementation details like the variant names into the public API.
 enum Receiving<A> {
-    New(Receiver<A>),
-    WaitingToReceive(Waiting<A>),
+    New {
+        channel: ChanPtr<A, Rx>,
+        broadcast_mailbox: Arc<BroadcastQueue<A>>,
+    },
+    Waiting(Waiting<A>),
     Done,
 }
 
@@ -59,22 +66,26 @@ enum Receiving<A> {
 ///
 /// To avoid losing a message, this type implements [`Drop`] and re-queues the message into the
 /// mailbox in such a scenario.
-struct Waiting<A> {
-    channel_receiver: Receiver<A>,
+pub struct Waiting<A> {
+    channel: ChanPtr<A, Rx>,
+    broadcast_mailbox: Arc<BroadcastQueue<A>>,
     waiting_receiver: WaitingReceiver<A>,
 }
 
 impl<A> Future for Waiting<A> {
-    type Output = Result<ActorMessage<A>, Receiver<A>>;
+    type Output = Result<ActorMessage<A>, (ChanPtr<A, Rx>, Arc<BroadcastQueue<A>>)>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
 
-        let result =
-            match futures_util::ready!(this.waiting_receiver.poll(&this.channel_receiver, cx)) {
-                None => Err(this.channel_receiver.clone()), // TODO: Optimise this clone with an `Option` where we call `take`?
-                Some(msg) => Ok(msg),
-            };
+        let result = match futures_util::ready!(this.waiting_receiver.poll(
+            &this.channel,
+            &this.broadcast_mailbox,
+            cx
+        )) {
+            None => Err((this.channel.clone(), this.broadcast_mailbox.clone())), // TODO: Optimise this clone with an `Option` where we call `take`?
+            Some(msg) => Ok(msg),
+        };
 
         Poll::Ready(result)
     }
@@ -83,7 +94,7 @@ impl<A> Future for Waiting<A> {
 impl<A> Drop for Waiting<A> {
     fn drop(&mut self) {
         if let Some(msg) = self.waiting_receiver.cancel() {
-            self.channel_receiver.requeue_message(msg);
+            self.channel.requeue_message(msg);
         }
     }
 }
@@ -96,23 +107,30 @@ impl<A> Future for Receiving<A> {
 
         loop {
             match mem::replace(this, Receiving::Done) {
-                Receiving::New(rx) => match rx.try_recv() {
+                Receiving::New {
+                    channel,
+                    broadcast_mailbox,
+                } => match channel.try_recv(broadcast_mailbox.as_ref()) {
                     Ok(message) => return Poll::Ready(message),
                     Err(waiting) => {
-                        *this = Receiving::WaitingToReceive(Waiting {
-                            channel_receiver: rx,
+                        *this = Receiving::Waiting(Waiting {
+                            channel,
+                            broadcast_mailbox,
                             waiting_receiver: waiting,
                         });
                     }
                 },
-                Receiving::WaitingToReceive(mut waiting) => match waiting.poll_unpin(cx) {
+                Receiving::Waiting(mut inner) => match inner.poll_unpin(cx) {
                     Poll::Ready(Ok(msg)) => return Poll::Ready(msg),
-                    Poll::Ready(Err(rx)) => {
+                    Poll::Ready(Err((channel, broadcast_mailbox))) => {
                         // False positive wake up, try receive again.
-                        *this = Receiving::New(rx);
+                        *this = Receiving::New {
+                            channel,
+                            broadcast_mailbox,
+                        };
                     }
                     Poll::Pending => {
-                        *this = Receiving::WaitingToReceive(waiting);
+                        *this = Receiving::Waiting(inner);
                         return Poll::Pending;
                     }
                 },
