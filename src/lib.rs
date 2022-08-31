@@ -16,8 +16,7 @@ pub use self::mailbox::Mailbox;
 pub use self::scoped_task::scoped;
 pub use self::send_future::{ActorErasedSending, ActorNamedSending, Receiver, SendFuture};
 pub use self::spawn::*;
-use crate::context::TickFuture;
-use crate::mailbox::Message; // Star export so we don't have to write `cfg` attributes here.
+use crate::context::TickFuture; // Star export so we don't have to write `cfg` attributes here.
 
 pub mod address;
 mod context;
@@ -26,6 +25,7 @@ mod inbox;
 mod instrumentation;
 mod mailbox;
 pub mod message_channel;
+mod recv_future;
 /// This module contains a way to scope a future to the lifetime of an actor, stopping it before it
 /// completes if the actor it is associated with stops too.
 pub mod scoped_task;
@@ -46,9 +46,7 @@ pub mod prelude {
 /// This module contains types representing the strength of an address's reference counting, which
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount {
-    pub use crate::inbox::tx::{
-        TxEither as Either, TxRefCounter as RefCounter, TxStrong as Strong, TxWeak as Weak,
-    };
+    pub use crate::inbox::{RefCounter, TxEither as Either, TxStrong as Strong, TxWeak as Weak};
 }
 
 /// Provides a default implementation of the [`Actor`] trait for the given type with a [`Stop`](Actor::Stop) type of `()` and empty lifecycle functions.
@@ -83,6 +81,8 @@ pub mod refcount {
 /// For example, whilst it does support actors with type parameters, lifetimes are entirely unsupported.
 #[cfg(feature = "macros")]
 pub use macros::Actor;
+
+use crate::recv_future::Message;
 
 /// Defines that an [`Actor`] can handle a given message `M`.
 ///

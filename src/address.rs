@@ -62,7 +62,7 @@ use crate::{inbox, ActorNamedSending, Handler, SendFuture};
 /// of their priority. All actors must handle a message for it to be removed from the mailbox and
 /// the length to decrease. This means that the backpressure provided by [`Address::broadcast`] will
 /// wait for the slowest actor.
-pub struct Address<A, Rc: RefCounter = Strong>(pub(crate) inbox::Sender<A, Rc>);
+pub struct Address<A, Rc: RefCounter = Strong>(pub(crate) inbox::ChanPtr<A, Rc>);
 
 impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -81,7 +81,7 @@ impl<A> WeakAddress<A> {
     ///
     /// This will yield `None` if there are no more other strong addresses around.
     pub fn try_upgrade(&self) -> Option<Address<A>> {
-        Some(Address(self.0.upgrade()?))
+        Some(Address(self.0.try_to_tx_strong()?))
     }
 }
 
@@ -91,7 +91,7 @@ impl<A> Address<A, Strong> {
     /// an actor will not be prevented from being dropped if only weak sinks, channels, and
     /// addresses exist.
     pub fn downgrade(&self) -> WeakAddress<A> {
-        Address(self.0.downgrade())
+        Address(self.0.to_tx_weak())
     }
 }
 
@@ -99,7 +99,18 @@ impl<A> Address<A, Strong> {
 impl<A> Address<A, Either> {
     /// Converts this address into a weak address.
     pub fn downgrade(&self) -> WeakAddress<A> {
-        Address(self.0.downgrade())
+        Address(self.0.to_tx_weak())
+    }
+}
+
+/// Functions which apply to any kind of address, be they strong or weak.
+impl<A, Rc> Address<A, Rc>
+where
+    Rc: RefCounter + Into<Either>,
+{
+    /// Convert this address into a generic address which can be weak or strong.
+    pub fn as_either(&self) -> Address<A, Either> {
+        Address(self.0.to_tx_either())
     }
 }
 
@@ -151,11 +162,6 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// Returns whether the actor's mailbox is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-
-    /// Convert this address into a generic address which can be weak or strong.
-    pub fn as_either(&self) -> Address<A, Either> {
-        Address(self.0.clone().into_either_rc())
     }
 
     /// Send a message to the actor. The message will, by default, have a priority of 0 and be sent

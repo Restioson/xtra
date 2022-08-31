@@ -1,62 +1,51 @@
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::sync::Arc;
 
-use futures_core::FusedFuture;
-use futures_util::FutureExt;
+use crate::inbox::{BroadcastQueue, ChanPtr, Rx};
+use crate::recv_future::ReceiveFuture;
+use crate::{Address, WeakAddress};
 
-use crate::inbox::ActorMessage;
-use crate::{inbox, Address, WeakAddress};
-
-/// The mailbox of an actor.
+/// A [`Mailbox`] is the counter-part to an [`Address`].
 ///
-/// This is where all messages sent to an actor's address land.
-pub struct Mailbox<A>(inbox::Receiver<A>);
-
-impl<A> Clone for Mailbox<A> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
+/// Messages sent into an [`Address`] will be received in an actor's [`Mailbox`].
+/// Think of [`Address`] and [`Mailbox`] as an MPMC channel.
+pub struct Mailbox<A> {
+    inner: ChanPtr<A, Rx>,
+    broadcast_mailbox: Arc<BroadcastQueue<A>>,
 }
 
 impl<A> Mailbox<A> {
-    /// Constructs a new, unbounded mailbox.
+    /// Creates a new [`Mailbox`] with the given capacity.
     pub fn new(capacity: Option<usize>) -> (Address<A>, Mailbox<A>) {
         let (sender, receiver) = crate::inbox::new(capacity);
 
-        (Address(sender), Mailbox(receiver))
+        let address = Address(sender);
+        let mailbox = Mailbox {
+            broadcast_mailbox: receiver.new_broadcast_mailbox(),
+            inner: receiver,
+        };
+
+        (address, mailbox)
     }
 
-    /// Read the next message from the mailbox.
-    pub fn next(&self) -> ReceiveFuture<A> {
-        ReceiveFuture(self.0.receive())
-    }
-
-    /// Grab an address to this mailbox.
+    /// Obtain a [`WeakAddress`] to this [`Mailbox`].
     ///
-    /// The returned address is a [`WeakAddress`]. To get a strong address, use [`WeakAddress::try_upgrade`].
+    /// Obtaining a [`WeakAddress`] is always successful even if there are no more strong addresses
+    /// around. Use [`WeakAddress::try_upgrade`] to get a strong address.
     pub fn address(&self) -> WeakAddress<A> {
-        Address(self.0.weak_sender())
+        Address(self.inner.to_tx_weak())
+    }
+
+    /// Take the next message out of the [`Mailbox`].
+    pub fn next(&self) -> ReceiveFuture<A> {
+        ReceiveFuture::new(self.inner.clone(), self.broadcast_mailbox.clone())
     }
 }
 
-/// A message sent to a given actor, or a notification that it should shut down.
-pub struct Message<A>(pub(crate) ActorMessage<A>);
-
-/// A future which will resolve to the next message to be handled by the actor.
-#[must_use = "Futures do nothing unless polled"]
-pub struct ReceiveFuture<A>(pub(crate) inbox::rx::ReceiveFuture<A>);
-
-impl<A> Future for ReceiveFuture<A> {
-    type Output = Message<A>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.0.poll_unpin(cx).map(Message)
-    }
-}
-
-impl<A> FusedFuture for ReceiveFuture<A> {
-    fn is_terminated(&self) -> bool {
-        self.0.is_terminated()
+impl<A> Clone for Mailbox<A> {
+    fn clone(&self) -> Self {
+        Mailbox {
+            inner: self.inner.clone(),
+            broadcast_mailbox: self.inner.new_broadcast_mailbox(),
+        }
     }
 }

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use futures_util::FutureExt;
 use xtra::prelude::*;
 use xtra::refcount::Strong;
-use xtra::{ActorErasedSending, ActorNamedSending, Mailbox, SendFuture};
+use xtra::{ActorErasedSending, ActorNamedSending, SendFuture};
 
 struct Counter {
     count: usize,

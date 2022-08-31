@@ -43,7 +43,6 @@ impl<'m, A: Actor> Context<'m, A> {
     }
 }
 
-#[must_use = "Futures do nothing unless polled"]
 pub struct TickFuture<'a, A> {
     state: TickState<'a, A>,
     span: Span,
@@ -86,8 +85,8 @@ impl<'a, A> TickFuture<'a, A> {
     /// ```
     ///
     #[cfg(feature = "instrumentation")]
-    pub fn get_or_create_span(&mut self) -> &Span {
-        let span = mem::replace(&mut self.span, Span::none());
+    pub fn get_or_create_span(&mut self) -> &tracing::Span {
+        let span = mem::replace(&mut self.span, tracing::Span::none());
         *self = match mem::replace(&mut self.state, TickState::Done) {
             TickState::New { msg, act, mailbox } => TickFuture::running(msg, act, mailbox),
             state => TickFuture { state, span },
