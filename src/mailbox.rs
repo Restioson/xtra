@@ -19,9 +19,7 @@ impl<A> Mailbox<A> {
     pub fn sender(&self) -> Option<ChanPtr<A, TxStrong>> {
         self.inner.try_to_tx_strong()
     }
-}
 
-impl<A> Mailbox<A> {
     pub fn weak_sender(&self) -> ChanPtr<A, TxWeak> {
         self.inner.to_tx_weak()
     }
