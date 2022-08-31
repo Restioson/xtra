@@ -9,7 +9,7 @@ pub struct Mailbox<A> {
 }
 
 impl<A> Mailbox<A> {
-    pub(super) fn new(inner: ChanPtr<A, Rx>) -> Self {
+    pub fn new(inner: ChanPtr<A, Rx>) -> Self {
         Mailbox {
             broadcast_mailbox: inner.new_broadcast_mailbox(),
             inner,
