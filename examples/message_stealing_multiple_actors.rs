@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use xtra::prelude::*;
 
+#[derive(xtra::Actor)]
 struct Printer {
     times: usize,
     id: usize,
@@ -16,15 +17,6 @@ impl Printer {
             times: 0,
             id: id + 1,
         }
-    }
-}
-
-#[async_trait]
-impl Actor for Printer {
-    type Stop = ();
-
-    async fn stopped(self) {
-        println!("Actor {} stopped", self.id);
     }
 }
 

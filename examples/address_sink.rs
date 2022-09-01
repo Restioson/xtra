@@ -2,16 +2,9 @@ use futures_util::stream::repeat;
 use futures_util::StreamExt;
 use xtra::prelude::*;
 
-#[derive(Default)]
+#[derive(Default, xtra::Actor)]
 struct Accumulator {
     sum: u32,
-}
-
-#[async_trait]
-impl Actor for Accumulator {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
 }
 
 struct Add(u32);

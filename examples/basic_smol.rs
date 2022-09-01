@@ -1,20 +1,8 @@
 use xtra::prelude::*;
 
+#[derive(Default, xtra::Actor)]
 struct Printer {
     times: usize,
-}
-
-impl Printer {
-    fn new() -> Self {
-        Printer { times: 0 }
-    }
-}
-
-#[async_trait]
-impl Actor for Printer {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
 }
 
 struct Print(String);
@@ -31,7 +19,7 @@ impl Handler<Print> for Printer {
 
 fn main() {
     smol::block_on(async {
-        let addr = xtra::spawn_smol(Printer::new(), None);
+        let addr = xtra::spawn_smol(Printer::default(), None);
 
         loop {
             addr.send(Print("hello".to_string()))

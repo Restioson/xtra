@@ -1,7 +1,5 @@
 use std::cmp::Ordering as CmpOrdering;
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
 
@@ -74,29 +72,15 @@ async fn accumulate_to_ten() {
     assert_eq!(addr.send(Report).await.unwrap().0, 10);
 }
 
-struct DropTester(Arc<AtomicUsize>);
-
-impl Drop for DropTester {
-    fn drop(&mut self) {
-        self.0.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
-#[async_trait]
-impl Actor for DropTester {
-    type Stop = ();
-
-    async fn stopped(self) {
-        self.0.fetch_add(5, Ordering::SeqCst);
-    }
-}
+#[derive(xtra::Actor)]
+struct StopTester;
 
 struct StopAll;
 
 struct StopSelf;
 
 #[async_trait]
-impl Handler<StopSelf> for DropTester {
+impl Handler<StopSelf> for StopTester {
     type Return = ();
 
     async fn handle(&mut self, _: StopSelf, ctx: &mut Context<Self>) {
@@ -105,7 +89,7 @@ impl Handler<StopSelf> for DropTester {
 }
 
 #[async_trait]
-impl Handler<StopAll> for DropTester {
+impl Handler<StopAll> for StopTester {
     type Return = ();
 
     async fn handle(&mut self, _: StopAll, ctx: &mut Context<Self>) {
@@ -114,68 +98,71 @@ impl Handler<StopAll> for DropTester {
 }
 
 #[tokio::test]
-async fn test_stop_and_drop() {
-    // Drop the address
-    let drop_count = Arc::new(AtomicUsize::new(0));
+async fn actor_stops_on_last_drop_of_address() {
     let (addr, context) = Context::new(None);
-    let handle = tokio::spawn(context.run(DropTester(drop_count.clone())));
+    let handle = tokio::spawn(context.run(StopTester));
     let weak = addr.downgrade();
     let join = weak.join();
+
     drop(addr);
     handle.await.unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+
     assert!(!weak.is_connected());
     assert!(join.now_or_never().is_some());
+}
 
-    // Send a stop self message
-    let drop_count = Arc::new(AtomicUsize::new(0));
+#[tokio::test]
+async fn actor_stops_on_stop_self_message() {
     let (addr, context) = Context::new(None);
-    let handle = tokio::spawn(context.run(DropTester(drop_count.clone())));
+    let handle = tokio::spawn(context.run(StopTester));
     let weak = addr.downgrade();
     let join = weak.join();
+
     let _ = addr.send(StopSelf).split_receiver().await;
     handle.await.unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+
     assert!(!weak.is_connected());
     assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
+}
 
-    // Send a stop all message
-    let drop_count = Arc::new(AtomicUsize::new(0));
+#[tokio::test]
+async fn actor_stops_on_stop_all_message() {
     let (addr, context) = Context::new(None);
-    let handle = tokio::spawn(context.run(DropTester(drop_count.clone())));
+    let handle = tokio::spawn(context.run(StopTester));
     let weak = addr.downgrade();
     let join = weak.join();
+
     let _ = addr.send(StopAll).split_receiver().await;
     handle.await.unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+
     assert!(!weak.is_connected());
     assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
+}
 
-    // Drop address before future has even begun
-    let drop_count = Arc::new(AtomicUsize::new(0));
+#[tokio::test]
+async fn actor_stops_on_last_drop_of_address_even_if_not_yet_running() {
     let (addr, context) = Context::new(None);
     let weak = addr.downgrade();
     let join = weak.join();
+
     drop(addr);
-    tokio::spawn(context.run(DropTester(drop_count.clone())))
-        .await
-        .unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    tokio::spawn(context.run(StopTester)).await.unwrap();
+
     assert!(!weak.is_connected());
     assert!(join.now_or_never().is_some());
+}
 
-    // Send a stop message before future has even begun
-    let drop_count = Arc::new(AtomicUsize::new(0));
+#[tokio::test]
+async fn actor_stops_on_stop_message_even_if_sent_before_started() {
     let (addr, context) = Context::new(None);
     let weak = addr.downgrade();
     let join = weak.join();
+
     let _ = addr.send(StopSelf).split_receiver().await;
-    tokio::spawn(context.run(DropTester(drop_count.clone())))
-        .await
-        .unwrap();
-    assert_eq!(drop_count.load(Ordering::SeqCst), 1 + 5);
+    tokio::spawn(context.run(StopTester)).await.unwrap();
+
     assert!(!weak.is_connected());
     assert!(!addr.is_connected());
     assert!(join.now_or_never().is_some());
@@ -273,16 +260,8 @@ async fn two_actors_on_address_with_stop_self_context_alive() {
     assert!(address.is_connected());
 }
 
+#[derive(xtra::Actor)]
 struct ActorStopSelf;
-
-#[async_trait]
-impl Actor for ActorStopSelf {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {
-        println!("Stopped");
-    }
-}
 
 #[async_trait]
 impl Handler<StopSelf> for ActorStopSelf {
@@ -293,14 +272,8 @@ impl Handler<StopSelf> for ActorStopSelf {
     }
 }
 
+#[derive(xtra::Actor)]
 struct LongRunningHandler;
-
-#[async_trait]
-impl Actor for LongRunningHandler {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
-}
 
 #[async_trait]
 impl Handler<Duration> for LongRunningHandler {
@@ -724,14 +697,8 @@ async fn broadcast_tail_does_not_advance_unless_both_handle() {
     );
 }
 
+#[derive(xtra::Actor)]
 struct Greeter;
-
-#[async_trait]
-impl Actor for Greeter {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
-}
 
 struct Hello(&'static str);
 
