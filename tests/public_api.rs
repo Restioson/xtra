@@ -14,7 +14,7 @@ fn functions_on_address_with_generic_rc_counter<A, Rc, Rc2>(
     address2: Address<A, Rc2>,
 ) where
     A: Actor,
-    Rc: RefCounter + Into<Either>,
+    Rc: RefCounter,
     Rc2: RefCounter,
     A: Handler<(), Return = ()>,
 {
