@@ -1,8 +1,7 @@
 //! Latency is prioritised over most accurate prioritisation. Specifically, at most one low priority
 //! message may be handled before piled-up higher priority messages will be handled.
 
-pub mod rx;
-pub mod tx;
+mod chan_ptr;
 mod waiting_receiver;
 mod waiting_sender;
 
@@ -12,28 +11,25 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::{atomic, Arc, Mutex, Weak};
 use std::{cmp, mem};
 
+pub use chan_ptr::{ChanPtr, RefCounter, Rx, TxEither, TxStrong, TxWeak};
 use event_listener::{Event, EventListener};
-pub use rx::Receiver;
-pub use tx::Sender;
+pub use waiting_receiver::WaitingReceiver;
 pub use waiting_sender::WaitingSender;
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
-use crate::inbox::tx::TxStrong;
-use crate::inbox::waiting_receiver::WaitingReceiver;
 use crate::{Actor, Error};
 
 pub type MessageToOne<A> = Box<dyn MessageEnvelope<Actor = A>>;
 pub type MessageToAll<A> = Arc<dyn BroadcastEnvelope<Actor = A>>;
-
-type BroadcastQueue<A> = spin::Mutex<BinaryHeap<ByPriority<MessageToAll<A>>>>;
+pub type BroadcastQueue<A> = spin::Mutex<BinaryHeap<ByPriority<MessageToAll<A>>>>;
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
-pub fn new<A>(capacity: Option<usize>) -> (Sender<A, TxStrong>, Receiver<A>) {
+pub fn new<A>(capacity: Option<usize>) -> (ChanPtr<A, TxStrong>, ChanPtr<A, Rx>) {
     let inner = Arc::new(Chan::new(capacity));
 
-    let tx = Sender::new(inner.clone());
-    let rx = Receiver::new(inner);
+    let tx = ChanPtr::<A, TxStrong>::new(inner.clone());
+    let rx = ChanPtr::<A, Rx>::new(inner);
 
     (tx, rx)
 }
@@ -56,11 +52,13 @@ impl<A> Chan<A> {
         }
     }
 
-    pub fn increment_receiver_count(&self) {
+    /// Callback to be invoked every time a receiver is created
+    pub fn on_receiver_created(&self) {
         self.receiver_count.fetch_add(1, atomic::Ordering::Relaxed);
     }
 
-    pub fn decrement_receiver_count(&self) {
+    /// Callback to be invoked every time a receiver is destroyed.
+    pub fn on_receiver_dropped(&self) {
         // Memory orderings copied from Arc::drop
         if self.receiver_count.fetch_sub(1, atomic::Ordering::Release) != 1 {
             return;
@@ -71,8 +69,26 @@ impl<A> Chan<A> {
         self.shutdown_waiting_senders();
     }
 
+    /// Callback to be invoked every time a sender is created.
+    pub fn on_sender_created(&self) {
+        // Memory orderings copied from Arc::clone
+        self.sender_count.fetch_add(1, atomic::Ordering::Relaxed);
+    }
+
+    /// Callback to be invoked every time a sender is destroyed (i.e. dropped).
+    pub fn on_sender_dropped(&self) {
+        // Memory orderings copied from Arc::drop
+        if self.sender_count.fetch_sub(1, atomic::Ordering::Release) != 1 {
+            return;
+        }
+
+        atomic::fence(atomic::Ordering::Acquire);
+
+        self.shutdown_waiting_receivers();
+    }
+
     /// Creates a new broadcast mailbox on this channel.
-    fn new_broadcast_mailbox(&self) -> Arc<BroadcastQueue<A>> {
+    pub fn new_broadcast_mailbox(&self) -> Arc<BroadcastQueue<A>> {
         let mailbox = Arc::new(spin::Mutex::new(BinaryHeap::new()));
         self.chan
             .lock()
@@ -145,7 +161,7 @@ impl<A> Chan<A> {
         Ok(Ok(()))
     }
 
-    fn try_recv(
+    pub fn try_recv(
         &self,
         broadcast_mailbox: &BroadcastQueue<A>,
     ) -> Result<ActorMessage<A>, WaitingReceiver<A>> {
@@ -278,7 +294,7 @@ impl<A> Chan<A> {
     /// given message so it does not get lost.
     ///
     /// Note that the ordering of messages in the queues may be slightly off with this function.
-    fn requeue_message(&self, msg: MessageToOne<A>) {
+    pub fn requeue_message(&self, msg: MessageToOne<A>) {
         let mut inner = match self.chan.lock() {
             Ok(lock) => lock,
             Err(_) => return, // If we can't lock the inner channel, there is nothing we can do.
@@ -292,6 +308,13 @@ impl<A> Chan<A> {
                 inner.priority_queue.push(ByPriority(msg));
             }
         }
+    }
+
+    pub fn next_broadcast_message(
+        &self,
+        broadcast_mailbox: &BroadcastQueue<A>,
+    ) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
+        self.chan.lock().unwrap().pop_broadcast(broadcast_mailbox)
     }
 }
 
@@ -517,7 +540,7 @@ pub trait HasPriority {
 }
 
 /// A wrapper struct that allows comparison and ordering for anything thas has a priority, i.e. implements [`HasPriority`].
-struct ByPriority<T>(pub T);
+pub struct ByPriority<T>(pub T);
 
 impl<T> HasPriority for ByPriority<T>
 where

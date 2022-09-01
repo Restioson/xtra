@@ -8,8 +8,7 @@ use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use crate::envelope::{BroadcastEnvelopeConcrete, ReturningEnvelope};
-use crate::inbox::{MailboxFull, MessageToAll, MessageToOne, WaitingSender};
-use crate::refcount::RefCounter;
+use crate::inbox::{MailboxFull, MessageToAll, MessageToOne, RefCounter, WaitingSender};
 use crate::{inbox, Error, Handler};
 
 /// A [`Future`] that represents the state of sending a message to an actor.
@@ -87,7 +86,7 @@ where
     /// Construct a [`SendFuture`] that contains the actor's name in its type.
     ///
     /// Compared to [`SendFuture::sending_erased`], this function avoids one allocation.
-    pub(crate) fn sending_named<M>(message: M, sender: inbox::Sender<A, Rc>) -> Self
+    pub(crate) fn sending_named<M>(message: M, sender: inbox::ChanPtr<A, Rc>) -> Self
     where
         A: Handler<M, Return = R>,
         M: Send + 'static,
@@ -105,7 +104,7 @@ where
 }
 
 impl<R> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
-    pub(crate) fn sending_erased<A, M, Rc>(message: M, sender: inbox::Sender<A, Rc>) -> Self
+    pub(crate) fn sending_erased<A, M, Rc>(message: M, sender: inbox::ChanPtr<A, Rc>) -> Self
     where
         Rc: RefCounter,
         A: Handler<M, Return = R>,
@@ -128,7 +127,7 @@ impl<A, Rc> SendFuture<ActorNamedBroadcasting<A, Rc>, Broadcast>
 where
     Rc: RefCounter,
 {
-    pub(crate) fn broadcast_named<M>(msg: M, sender: inbox::Sender<A, Rc>) -> Self
+    pub(crate) fn broadcast_named<M>(msg: M, sender: inbox::ChanPtr<A, Rc>) -> Self
     where
         A: Handler<M, Return = ()>,
         M: Clone + Send + Sync + 'static,
@@ -147,7 +146,7 @@ where
 
 #[allow(dead_code)] // This will useful later.
 impl SendFuture<ActorErasedSending, Broadcast> {
-    pub(crate) fn broadcast_erased<A, M, Rc>(msg: M, sender: inbox::Sender<A, Rc>) -> Self
+    pub(crate) fn broadcast_erased<A, M, Rc>(msg: M, sender: inbox::ChanPtr<A, Rc>) -> Self
     where
         Rc: RefCounter,
         A: Handler<M, Return = ()>,
@@ -169,7 +168,7 @@ impl SendFuture<ActorErasedSending, Broadcast> {
 enum Sending<A, M, Rc: RefCounter> {
     New {
         msg: M,
-        sender: inbox::Sender<A, Rc>,
+        sender: inbox::ChanPtr<A, Rc>,
     },
     WaitingToSend(WaitingSender<M>),
     Done,

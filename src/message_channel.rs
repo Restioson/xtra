@@ -5,7 +5,8 @@
 use std::fmt;
 
 use crate::address::{ActorJoinHandle, Address};
-use crate::refcount::{Either, RefCounter, Strong, Weak};
+use crate::inbox::RefCounter;
+use crate::refcount::{Either, Strong, Weak};
 use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture};
 use crate::Handler;
 
@@ -316,7 +317,7 @@ where
     fn to_weak(
         &self,
     ) -> Box<dyn MessageChannelTrait<M, Weak, Return = Self::Return> + Send + Sync + 'static> {
-        Box::new(Address(self.0.downgrade()))
+        Box::new(Address(self.0.to_tx_weak()))
     }
 
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

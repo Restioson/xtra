@@ -16,6 +16,7 @@ mod context;
 mod envelope;
 mod inbox;
 mod instrumentation;
+mod mailbox;
 pub mod message_channel;
 /// This module contains a way to scope a future to the lifetime of an actor, stopping it before it
 /// completes if the actor it is associated with stops too.
@@ -37,9 +38,7 @@ pub mod prelude {
 /// This module contains types representing the strength of an address's reference counting, which
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount {
-    pub use crate::inbox::tx::{
-        TxEither as Either, TxRefCounter as RefCounter, TxStrong as Strong, TxWeak as Weak,
-    };
+    pub use crate::inbox::{RefCounter, TxEither as Either, TxStrong as Strong, TxWeak as Weak};
 }
 
 /// Provides a default implementation of the [`Actor`] trait for the given type with a [`Stop`](Actor::Stop) type of `()` and empty lifecycle functions.
