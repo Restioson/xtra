@@ -1,7 +1,7 @@
 //! Latency is prioritised over most accurate prioritisation. Specifically, at most one low priority
 //! message may be handled before piled-up higher priority messages will be handled.
 
-mod chan_ptr;
+mod ptr;
 mod waiting_receiver;
 mod waiting_sender;
 
@@ -11,8 +11,8 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::{atomic, Arc, Mutex, Weak};
 use std::{cmp, mem};
 
-pub use chan_ptr::{ChanPtr, RefCounter, Rx, TxEither, TxStrong, TxWeak};
 use event_listener::{Event, EventListener};
+pub use ptr::{Ptr, RefCounter, Rx, TxEither, TxStrong, TxWeak};
 pub use waiting_receiver::WaitingReceiver;
 pub use waiting_sender::WaitingSender;
 
@@ -25,11 +25,11 @@ pub type BroadcastQueue<A> = spin::Mutex<BinaryHeap<ByPriority<MessageToAll<A>>>
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
-pub fn new<A>(capacity: Option<usize>) -> (ChanPtr<A, TxStrong>, ChanPtr<A, Rx>) {
+pub fn new<A>(capacity: Option<usize>) -> (Ptr<A, TxStrong>, Ptr<A, Rx>) {
     let inner = Arc::new(Chan::new(capacity));
 
-    let tx = ChanPtr::<A, TxStrong>::new(inner.clone());
-    let rx = ChanPtr::<A, Rx>::new(inner);
+    let tx = Ptr::<A, TxStrong>::new(inner.clone());
+    let rx = Ptr::<A, Rx>::new(inner);
 
     (tx, rx)
 }

@@ -86,7 +86,7 @@ where
     /// Construct a [`SendFuture`] that contains the actor's name in its type.
     ///
     /// Compared to [`SendFuture::sending_erased`], this function avoids one allocation.
-    pub(crate) fn sending_named<M>(message: M, sender: chan::ChanPtr<A, Rc>) -> Self
+    pub(crate) fn sending_named<M>(message: M, sender: chan::Ptr<A, Rc>) -> Self
     where
         A: Handler<M, Return = R>,
         M: Send + 'static,
@@ -104,7 +104,7 @@ where
 }
 
 impl<R> SendFuture<ActorErasedSending, ResolveToHandlerReturn<R>> {
-    pub(crate) fn sending_erased<A, M, Rc>(message: M, sender: chan::ChanPtr<A, Rc>) -> Self
+    pub(crate) fn sending_erased<A, M, Rc>(message: M, sender: chan::Ptr<A, Rc>) -> Self
     where
         Rc: RefCounter,
         A: Handler<M, Return = R>,
@@ -127,7 +127,7 @@ impl<A, Rc> SendFuture<ActorNamedBroadcasting<A, Rc>, Broadcast>
 where
     Rc: RefCounter,
 {
-    pub(crate) fn broadcast_named<M>(msg: M, sender: chan::ChanPtr<A, Rc>) -> Self
+    pub(crate) fn broadcast_named<M>(msg: M, sender: chan::Ptr<A, Rc>) -> Self
     where
         A: Handler<M, Return = ()>,
         M: Clone + Send + Sync + 'static,
@@ -146,7 +146,7 @@ where
 
 #[allow(dead_code)] // This will useful later.
 impl SendFuture<ActorErasedSending, Broadcast> {
-    pub(crate) fn broadcast_erased<A, M, Rc>(msg: M, sender: chan::ChanPtr<A, Rc>) -> Self
+    pub(crate) fn broadcast_erased<A, M, Rc>(msg: M, sender: chan::Ptr<A, Rc>) -> Self
     where
         Rc: RefCounter,
         A: Handler<M, Return = ()>,
@@ -166,10 +166,7 @@ impl SendFuture<ActorErasedSending, Broadcast> {
 
 /// The core state machine around sending a message to an actor's mailbox.
 enum Sending<A, M, Rc: RefCounter> {
-    New {
-        msg: M,
-        sender: chan::ChanPtr<A, Rc>,
-    },
+    New { msg: M, sender: chan::Ptr<A, Rc> },
     WaitingToSend(WaitingSender<M>),
     Done,
 }
