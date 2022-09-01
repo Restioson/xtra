@@ -36,7 +36,7 @@ pub fn new<A>(capacity: Option<usize>) -> (Ptr<A, TxStrong>, Ptr<A, Rx>) {
 
 // Public because of private::RefCounterInner. This should never actually be exported, though.
 pub struct Chan<A> {
-    chan: Mutex<ChanInner<A>>,
+    chan: Mutex<Inner<A>>,
     on_shutdown: Event,
     sender_count: AtomicUsize,
     receiver_count: AtomicUsize,
@@ -45,7 +45,7 @@ pub struct Chan<A> {
 impl<A> Chan<A> {
     pub fn new(capacity: Option<usize>) -> Self {
         Self {
-            chan: Mutex::new(ChanInner::new(capacity)),
+            chan: Mutex::new(Inner::new(capacity)),
             on_shutdown: Event::new(),
             sender_count: AtomicUsize::new(0),
             receiver_count: AtomicUsize::new(0),
@@ -318,7 +318,7 @@ impl<A> Chan<A> {
     }
 }
 
-struct ChanInner<A> {
+struct Inner<A> {
     capacity: Option<usize>,
     ordered_queue: VecDeque<MessageToOne<A>>,
     waiting_send_to_one: VecDeque<waiting_sender::Handle<MessageToOne<A>>>,
@@ -329,7 +329,7 @@ struct ChanInner<A> {
     broadcast_tail: usize,
 }
 
-impl<A> ChanInner<A> {
+impl<A> Inner<A> {
     fn new(capacity: Option<usize>) -> Self {
         Self {
             capacity,
