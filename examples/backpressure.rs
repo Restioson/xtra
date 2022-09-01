@@ -1,13 +1,7 @@
 use xtra::prelude::*;
 
+#[derive(xtra::Actor)]
 struct Greeter;
-
-#[async_trait]
-impl Actor for Greeter {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
-}
 
 struct Hello(String);
 
