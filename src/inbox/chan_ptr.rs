@@ -200,7 +200,7 @@ pub struct Rx(());
 ///
 /// It can also be used to generalise over the reference counter type in extension trait implementations on `Address`. For example:
 /// ```
-/// # use xtra::{Actor, Address, RefCounter};
+/// # use xtra::{Actor, Address, refcount::RefCounter};
 /// trait MyExtension {
 ///    fn say_hi(&self) {
 ///        println!("Hi!"); // Presumably, you would do something useful here
