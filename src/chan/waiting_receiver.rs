@@ -4,7 +4,7 @@ use futures_util::FutureExt;
 
 use crate::chan::{self, ActorMessage, BroadcastQueue, MessageToOne, Rx};
 
-/// A [`WaitingReceiver`] is handed out by the channel any time [`Chan::try_recv`](crate::inbox::Chan::try_recv) is called on an empty mailbox.
+/// A [`WaitingReceiver`] is handed out by the channel any time [`Chan::try_recv`](crate::chan::Chan::try_recv) is called on an empty mailbox.
 ///
 /// [`WaitingReceiver`] implements [`Future`](std::future::Future) which will resolve once a message lands in the mailbox.
 pub struct WaitingReceiver<A>(catty::Receiver<CtrlMsg<A>>);
