@@ -13,10 +13,10 @@ use xtra::Error;
 struct Accumulator(usize);
 
 #[async_trait]
-impl xtra::Actor for Accumulator {
+impl Actor for Accumulator {
     type Stop = usize;
 
-    async fn stopped(self) -> Self::Stop {
+    async fn stopped(self) -> usize {
         self.0
     }
 }
