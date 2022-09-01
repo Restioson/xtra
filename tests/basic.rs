@@ -161,7 +161,7 @@ async fn actor_stops_on_last_drop_of_address_even_if_not_yet_running() {
 }
 
 #[tokio::test]
-async fn actor_stops_on_stop_message_even_if_send_before_started() {
+async fn actor_stops_on_stop_message_even_if_sent_before_started() {
     let (addr, context) = Context::new(None);
     let weak = addr.downgrade();
     let join = weak.join();
