@@ -4,7 +4,7 @@ use std::sync::{atomic, Arc};
 
 use private::RefCounter as _;
 
-use crate::inbox::Chan;
+use crate::chan::Chan;
 
 /// A reference-counted pointer to the channel that is generic over its reference counting policy.
 ///
