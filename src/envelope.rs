@@ -6,8 +6,8 @@ use catty::{Receiver, Sender};
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 
+use crate::chan::{HasPriority, MessageToAll, MessageToOne, Priority};
 use crate::context::Context;
-use crate::inbox::{HasPriority, MessageToAll, MessageToOne, Priority};
 use crate::instrumentation::{Instrumentation, Span};
 use crate::{Actor, Handler, Mailbox};
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::inbox::{BroadcastQueue, ChanPtr, Rx};
+use crate::chan::{self, BroadcastQueue, Rx};
 use crate::recv_future::ReceiveFuture;
 use crate::{Address, WeakAddress};
 
@@ -9,14 +9,14 @@ use crate::{Address, WeakAddress};
 /// Messages sent into an [`Address`] will be received in an actor's [`Mailbox`].
 /// Think of [`Address`] and [`Mailbox`] as an MPMC channel.
 pub struct Mailbox<A> {
-    inner: ChanPtr<A, Rx>,
+    inner: chan::Ptr<A, Rx>,
     broadcast_mailbox: Arc<BroadcastQueue<A>>,
 }
 
 impl<A> Mailbox<A> {
     /// Creates a new [`Mailbox`] with the given capacity.
     pub fn bounded(capacity: usize) -> (Address<A>, Mailbox<A>) {
-        let (sender, receiver) = crate::inbox::new(Some(capacity));
+        let (sender, receiver) = chan::new(Some(capacity));
 
         let address = Address(sender);
         let mailbox = Mailbox {
@@ -31,7 +31,7 @@ impl<A> Mailbox<A> {
     ///
     /// Unbounded mailboxes will not perform an back-pressure and can result in potentially unbounded memory growth. Use with care.
     pub fn unbounded() -> (Address<A>, Mailbox<A>) {
-        let (sender, receiver) = crate::inbox::new(None);
+        let (sender, receiver) = crate::chan::new(None);
 
         let address = Address(sender);
         let mailbox = Mailbox {

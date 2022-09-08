@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Waker};
 
-use crate::inbox::{HasPriority, Priority};
+use crate::chan::{HasPriority, Priority};
 use crate::Error;
 
 pub struct WaitingSender<M>(Arc<spin::Mutex<Inner<M>>>);

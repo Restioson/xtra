@@ -5,7 +5,7 @@
 use std::fmt;
 
 use crate::address::{ActorJoinHandle, Address};
-use crate::inbox::RefCounter;
+use crate::chan::RefCounter;
 use crate::refcount::{Either, Strong, Weak};
 use crate::send_future::{ActorErasedSending, ResolveToHandlerReturn, SendFuture};
 use crate::Handler;

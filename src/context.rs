@@ -8,8 +8,8 @@ use std::{mem, task};
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 
+use crate::chan::ActorMessage;
 use crate::envelope::Shutdown;
-use crate::inbox::ActorMessage;
 use crate::instrumentation::Span;
 use crate::{Actor, Mailbox};
 

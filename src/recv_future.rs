@@ -7,7 +7,7 @@ use std::task::{Context, Poll};
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
-use crate::inbox::{ActorMessage, BroadcastQueue, ChanPtr, Rx, WaitingReceiver};
+use crate::chan::{self, ActorMessage, BroadcastQueue, Rx, WaitingReceiver};
 
 /// A future which will resolve to the next message to be handled by the actor.
 ///
@@ -30,7 +30,10 @@ pub struct ReceiveFuture<A>(Receiving<A>);
 pub struct Message<A>(pub(crate) ActorMessage<A>);
 
 impl<A> ReceiveFuture<A> {
-    pub(crate) fn new(channel: ChanPtr<A, Rx>, broadcast_mailbox: Arc<BroadcastQueue<A>>) -> Self {
+    pub(crate) fn new(
+        channel: chan::Ptr<A, Rx>,
+        broadcast_mailbox: Arc<BroadcastQueue<A>>,
+    ) -> Self {
         Self(Receiving::New {
             channel,
             broadcast_mailbox,
@@ -52,7 +55,7 @@ impl<A> Future for ReceiveFuture<A> {
 /// implementation details like the variant names into the public API.
 enum Receiving<A> {
     New {
-        channel: ChanPtr<A, Rx>,
+        channel: chan::Ptr<A, Rx>,
         broadcast_mailbox: Arc<BroadcastQueue<A>>,
     },
     Waiting(Waiting<A>),
@@ -67,13 +70,13 @@ enum Receiving<A> {
 /// To avoid losing a message, this type implements [`Drop`] and re-queues the message into the
 /// mailbox in such a scenario.
 pub struct Waiting<A> {
-    channel: ChanPtr<A, Rx>,
+    channel: chan::Ptr<A, Rx>,
     broadcast_mailbox: Arc<BroadcastQueue<A>>,
     waiting_receiver: WaitingReceiver<A>,
 }
 
 impl<A> Future for Waiting<A> {
-    type Output = Result<ActorMessage<A>, (ChanPtr<A, Rx>, Arc<BroadcastQueue<A>>)>;
+    type Output = Result<ActorMessage<A>, (chan::Ptr<A, Rx>, Arc<BroadcastQueue<A>>)>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
