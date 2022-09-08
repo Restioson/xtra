@@ -1,4 +1,3 @@
-use std::fmt;
 use std::ops::Deref;
 use std::sync::{atomic, Arc};
 
@@ -64,6 +63,14 @@ where
     pub fn inner_ptr(&self) -> *const () {
         Arc::as_ptr(&self.inner) as *const ()
     }
+
+    pub fn sender_count(&self) -> usize {
+        self.inner.sender_count.load(atomic::Ordering::SeqCst)
+    }
+
+    pub fn receiver_count(&self) -> usize {
+        self.inner.receiver_count.load(atomic::Ordering::SeqCst)
+    }
 }
 
 impl<A, Rc> Ptr<A, Rc>
@@ -107,24 +114,6 @@ where
 
     fn deref(&self) -> &Self::Target {
         &self.inner
-    }
-}
-
-impl<A, Rc> fmt::Debug for Ptr<A, Rc>
-where
-    Rc: RefCounter,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use atomic::Ordering::SeqCst;
-
-        let act = std::any::type_name::<A>();
-        let rc = std::any::type_name::<Rc>()
-            .trim_start_matches(module_path!())
-            .trim_start_matches("::");
-        f.debug_struct(&format!("ChanPtr<{}, {}>", act, rc))
-            .field("rx_count", &self.inner.receiver_count.load(SeqCst))
-            .field("tx_count", &self.inner.sender_count.load(SeqCst))
-            .finish()
     }
 }
 

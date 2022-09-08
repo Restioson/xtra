@@ -817,18 +817,14 @@ fn address_debug() {
 
     assert_eq!(
         format!("{:?}", addr1),
-        "Address(\
-            ChanPtr<basic::Greeter, TxStrong> { rx_count: 1, tx_count: 2 }\
-        )"
+        "Address<basic::Greeter, Strong> { addresses: 2, mailboxes: 1 }"
     );
 
     assert_eq!(format!("{:?}", addr1), format!("{:?}", addr2));
 
     assert_eq!(
         format!("{:?}", weak_addr),
-        "Address(\
-            ChanPtr<basic::Greeter, TxWeak> { rx_count: 1, tx_count: 2 }\
-        )"
+        "Address<basic::Greeter, Weak> { addresses: 2, mailboxes: 1 }"
     );
 }
 
@@ -841,16 +837,12 @@ fn message_channel_debug() {
 
     assert_eq!(
         format!("{:?}", mc),
-        "MessageChannel<basic::Hello, alloc::string::String>(\
-            ChanPtr<basic::Greeter, TxStrong> { rx_count: 1, tx_count: 1 }\
-        )"
+        "MessageChannel<basic::Greeter, basic::Hello, alloc::string::String, Strong> { addresses: 1, mailboxes: 1 }"
     );
 
     assert_eq!(
         format!("{:?}", weak_mc),
-        "MessageChannel<basic::Hello, alloc::string::String>(\
-            ChanPtr<basic::Greeter, TxWeak> { rx_count: 1, tx_count: 1 }\
-        )"
+        "MessageChannel<basic::Greeter, basic::Hello, alloc::string::String, Weak> { addresses: 1, mailboxes: 1 }"
     );
 }
 

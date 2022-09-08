@@ -178,14 +178,20 @@ where
     R: Send + 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let actor_type = self.inner.actor_type();
         let message_type = &std::any::type_name::<M>();
         let return_type = &std::any::type_name::<R>();
+        let rc_type = &std::any::type_name::<Rc>()
+            .replace("xtra::chan::ptr::", "")
+            .replace("Tx", "");
 
-        write!(f, "MessageChannel<{}, {}>(", message_type, return_type)?;
-        self.inner.debug_fmt(f)?;
-        write!(f, ")")?;
-
-        Ok(())
+        f.debug_struct(&format!(
+            "MessageChannel<{}, {}, {}, {}>",
+            actor_type, message_type, return_type, rc_type
+        ))
+        .field("addresses", &self.inner.sender_count())
+        .field("mailboxes", &self.inner.receiver_count())
+        .finish()
     }
 }
 
@@ -269,7 +275,11 @@ trait MessageChannelTrait<M, Rc> {
         &self,
     ) -> Box<dyn MessageChannelTrait<M, Weak, Return = Self::Return> + Send + Sync + 'static>;
 
-    fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result;
+    fn sender_count(&self) -> usize;
+
+    fn receiver_count(&self) -> usize;
+
+    fn actor_type(&self) -> &str;
 }
 
 impl<A, R, M, Rc: RefCounter> MessageChannelTrait<M, Rc> for Address<A, Rc>
@@ -320,7 +330,15 @@ where
         Box::new(Address(self.0.to_tx_weak()))
     }
 
-    fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
+    fn sender_count(&self) -> usize {
+        self.0.sender_count()
+    }
+
+    fn receiver_count(&self) -> usize {
+        self.0.receiver_count()
+    }
+
+    fn actor_type(&self) -> &str {
+        std::any::type_name::<A>()
     }
 }
