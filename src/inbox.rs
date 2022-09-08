@@ -2,6 +2,7 @@
 //! message may be handled before piled-up higher priority messages will be handled.
 
 mod chan_ptr;
+mod priority;
 mod waiting_receiver;
 mod waiting_sender;
 
@@ -13,6 +14,7 @@ use std::{cmp, mem};
 
 pub use chan_ptr::{ChanPtr, RefCounter, Rx, TxEither, TxStrong, TxWeak};
 use event_listener::{Event, EventListener};
+pub use priority::{ByPriority, HasPriority, Priority};
 pub use waiting_receiver::WaitingReceiver;
 pub use waiting_sender::WaitingSender;
 
@@ -367,7 +369,7 @@ impl<A> ChanInner<A> {
         Some(msg)
     }
 
-    fn pop_broadcast(
+    pub fn pop_broadcast(
         &mut self,
         broadcast_mailbox: &BroadcastQueue<A>,
     ) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
@@ -520,62 +522,5 @@ impl<A> From<MessageToOne<A>> for ActorMessage<A> {
 impl<A> From<MessageToAll<A>> for ActorMessage<A> {
     fn from(msg: MessageToAll<A>) -> Self {
         ActorMessage::ToAllActors(msg)
-    }
-}
-
-#[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-pub enum Priority {
-    Valued(u32),
-    Shutdown,
-}
-
-impl Default for Priority {
-    fn default() -> Self {
-        Priority::Valued(0)
-    }
-}
-
-pub trait HasPriority {
-    fn priority(&self) -> Priority;
-}
-
-/// A wrapper struct that allows comparison and ordering for anything thas has a priority, i.e. implements [`HasPriority`].
-pub struct ByPriority<T>(pub T);
-
-impl<T> HasPriority for ByPriority<T>
-where
-    T: HasPriority,
-{
-    fn priority(&self) -> Priority {
-        self.0.priority()
-    }
-}
-
-impl<T> PartialEq for ByPriority<T>
-where
-    T: HasPriority,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.0.priority().eq(&other.0.priority())
-    }
-}
-
-impl<T> Eq for ByPriority<T> where T: HasPriority {}
-
-impl<T> PartialOrd for ByPriority<T>
-where
-    T: HasPriority,
-{
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.0.priority().partial_cmp(&other.0.priority())
-    }
-}
-
-impl<T> Ord for ByPriority<T>
-where
-    T: HasPriority,
-{
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.priority().cmp(&other.0.priority())
     }
 }

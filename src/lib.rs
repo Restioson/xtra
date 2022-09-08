@@ -18,6 +18,7 @@ mod inbox;
 mod instrumentation;
 mod mailbox;
 pub mod message_channel;
+mod recv_future;
 /// This module contains a way to scope a future to the lifetime of an actor, stopping it before it
 /// completes if the actor it is associated with stops too.
 pub mod scoped_task;
