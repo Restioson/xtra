@@ -64,13 +64,8 @@ async fn assert_handler_span_is_child_of_caller_span_with_min_level_info() {
     assert_eq!(buf, [" INFO sender_span:info_span: instrumentation: Test!"]);
 }
 
+#[derive(xtra::Actor)]
 struct Tracer;
-
-#[async_trait]
-impl Actor for Tracer {
-    type Stop = ();
-    async fn stopped(self) {}
-}
 
 struct Hello(&'static str);
 

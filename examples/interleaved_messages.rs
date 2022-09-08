@@ -4,15 +4,9 @@ struct Initialized(Address<ActorA>);
 
 struct Hello;
 
+#[derive(xtra::Actor)]
 struct ActorA {
     actor_b: Address<ActorB>,
-}
-
-#[async_trait]
-impl Actor for ActorA {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
 }
 
 #[async_trait]
@@ -27,14 +21,8 @@ impl Handler<Hello> for ActorA {
     }
 }
 
+#[derive(xtra::Actor)]
 struct ActorB;
-
-#[async_trait]
-impl Actor for ActorB {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
-}
 
 #[async_trait]
 impl Handler<Initialized> for ActorB {

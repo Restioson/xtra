@@ -4,21 +4,9 @@ use std::time::Duration;
 use tokio::time::Instant;
 use xtra::prelude::*;
 
+#[derive(Default, xtra::Actor)]
 struct Counter {
     count: usize,
-}
-
-impl Counter {
-    fn new() -> Self {
-        Counter { count: 0 }
-    }
-}
-
-#[async_trait]
-impl Actor for Counter {
-    type Stop = ();
-
-    async fn stopped(self) -> Self::Stop {}
 }
 
 struct Inc;
@@ -37,7 +25,7 @@ impl Handler<Inc> for Counter {
 #[tokio::main]
 async fn main() {
     let (address, mut mailbox) = Mailbox::unbounded();
-    let mut actor = Counter::new();
+    let mut actor = Counter::default();
 
     tokio::spawn(async move {
         actor.started(&mut mailbox).await;

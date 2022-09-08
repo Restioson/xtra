@@ -189,7 +189,7 @@ pub struct Rx(());
 ///
 /// # Implementation note
 ///
-/// This trait only exists because we cannot specialise `Drop` impls in Rust, otherwise, we could
+/// This trait partially exists because we cannot specialise `Drop` impls in Rust, otherwise, we could
 /// write:
 ///
 /// - `impl Drop for ChanPtr<A, TxStrong> { }`
@@ -197,6 +197,21 @@ pub struct Rx(());
 /// - `impl Drop for ChanPtr<A, Rx> { }`
 ///
 /// and call the appropriate functions on `Chan`.
+///
+/// It can also be used to generalise over the reference counter type in extension trait implementations on `Address`. For example:
+/// ```
+/// # use xtra::{Actor, Address, refcount::RefCounter};
+/// trait MyExtension {
+///    fn say_hi(&self) {
+///        println!("Hi!"); // Presumably, you would do something useful here
+///    }
+/// }
+///
+/// impl<A, Rc> MyExtension for Address<A, Rc>
+///    where A: Actor,
+///          Rc: RefCounter
+/// {}
+/// ```
 pub trait RefCounter: Send + Sync + 'static + Unpin + private::RefCounter {}
 
 impl RefCounter for TxStrong {}
