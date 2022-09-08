@@ -1,8 +1,8 @@
 //! Latency is prioritised over most accurate prioritisation. Specifically, at most one low priority
 //! message may be handled before piled-up higher priority messages will be handled.
 
-mod chan_ptr;
 mod priority;
+mod ptr;
 mod waiting_receiver;
 mod waiting_sender;
 
@@ -12,9 +12,9 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::{atomic, Arc, Mutex, Weak};
 use std::{cmp, mem};
 
-pub use chan_ptr::{ChanPtr, RefCounter, Rx, TxEither, TxStrong, TxWeak};
 use event_listener::{Event, EventListener};
 pub use priority::{ByPriority, HasPriority, Priority};
+pub use ptr::{Ptr, RefCounter, Rx, TxEither, TxStrong, TxWeak};
 pub use waiting_receiver::WaitingReceiver;
 pub use waiting_sender::WaitingSender;
 
@@ -27,18 +27,18 @@ pub type BroadcastQueue<A> = spin::Mutex<BinaryHeap<ByPriority<MessageToAll<A>>>
 
 /// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
 /// severally to each send type - priority, ordered, and broadcast.
-pub fn new<A>(capacity: Option<usize>) -> (ChanPtr<A, TxStrong>, ChanPtr<A, Rx>) {
+pub fn new<A>(capacity: Option<usize>) -> (Ptr<A, TxStrong>, Ptr<A, Rx>) {
     let inner = Arc::new(Chan::new(capacity));
 
-    let tx = ChanPtr::<A, TxStrong>::new(inner.clone());
-    let rx = ChanPtr::<A, Rx>::new(inner);
+    let tx = Ptr::<A, TxStrong>::new(inner.clone());
+    let rx = Ptr::<A, Rx>::new(inner);
 
     (tx, rx)
 }
 
 // Public because of private::RefCounterInner. This should never actually be exported, though.
 pub struct Chan<A> {
-    chan: Mutex<ChanInner<A>>,
+    chan: Mutex<Inner<A>>,
     on_shutdown: Event,
     sender_count: AtomicUsize,
     receiver_count: AtomicUsize,
@@ -47,7 +47,7 @@ pub struct Chan<A> {
 impl<A> Chan<A> {
     pub fn new(capacity: Option<usize>) -> Self {
         Self {
-            chan: Mutex::new(ChanInner::new(capacity)),
+            chan: Mutex::new(Inner::new(capacity)),
             on_shutdown: Event::new(),
             sender_count: AtomicUsize::new(0),
             receiver_count: AtomicUsize::new(0),
@@ -320,7 +320,7 @@ impl<A> Chan<A> {
     }
 }
 
-struct ChanInner<A> {
+struct Inner<A> {
     capacity: Option<usize>,
     ordered_queue: VecDeque<MessageToOne<A>>,
     waiting_send_to_one: VecDeque<waiting_sender::Handle<MessageToOne<A>>>,
@@ -331,7 +331,7 @@ struct ChanInner<A> {
     broadcast_tail: usize,
 }
 
-impl<A> ChanInner<A> {
+impl<A> Inner<A> {
     fn new(capacity: Option<usize>) -> Self {
         Self {
             capacity,

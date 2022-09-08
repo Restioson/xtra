@@ -12,9 +12,9 @@ pub use self::send_future::{ActorErasedSending, ActorNamedSending, Receiver, Sen
 pub use self::spawn::*; // Star export so we don't have to write `cfg` attributes here.
 
 pub mod address;
+mod chan;
 mod context;
 mod envelope;
-mod inbox;
 mod instrumentation;
 mod mailbox;
 pub mod message_channel;
@@ -39,7 +39,7 @@ pub mod prelude {
 /// This module contains types representing the strength of an address's reference counting, which
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount {
-    pub use crate::inbox::{RefCounter, TxEither as Either, TxStrong as Strong, TxWeak as Weak};
+    pub use crate::chan::{RefCounter, TxEither as Either, TxStrong as Strong, TxWeak as Weak};
 }
 
 /// Provides a default implementation of the [`Actor`] trait for the given type with a [`Stop`](Actor::Stop) type of `()` and empty lifecycle functions.

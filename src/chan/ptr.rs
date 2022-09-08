@@ -4,7 +4,7 @@ use std::sync::{atomic, Arc};
 
 use private::RefCounter as _;
 
-use crate::inbox::Chan;
+use crate::chan::Chan;
 
 /// A reference-counted pointer to the channel that is generic over its reference counting policy.
 ///
@@ -12,7 +12,7 @@ use crate::inbox::Chan;
 /// is stored in an `Arc`, meaning this pointer type is exactly as wide as an `Arc`, i.e. 8 bytes.
 ///
 /// This is possible because the actual reference counting is done within [`Chan`].
-pub struct ChanPtr<A, Rc>
+pub struct Ptr<A, Rc>
 where
     Rc: RefCounter,
 {
@@ -20,7 +20,7 @@ where
     ref_counter: Rc,
 }
 
-impl<A> ChanPtr<A, TxStrong> {
+impl<A> Ptr<A, TxStrong> {
     pub fn new(inner: Arc<Chan<A>>) -> Self {
         let policy = TxStrong(()).make_new(inner.as_ref());
 
@@ -31,22 +31,22 @@ impl<A> ChanPtr<A, TxStrong> {
     }
 }
 
-impl<A> ChanPtr<A, Rx> {
+impl<A> Ptr<A, Rx> {
     pub fn new(inner: Arc<Chan<A>>) -> Self {
         let ref_counter = Rx(()).make_new(inner.as_ref());
 
         Self { ref_counter, inner }
     }
 
-    pub fn try_to_tx_strong(&self) -> Option<ChanPtr<A, TxStrong>> {
-        Some(ChanPtr {
+    pub fn try_to_tx_strong(&self) -> Option<Ptr<A, TxStrong>> {
+        Some(Ptr {
             inner: self.inner.clone(),
             ref_counter: TxStrong::try_new(self.inner.as_ref())?,
         })
     }
 }
 
-impl<A, Rc> ChanPtr<A, Rc>
+impl<A, Rc> Ptr<A, Rc>
 where
     Rc: RefCounter,
 {
@@ -54,8 +54,8 @@ where
         self.ref_counter.is_strong()
     }
 
-    pub fn to_tx_weak(&self) -> ChanPtr<A, TxWeak> {
-        ChanPtr {
+    pub fn to_tx_weak(&self) -> Ptr<A, TxWeak> {
+        Ptr {
             inner: self.inner.clone(),
             ref_counter: TxWeak(()),
         }
@@ -66,19 +66,19 @@ where
     }
 }
 
-impl<A, Rc> ChanPtr<A, Rc>
+impl<A, Rc> Ptr<A, Rc>
 where
     Rc: RefCounter + Into<TxEither>,
 {
-    pub fn to_tx_either(&self) -> ChanPtr<A, TxEither> {
-        ChanPtr {
+    pub fn to_tx_either(&self) -> Ptr<A, TxEither> {
+        Ptr {
             inner: self.inner.clone(),
             ref_counter: self.ref_counter.make_new(&self.inner).into(),
         }
     }
 }
 
-impl<A, Rc> Clone for ChanPtr<A, Rc>
+impl<A, Rc> Clone for Ptr<A, Rc>
 where
     Rc: RefCounter,
 {
@@ -90,7 +90,7 @@ where
     }
 }
 
-impl<A, Rc> Drop for ChanPtr<A, Rc>
+impl<A, Rc> Drop for Ptr<A, Rc>
 where
     Rc: RefCounter,
 {
@@ -99,7 +99,7 @@ where
     }
 }
 
-impl<A, Rc> Deref for ChanPtr<A, Rc>
+impl<A, Rc> Deref for Ptr<A, Rc>
 where
     Rc: RefCounter,
 {
@@ -110,7 +110,7 @@ where
     }
 }
 
-impl<A, Rc> fmt::Debug for ChanPtr<A, Rc>
+impl<A, Rc> fmt::Debug for Ptr<A, Rc>
 where
     Rc: RefCounter,
 {
@@ -321,17 +321,17 @@ mod tests {
 
     #[test]
     fn size_of_ptr() {
-        assert_eq!(size_of::<ChanPtr<Foo, TxStrong>>(), 8);
-        assert_eq!(size_of::<ChanPtr<Foo, TxWeak>>(), 8);
-        assert_eq!(size_of::<ChanPtr<Foo, Rx>>(), 8);
-        assert_eq!(size_of::<ChanPtr<Foo, TxEither>>(), 16);
+        assert_eq!(size_of::<Ptr<Foo, TxStrong>>(), 8);
+        assert_eq!(size_of::<Ptr<Foo, TxWeak>>(), 8);
+        assert_eq!(size_of::<Ptr<Foo, Rx>>(), 8);
+        assert_eq!(size_of::<Ptr<Foo, TxEither>>(), 16);
     }
 
     #[test]
     fn starts_with_rc_count_one() {
         let inner = Arc::new(Chan::new(None));
 
-        let _ptr1 = ChanPtr::<Foo, TxStrong>::new(inner.clone());
+        let _ptr1 = Ptr::<Foo, TxStrong>::new(inner.clone());
 
         assert_eq!(inner.sender_count.load(atomic::Ordering::SeqCst), 1)
     }
@@ -340,7 +340,7 @@ mod tests {
     fn clone_increments_count() {
         let inner = Arc::new(Chan::new(None));
 
-        let ptr1 = ChanPtr::<Foo, TxStrong>::new(inner.clone());
+        let ptr1 = Ptr::<Foo, TxStrong>::new(inner.clone());
         #[allow(clippy::redundant_clone)]
         let _ptr2 = ptr1.clone();
 
@@ -351,7 +351,7 @@ mod tests {
     fn dropping_last_reference_calls_on_last_drop() {
         let inner = Arc::new(Chan::new(None));
 
-        let ptr1 = ChanPtr::<Foo, TxStrong>::new(inner.clone());
+        let ptr1 = Ptr::<Foo, TxStrong>::new(inner.clone());
         std::mem::drop(ptr1);
 
         assert_eq!(inner.sender_count.load(atomic::Ordering::SeqCst), 0);
@@ -361,7 +361,7 @@ mod tests {
     fn can_convert_tx_strong_into_weak() {
         let inner = Arc::new(Chan::new(None));
 
-        let strong_ptr = ChanPtr::<Foo, TxStrong>::new(inner.clone());
+        let strong_ptr = Ptr::<Foo, TxStrong>::new(inner.clone());
         let _weak_ptr = strong_ptr.to_tx_weak();
 
         assert_eq!(inner.sender_count.load(atomic::Ordering::SeqCst), 1);
@@ -371,7 +371,7 @@ mod tests {
     fn can_clone_either() {
         let inner = Arc::new(Chan::new(None));
 
-        let strong_ptr = ChanPtr::<Foo, TxStrong>::new(inner.clone());
+        let strong_ptr = Ptr::<Foo, TxStrong>::new(inner.clone());
         let either_ptr_1 = strong_ptr.to_tx_either();
         #[allow(clippy::redundant_clone)]
         let _either_ptr_2 = either_ptr_1.clone();
@@ -383,7 +383,7 @@ mod tests {
     fn either_is_strong() {
         let inner = Arc::new(Chan::new(None));
 
-        let strong_ptr = ChanPtr::<Foo, TxStrong>::new(inner);
+        let strong_ptr = Ptr::<Foo, TxStrong>::new(inner);
         let either_ptr = strong_ptr.to_tx_either();
 
         assert!(either_ptr.is_strong());

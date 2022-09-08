@@ -9,12 +9,12 @@ use futures_core::future::BoxFuture;
 use futures_util::future::{self, Either};
 use futures_util::FutureExt;
 
+use crate::chan::ActorMessage;
 use crate::envelope::Shutdown;
-use crate::inbox::ActorMessage;
 use crate::instrumentation::Span;
 use crate::mailbox::Mailbox;
 use crate::recv_future::{Message, ReceiveFuture};
-use crate::{inbox, Actor, Address, Error, WeakAddress};
+use crate::{chan, Actor, Address, Error, WeakAddress};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler. Keep in mind that if a free-floating `Context` (i.e not running an actor via
@@ -62,7 +62,7 @@ impl<A: Actor> Context<A> {
     ///
     /// ```
     pub fn new(message_cap: Option<usize>) -> (Address<A>, Self) {
-        let (tx, rx) = inbox::new(message_cap);
+        let (tx, rx) = chan::new(message_cap);
 
         let context = Context {
             running: true,

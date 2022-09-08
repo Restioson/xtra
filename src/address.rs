@@ -13,7 +13,7 @@ use futures_util::FutureExt;
 
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{ActorNamedBroadcasting, Broadcast, ResolveToHandlerReturn};
-use crate::{inbox, ActorNamedSending, Handler, SendFuture};
+use crate::{chan, ActorNamedSending, Handler, SendFuture};
 
 /// An [`Address`] is a reference to an actor through which messages can be sent.
 ///
@@ -63,7 +63,7 @@ use crate::{inbox, ActorNamedSending, Handler, SendFuture};
 /// of their priority. All actors must handle a message for it to be removed from the mailbox and
 /// the length to decrease. This means that the backpressure provided by [`Address::broadcast`] will
 /// wait for the slowest actor.
-pub struct Address<A, Rc: RefCounter = Strong>(pub(crate) inbox::ChanPtr<A, Rc>);
+pub struct Address<A, Rc: RefCounter = Strong>(pub(crate) chan::Ptr<A, Rc>);
 
 impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
