@@ -28,7 +28,9 @@ async fn main() {
     let mut actor = Counter::default();
 
     tokio::spawn(async move {
-        actor.started(&mut mailbox).await;
+        if let Err(()) = actor.started(&mut mailbox).await {
+            return;
+        }
 
         loop {
             let start = Instant::now();

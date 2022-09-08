@@ -144,8 +144,10 @@ pub trait Handler<M>: Actor {
 /// #[async_trait]
 /// impl Actor for MyActor {
 ///     type Stop = ();
-///     async fn started(&mut self, ctx: &mut Mailbox<Self>) {
+///     async fn started(&mut self, ctx: &mut Mailbox<Self>) -> Result<(), Self::Stop> {
 ///         println!("Started!");
+///
+///         Ok(())
 ///     }
 ///
 ///     async fn stopped(self) -> Self::Stop {
@@ -183,7 +185,9 @@ pub trait Actor: 'static + Send + Sized {
 
     /// Called as soon as the actor has been started.
     #[allow(unused_variables)]
-    async fn started(&mut self, mailbox: &mut Mailbox<Self>) {}
+    async fn started(&mut self, mailbox: &mut Mailbox<Self>) -> Result<(), Self::Stop> {
+        Ok(())
+    }
 
     /// Called at the end of an actor's event loop.
     ///
@@ -228,7 +232,9 @@ pub async fn run<A>(mut mailbox: Mailbox<A>, mut actor: A) -> A::Stop
 where
     A: Actor,
 {
-    actor.started(&mut mailbox).await;
+    if let Err(stop) = actor.started(&mut mailbox).await {
+        return stop;
+    }
 
     while let ControlFlow::Continue(()) = yield_once(&mut mailbox, &mut actor).await {}
 

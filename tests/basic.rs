@@ -942,7 +942,9 @@ async fn timeout_returns_interrupted() {
     let mut actor = Greeter;
 
     tokio::spawn(async move {
-        actor.started(&mut mailbox).await;
+        if let Err(()) = actor.started(&mut mailbox).await {
+            return;
+        }
 
         loop {
             let ctrl = xtra::yield_once(&mut mailbox, &mut actor)
