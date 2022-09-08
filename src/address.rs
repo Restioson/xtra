@@ -67,7 +67,15 @@ pub struct Address<A, Rc: RefCounter = Strong>(pub(crate) chan::Ptr<A, Rc>);
 
 impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Address").field(&self.0).finish()
+        let actor_type = std::any::type_name::<A>();
+        let rc_type = std::any::type_name::<Rc>()
+            .replace("xtra::chan::ptr::", "")
+            .replace("Tx", "");
+
+        f.debug_struct(&format!("Address<{}, {}>", actor_type, rc_type))
+            .field("addresses", &self.0.sender_count())
+            .field("mailboxes", &self.0.receiver_count())
+            .finish()
     }
 }
 
