@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-xtra = { path = "../", features = ["macros"] }
+xtra = { path = "../xtra", features = ["macros"] }
 
 [dev-dependencies]
 trybuild = "1.0.64"
