@@ -38,8 +38,8 @@ impl Handler<Stop> for MessageCounter {
 
 #[tokio::main]
 async fn main() {
-    let (address, context) = Context::new(None);
-    let run_future = context.run(MessageCounter::default()); // `run_future` will resolve to `Actor::Stop`.
+    let (address, mailbox) = Mailbox::unbounded();
+    let run_future = xtra::run(mailbox, MessageCounter::default()); // `run_future` will resolve to `Actor::Stop`.
     let handle = tokio::spawn(run_future);
 
     address.send(Ping).await.unwrap();

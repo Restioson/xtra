@@ -17,19 +17,18 @@ use crate::{chan, ActorNamedSending, Handler, SendFuture};
 
 /// An [`Address`] is a reference to an actor through which messages can be sent.
 ///
-/// It can be cloned to create more addresses to the same actor.
+/// [`Address`]es can be cloned to obtain more addresses to the same actor.
+/// By default (i.e without specifying the second type parameter, `Rc`, to be
+/// [`Weak`], [`Address`]es are strong. Therefore, when all [`Address`]es
+/// are dropped, the actor will be stopped. In other words, any existing [`Address`]es will inhibit
+/// the dropping of an actor. If this is undesirable, then a [`WeakAddress`]
+/// should be used instead.
 ///
-/// By default (i.e without specifying the second type parameter, `Rc`, to be [`Weak`],
-/// [`Address`]es are strong. Therefore, when all [`Address`]es are dropped, the actor will be
-/// stopped. In other words, any existing [`Address`]es will inhibit the dropping of an actor. If
-/// this is undesirable, then a [`WeakAddress`] should be used instead.
-///
-/// An address is created by calling the [`Context::run`](crate::Context::run) method, or by cloning
-/// another [`Address`].
+/// The initial [`Address`] of an actor is returned when you construct a new [`Mailbox`](crate::Mailbox).
 ///
 /// ## Mailboxes
 ///
-/// An actor has three mailboxes, each for a specific kind of message:
+/// Internally, a mailbox has three, more specific mailboxes, each for a specific kind of message:
 /// 1. The default priority, or ordered mailbox.
 /// 2. The priority mailbox.
 /// 3. The broadcast mailbox.
@@ -85,6 +84,15 @@ impl<A, Rc: RefCounter> Debug for Address<A, Rc> {
 /// method.
 pub type WeakAddress<A> = Address<A, Weak>;
 
+impl<A> WeakAddress<A> {
+    /// Try to upgrade this [`WeakAddress`] to a strong one.
+    ///
+    /// This will yield `None` if there are no more other strong addresses around.
+    pub fn try_upgrade(&self) -> Option<Address<A>> {
+        Some(Address(self.0.try_to_tx_strong()?))
+    }
+}
+
 /// Functions which apply only to strong addresses (the default kind).
 impl<A> Address<A, Strong> {
     /// Create a weak address to the actor. Unlike with the strong variety of address (this kind),
@@ -136,7 +144,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     ///
     /// # #[cfg(feature = "smol")]
     /// smol::block_on(async {
-    ///     let addr = xtra::spawn_smol(MyActor, None);
+    ///     let addr = xtra::spawn_smol(MyActor, Mailbox::unbounded());
     ///     assert!(addr.is_connected());
     ///     addr.send(Shutdown).await;
     ///     smol::Timer::after(Duration::from_secs(1)).await; // Give it time to shut down

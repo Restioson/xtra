@@ -19,7 +19,7 @@ impl Handler<Print> for Printer {
 
 fn main() {
     smol::block_on(async {
-        let addr = xtra::spawn_smol(Printer::default(), None);
+        let addr = xtra::spawn_smol(Printer::default(), Mailbox::unbounded());
 
         loop {
             addr.send(Print("hello".to_string()))

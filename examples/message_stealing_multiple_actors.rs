@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use xtra::prelude::*;
+use xtra::Mailbox;
 
 #[derive(xtra::Actor)]
 struct Printer {
@@ -42,11 +43,11 @@ impl Handler<Print> for Printer {
 
 #[smol_potat::main]
 async fn main() {
-    let (addr, ctx) = Context::new(Some(32));
-    smol::spawn(ctx.clone().run(Printer::new(0))).detach();
-    smol::spawn(ctx.clone().run(Printer::new(1))).detach();
-    smol::spawn(ctx.clone().run(Printer::new(2))).detach();
-    smol::spawn(ctx.run(Printer::new(3))).detach();
+    let (addr, mailbox) = Mailbox::bounded(32);
+    smol::spawn(xtra::run(mailbox.clone(), Printer::new(0))).detach();
+    smol::spawn(xtra::run(mailbox.clone(), Printer::new(1))).detach();
+    smol::spawn(xtra::run(mailbox.clone(), Printer::new(2))).detach();
+    smol::spawn(xtra::run(mailbox, Printer::new(3))).detach();
 
     while addr.send(Print("hello".to_string())).await.is_ok() {}
     println!("Stopping to send");

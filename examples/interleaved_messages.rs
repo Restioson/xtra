@@ -15,8 +15,9 @@ impl Handler<Hello> for ActorA {
 
     async fn handle(&mut self, _: Hello, ctx: &mut Context<Self>) {
         println!("ActorA: Hello");
-        let fut = self.actor_b.send(Hello);
-        ctx.join(self, fut).await.unwrap();
+        xtra::join(ctx.mailbox(), self, self.actor_b.send(Hello))
+            .await
+            .unwrap();
     }
 }
 
@@ -30,7 +31,9 @@ impl Handler<Initialized> for ActorB {
     async fn handle(&mut self, m: Initialized, ctx: &mut Context<Self>) {
         println!("ActorB: Initialized");
         let actor_a = m.0;
-        ctx.join(self, actor_a.send(Hello)).await.unwrap();
+        xtra::join(ctx.mailbox(), self, actor_a.send(Hello))
+            .await
+            .unwrap();
     }
 }
 
@@ -45,12 +48,12 @@ impl Handler<Hello> for ActorB {
 
 fn main() {
     smol::block_on(async {
-        let actor_b = xtra::spawn_smol(ActorB, None);
+        let actor_b = xtra::spawn_smol(ActorB, Mailbox::unbounded());
         let actor_a = xtra::spawn_smol(
             ActorA {
                 actor_b: actor_b.clone(),
             },
-            None,
+            Mailbox::unbounded(),
         );
         actor_b.send(Initialized(actor_a.clone())).await.unwrap();
     })

@@ -36,13 +36,6 @@ impl<A> Ptr<A, Rx> {
 
         Self { ref_counter, inner }
     }
-
-    pub fn try_to_tx_strong(&self) -> Option<Ptr<A, TxStrong>> {
-        Some(Ptr {
-            inner: self.inner.clone(),
-            ref_counter: TxStrong::try_new(self.inner.as_ref())?,
-        })
-    }
 }
 
 impl<A, Rc> Ptr<A, Rc>
@@ -58,6 +51,13 @@ where
             inner: self.inner.clone(),
             ref_counter: TxWeak(()),
         }
+    }
+
+    pub fn try_to_tx_strong(&self) -> Option<Ptr<A, TxStrong>> {
+        Some(Ptr {
+            inner: self.inner.clone(),
+            ref_counter: TxStrong::try_new(self.inner.as_ref())?,
+        })
     }
 
     pub fn inner_ptr(&self) -> *const () {

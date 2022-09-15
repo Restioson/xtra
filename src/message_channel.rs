@@ -53,8 +53,8 @@ use crate::Handler;
 /// fn main() {
 /// # #[cfg(feature = "smol")]
 /// smol::block_on(async {
-///         let alice = xtra::spawn_smol(Alice, None);
-///         let bob = xtra::spawn_smol(Bob, None);
+///         let alice = xtra::spawn_smol(Alice, Mailbox::unbounded());
+///         let bob = xtra::spawn_smol(Bob, Mailbox::unbounded());
 ///
 ///         let channels = [
 ///             MessageChannel::new(alice),

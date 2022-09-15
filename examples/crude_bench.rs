@@ -82,7 +82,7 @@ async fn do_address_benchmark<R>(
 ) where
     SendFuture<ActorNamedSending<Counter, Strong>, R>: Future,
 {
-    let addr = xtra::spawn_tokio(Counter { count: 0 }, None);
+    let addr = xtra::spawn_tokio(Counter { count: 0 }, Mailbox::unbounded());
 
     let start = Instant::now();
 
@@ -108,10 +108,10 @@ async fn do_parallel_address_benchmark<R>(
 ) where
     SendFuture<ActorNamedSending<Counter, Strong>, R>: Future,
 {
-    let (addr, ctx) = Context::new(None);
+    let (addr, mailbox) = Mailbox::unbounded();
     let start = Instant::now();
     for _ in 0..workers {
-        tokio::spawn(ctx.clone().run(Counter { count: 0 }));
+        tokio::spawn(xtra::run(mailbox.clone(), Counter { count: 0 }));
     }
 
     for _ in 0..COUNT {
@@ -135,7 +135,7 @@ async fn do_channel_benchmark<M, RM>(
     M: Send + 'static,
     SendFuture<ActorErasedSending, RM>: Future,
 {
-    let addr = xtra::spawn_tokio(Counter { count: 0 }, None);
+    let addr = xtra::spawn_tokio(Counter { count: 0 }, Mailbox::unbounded());
     let chan = MessageChannel::new(addr.clone());
 
     let start = Instant::now();

@@ -36,7 +36,7 @@ async fn assert_send_is_child_of_span() {
     let (subscriber, buf) = get_subscriber("instrumentation=trace,xtra=trace");
     let _g = tracing::dispatcher::set_default(&subscriber);
 
-    let addr = xtra::spawn_tokio(Tracer, None);
+    let addr = xtra::spawn_tokio(Tracer, Mailbox::unbounded());
     let _ = addr
         .send(Hello("world"))
         .instrument(tracing::info_span!("user_span"))
@@ -55,7 +55,7 @@ async fn assert_handler_span_is_child_of_caller_span_with_min_level_info() {
     let (subscriber, buf) = get_subscriber("instrumentation=info,xtra=info");
     let _g = tracing::dispatcher::set_default(&subscriber);
 
-    let addr = xtra::spawn_tokio(Tracer, None);
+    let addr = xtra::spawn_tokio(Tracer, Mailbox::unbounded());
     let _ = addr
         .send(CreateInfoSpan)
         .instrument(tracing::info_span!("sender_span"))
