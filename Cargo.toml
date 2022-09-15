@@ -15,9 +15,9 @@ rust-version = "1.60.0"
 [dependencies]
 async-trait = "0.1.56"
 catty = "0.1.5"
-futures-core = { version = "0.3.21", default-features = false, features = ["alloc"] }
+futures-core = "0.3.21"
 futures-sink = { version = "0.3.21", default-features = false, optional = true }
-futures-util = { version = "0.3.21", default-features = false, features = ["alloc"] }
+futures-util = { version = "0.3.21", default-features = false }
 pin-project-lite = "0.2.9"
 event-listener = "2.4.0"
 spin = { version = "0.9.3", default-features = false, features = ["spin_mutex"] }
@@ -44,6 +44,7 @@ tokio = { version = "1.0", features = ["full"] }
 async-std = { version = "1.0", features = ["attributes"] }
 tracing = { version = "0.1.35", features = ["std"] }
 tracing-subscriber = { version = "0.3.14", features = ["env-filter"] }
+futures-util = "0.3.21"
 
 [features]
 default = []
