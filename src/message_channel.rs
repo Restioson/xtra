@@ -248,7 +248,7 @@ where
 }
 
 /// Functions which apply to any kind of [`MessageChannel`], be they strong or weak.
-impl<M, R> MessageChannel<M, R>
+impl<M, R, Rc> MessageChannel<M, R, Rc>
 where
     M: Send + 'static,
     R: Send + 'static,
