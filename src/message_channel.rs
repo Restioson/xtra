@@ -83,7 +83,7 @@ where
     pub fn new<A>(address: Address<A, Rc>) -> Self
     where
         A: Handler<M, Return = R>,
-        Rc: RefCounter,
+        Rc: RefCounter + Into<Either>,
     {
         Self {
             inner: Box::new(address),
@@ -166,7 +166,7 @@ where
     A: Handler<M, Return = R>,
     R: Send + 'static,
     M: Send + 'static,
-    Rc: RefCounter,
+    Rc: RefCounter + Into<Either>,
 {
     fn from(address: Address<A, Rc>) -> Self {
         MessageChannel::new(address)
@@ -247,6 +247,20 @@ where
     }
 }
 
+/// Functions which apply to any kind of [`MessageChannel`], be they strong or weak.
+impl<M, R, Rc> MessageChannel<M, R, Rc>
+where
+    M: Send + 'static,
+    R: Send + 'static,
+{
+    /// Convert this [`MessageChannel`] to allow [`Either`] reference counts.
+    pub fn as_either(&self) -> MessageChannel<M, R, Either> {
+        MessageChannel {
+            inner: self.inner.to_either(),
+        }
+    }
+}
+
 trait MessageChannelTrait<M, Rc> {
     type Return: Send + 'static;
 
@@ -280,6 +294,10 @@ trait MessageChannelTrait<M, Rc> {
     fn receiver_count(&self) -> usize;
 
     fn actor_type(&self) -> &str;
+
+    fn to_either(
+        &self,
+    ) -> Box<dyn MessageChannelTrait<M, Either, Return = Self::Return> + Send + Sync + 'static>;
 }
 
 impl<A, R, M, Rc: RefCounter> MessageChannelTrait<M, Rc> for Address<A, Rc>
@@ -287,6 +305,7 @@ where
     A: Handler<M, Return = R>,
     M: Send + 'static,
     R: Send + 'static,
+    Rc: Into<Either>,
 {
     type Return = R;
 
@@ -340,5 +359,14 @@ where
 
     fn actor_type(&self) -> &str {
         std::any::type_name::<A>()
+    }
+
+    fn to_either(
+        &self,
+    ) -> Box<dyn MessageChannelTrait<M, Either, Return = Self::Return> + Send + Sync + 'static>
+    where
+        Rc: RefCounter + Into<Either>,
+    {
+        Box::new(Address(self.0.to_tx_either()))
     }
 }
