@@ -15,17 +15,17 @@ use crate::mailbox::Mailbox;
 use crate::Message;
 
 impl<A> Message<A> {
-    pub fn dispatch_to(self, _: &mut A) -> TickFuture<'static, A> {
+    pub fn dispatch_to(self, _: &mut A) -> DispatchFuture<'static, A> {
         todo!()
     }
 }
 
-pub struct TickFuture<'a, A> {
-    state: TickState<'a, A>,
+pub struct DispatchFuture<'a, A> {
+    state: State<'a, A>,
     span: Span,
 }
 
-impl<'a, A> TickFuture<'a, A> {
+impl<'a, A> DispatchFuture<'a, A> {
     /// Return the handler's [`tracing::Span`](https://docs.rs/tracing/latest/tracing/struct.Span.html),
     /// creating it if it has not already been created. This can be used to log messages into the
     /// span when required, such as if it is cancelled later due to a timeout.
@@ -64,9 +64,9 @@ impl<'a, A> TickFuture<'a, A> {
     #[cfg(feature = "instrumentation")]
     pub fn get_or_create_span(&mut self) -> &tracing::Span {
         let span = mem::replace(&mut self.span, tracing::Span::none());
-        *self = match mem::replace(&mut self.state, TickState::Done) {
-            TickState::New { msg, act, mailbox } => TickFuture::running(msg, act, mailbox),
-            state => TickFuture { state, span },
+        *self = match mem::replace(&mut self.state, State::Done) {
+            State::New { msg, act, mailbox } => DispatchFuture::running(msg, act, mailbox),
+            state => DispatchFuture { state, span },
         };
 
         &self.span
@@ -76,15 +76,15 @@ impl<'a, A> TickFuture<'a, A> {
         msg: ActorMessage<A>,
         act: &'a mut A,
         mailbox: &'a mut Mailbox<A>,
-    ) -> TickFuture<'a, A> {
+    ) -> DispatchFuture<'a, A> {
         let (fut, span) = match msg {
             ActorMessage::ToOneActor(msg) => msg.handle(act, mailbox),
             ActorMessage::ToAllActors(msg) => msg.handle(act, mailbox),
             ActorMessage::Shutdown => Shutdown::<A>::handle(),
         };
 
-        TickFuture {
-            state: TickState::Running {
+        DispatchFuture {
+            state: State::Running {
                 fut,
                 phantom: PhantomData,
             },
@@ -93,7 +93,7 @@ impl<'a, A> TickFuture<'a, A> {
     }
 }
 
-enum TickState<'a, A> {
+enum State<'a, A> {
     New {
         msg: ActorMessage<A>,
         act: &'a mut A,
@@ -106,34 +106,34 @@ enum TickState<'a, A> {
     Done,
 }
 
-impl<'a, A> TickFuture<'a, A> {
+impl<'a, A> DispatchFuture<'a, A> {
     pub fn new(msg: ActorMessage<A>, act: &'a mut A, mailbox: &'a mut Mailbox<A>) -> Self {
-        TickFuture {
-            state: TickState::New { msg, act, mailbox },
+        DispatchFuture {
+            state: State::New { msg, act, mailbox },
             span: Span::none(),
         }
     }
 }
 
-impl<'a, A> Future for TickFuture<'a, A> {
+impl<'a, A> Future for DispatchFuture<'a, A> {
     type Output = ControlFlow<()>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match mem::replace(&mut self.state, TickState::Done) {
-            TickState::New { msg, act, mailbox } => {
-                *self = TickFuture::running(msg, act, mailbox);
+        match mem::replace(&mut self.state, State::Done) {
+            State::New { msg, act, mailbox } => {
+                *self = DispatchFuture::running(msg, act, mailbox);
                 self.poll(cx)
             }
-            TickState::Running { mut fut, phantom } => {
+            State::Running { mut fut, phantom } => {
                 match self.span.in_scope(|| fut.poll_unpin(cx)) {
                     Poll::Ready(flow) => Poll::Ready(flow),
                     Poll::Pending => {
-                        self.state = TickState::Running { fut, phantom };
+                        self.state = State::Running { fut, phantom };
                         Poll::Pending
                     }
                 }
             }
-            TickState::Done => panic!("Polled after completion"),
+            State::Done => panic!("Polled after completion"),
         }
     }
 }

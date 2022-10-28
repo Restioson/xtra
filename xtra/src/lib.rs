@@ -20,6 +20,7 @@ pub use self::spawn::*; // Star export so we don't have to write `cfg` attribute
 pub mod address;
 mod chan;
 mod context;
+mod dispatch_future;
 mod envelope;
 mod instrumentation;
 mod mailbox;
@@ -30,7 +31,6 @@ mod recv_future;
 pub mod scoped_task;
 mod send_future;
 mod spawn;
-mod tick_future;
 
 /// Commonly used types from xtra
 pub mod prelude {
