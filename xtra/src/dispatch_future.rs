@@ -30,9 +30,11 @@ pub struct DispatchFuture<'a, A> {
 }
 
 impl<'a, A> DispatchFuture<'a, A> {
-    /// Return the handler's [`tracing::Span`](https://docs.rs/tracing/latest/tracing/struct.Span.html),
-    /// creating it if it has not already been created. This can be used to log messages into the
-    /// span when required, such as if it is cancelled later due to a timeout.
+    /// Returns a [`Span`] that covers the entire dispatching and handling of the message to the actor.
+    ///
+    /// This can be used to log messages into the span when required, such as if it is cancelled later due to a timeout.
+    ///
+    /// In case this future has not yet been polled, a new span will be created which is why this function takes `&mut self`.
     ///
     /// ```rust
     /// # use std::ops::ControlFlow;
@@ -52,7 +54,7 @@ impl<'a, A> DispatchFuture<'a, A> {
     /// # loop {
     /// # let msg = mailbox.next().await;
     ///  let mut fut = msg.dispatch_to(&mut actor);
-    ///  let span = fut.get_or_create_span().clone();
+    ///  let span = fut.span().clone();
     ///  match timeout(Duration::from_secs(1), fut).await {
     ///      Ok(ControlFlow::Continue(())) => (),
     ///      Ok(ControlFlow::Break(())) => break actor.stopped().await,
@@ -66,7 +68,7 @@ impl<'a, A> DispatchFuture<'a, A> {
     /// ```
     ///
     #[cfg(feature = "instrumentation")]
-    pub fn get_or_create_span(&mut self) -> &Span {
+    pub fn span(&mut self) -> &Span {
         let span = mem::replace(&mut self.span, Span::none());
         *self = match mem::replace(&mut self.state, State::Done) {
             State::New { msg, act, mailbox } => DispatchFuture::running(msg, act, mailbox),
