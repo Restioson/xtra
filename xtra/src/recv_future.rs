@@ -28,7 +28,10 @@ pub struct ReceiveFuture<A>(Receiving<A>);
 
 /// A message sent to a given actor, or a notification that it should shut down.
 pub struct Message<A> {
-    inner: ActorMessage<A>,
+    pub(crate) inner: ActorMessage<A>,
+
+    pub(crate) channel: chan::Ptr<A, Rx>,
+    pub(crate) broadcast_mailbox: Arc<BroadcastQueue<A>>,
 }
 
 impl<A> ReceiveFuture<A> {
@@ -78,7 +81,10 @@ pub struct Waiting<A> {
 }
 
 impl<A> Future for Waiting<A> {
-    type Output = Result<ActorMessage<A>, (chan::Ptr<A, Rx>, Arc<BroadcastQueue<A>>)>;
+    type Output = Result<
+        (ActorMessage<A>, chan::Ptr<A, Rx>, Arc<BroadcastQueue<A>>),
+        (chan::Ptr<A, Rx>, Arc<BroadcastQueue<A>>),
+    >;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -106,7 +112,7 @@ impl<A> Future for Waiting<A> {
 
         let result = match maybe_message {
             None => Err((channel, mailbox)),
-            Some(msg) => Ok(msg),
+            Some(msg) => Ok((msg, channel, mailbox)),
         };
 
         Poll::Ready(result)
@@ -136,7 +142,13 @@ impl<A> Future for Receiving<A> {
                     channel,
                     broadcast_mailbox,
                 } => match channel.try_recv(broadcast_mailbox.as_ref()) {
-                    Ok(inner) => return Poll::Ready(Message { inner }),
+                    Ok(inner) => {
+                        return Poll::Ready(Message {
+                            inner,
+                            channel,
+                            broadcast_mailbox,
+                        })
+                    }
                     Err(waiting) => {
                         *this = Receiving::Waiting(Waiting {
                             channel: Some(channel),
@@ -146,7 +158,13 @@ impl<A> Future for Receiving<A> {
                     }
                 },
                 Receiving::Waiting(mut inner) => match inner.poll_unpin(cx) {
-                    Poll::Ready(Ok(msg)) => return Poll::Ready(Message { inner: msg }),
+                    Poll::Ready(Ok((msg, channel, broadcast_mailbox))) => {
+                        return Poll::Ready(Message {
+                            inner: msg,
+                            channel,
+                            broadcast_mailbox,
+                        })
+                    }
                     Poll::Ready(Err((channel, broadcast_mailbox))) => {
                         // False positive wake up, try receive again.
                         *this = Receiving::New {

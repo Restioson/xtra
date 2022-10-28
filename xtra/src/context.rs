@@ -2,12 +2,12 @@ use crate::{Actor, Mailbox};
 
 /// `Context` is used to control how the actor is managed and to get the actor's address from inside
 /// of a message handler.
-pub struct Context<'m, A> {
+pub struct Context<A> {
     pub(crate) running: bool,
-    pub(crate) mailbox: &'m mut Mailbox<A>,
+    pub(crate) mailbox: Mailbox<A>,
 }
 
-impl<'m, A: Actor> Context<'m, A> {
+impl<A: Actor> Context<A> {
     /// Stop this actor as soon as it has finished processing current message. This means that the
     /// [`Actor::stopped`] method will be called. This will not stop all actors on the address.
     pub fn stop_self(&mut self) {
@@ -26,6 +26,6 @@ impl<'m, A: Actor> Context<'m, A> {
 
     /// Get a reference to the [`Mailbox`] of this actor.
     pub fn mailbox(&mut self) -> &mut Mailbox<A> {
-        self.mailbox
+        &mut self.mailbox
     }
 }

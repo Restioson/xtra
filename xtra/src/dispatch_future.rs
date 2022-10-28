@@ -15,8 +15,12 @@ use crate::mailbox::Mailbox;
 use crate::Message;
 
 impl<A> Message<A> {
-    pub fn dispatch_to(self, _: &mut A) -> DispatchFuture<'static, A> {
-        todo!()
+    pub fn dispatch_to(self, actor: &mut A) -> DispatchFuture<'_, A> {
+        DispatchFuture::new(
+            self.inner,
+            actor,
+            Mailbox::from_parts(self.channel, self.broadcast_mailbox),
+        )
     }
 }
 
@@ -72,11 +76,7 @@ impl<'a, A> DispatchFuture<'a, A> {
         &self.span
     }
 
-    fn running(
-        msg: ActorMessage<A>,
-        act: &'a mut A,
-        mailbox: &'a mut Mailbox<A>,
-    ) -> DispatchFuture<'a, A> {
+    fn running(msg: ActorMessage<A>, act: &'a mut A, mailbox: Mailbox<A>) -> DispatchFuture<'a, A> {
         let (fut, span) = match msg {
             ActorMessage::ToOneActor(msg) => msg.handle(act, mailbox),
             ActorMessage::ToAllActors(msg) => msg.handle(act, mailbox),
@@ -97,7 +97,7 @@ enum State<'a, A> {
     New {
         msg: ActorMessage<A>,
         act: &'a mut A,
-        mailbox: &'a mut Mailbox<A>,
+        mailbox: Mailbox<A>,
     },
     Running {
         fut: BoxFuture<'a, ControlFlow<()>>,
@@ -107,7 +107,7 @@ enum State<'a, A> {
 }
 
 impl<'a, A> DispatchFuture<'a, A> {
-    pub fn new(msg: ActorMessage<A>, act: &'a mut A, mailbox: &'a mut Mailbox<A>) -> Self {
+    pub fn new(msg: ActorMessage<A>, act: &'a mut A, mailbox: Mailbox<A>) -> Self {
         DispatchFuture {
             state: State::New { msg, act, mailbox },
             span: Span::none(),

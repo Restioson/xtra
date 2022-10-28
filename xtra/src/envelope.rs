@@ -33,7 +33,7 @@ pub trait MessageEnvelope: HasPriority + Send {
     fn handle<'a>(
         self: Box<Self>,
         act: &'a mut Self::Actor,
-        mailbox: &'a mut Mailbox<Self::Actor>,
+        mailbox: Mailbox<Self::Actor>,
     ) -> (BoxFuture<'a, ControlFlow<(), ()>>, Span);
 }
 
@@ -93,7 +93,7 @@ where
     fn handle<'a>(
         self: Box<Self>,
         act: &'a mut Self::Actor,
-        mailbox: &'a mut Mailbox<Self::Actor>,
+        mailbox: Mailbox<Self::Actor>,
     ) -> (BoxFuture<'a, ControlFlow<(), ()>>, Span) {
         let Self {
             message,
@@ -141,7 +141,7 @@ pub trait BroadcastEnvelope: HasPriority + Send + Sync {
     fn handle<'a>(
         self: Arc<Self>,
         act: &'a mut Self::Actor,
-        mailbox: &'a mut Mailbox<Self::Actor>,
+        mailbox: Mailbox<Self::Actor>,
     ) -> (BoxFuture<'a, ControlFlow<()>>, Span);
 }
 
@@ -188,7 +188,7 @@ where
     fn handle<'a>(
         self: Arc<Self>,
         act: &'a mut Self::Actor,
-        mailbox: &'a mut Mailbox<Self::Actor>,
+        mailbox: Mailbox<Self::Actor>,
     ) -> (BoxFuture<'a, ControlFlow<(), ()>>, Span) {
         let (msg, instrumentation) = (self.message.clone(), self.instrumentation.clone());
         drop(self); // Drop ASAP to end the message waiting for actor span
@@ -251,7 +251,7 @@ where
     fn handle<'a>(
         self: Arc<Self>,
         _act: &'a mut Self::Actor,
-        _mailbox: &'a mut Mailbox<Self::Actor>,
+        _mailbox: Mailbox<Self::Actor>,
     ) -> (BoxFuture<'a, ControlFlow<()>>, Span) {
         Self::handle()
     }
