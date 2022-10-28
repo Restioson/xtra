@@ -16,7 +16,7 @@ pub use self::mailbox::Mailbox;
 pub use self::scoped_task::scoped;
 pub use self::send_future::{ActorErasedSending, ActorNamedSending, Receiver, SendFuture};
 pub use self::spawn::*;
-use crate::context::TickFuture; // Star export so we don't have to write `cfg` attributes here.
+use crate::tick_future::TickFuture; // Star export so we don't have to write `cfg` attributes here.
 
 pub mod address;
 mod chan;
@@ -31,6 +31,7 @@ mod recv_future;
 pub mod scoped_task;
 mod send_future;
 mod spawn;
+mod tick_future;
 
 /// Commonly used types from xtra
 pub mod prelude {
