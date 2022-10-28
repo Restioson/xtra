@@ -47,7 +47,7 @@ impl<A> Future for ReceiveFuture<A> {
     type Output = Message<A>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.0.poll_unpin(cx).map(|inner| Message { inner })
+        self.0.poll_unpin(cx)
     }
 }
 
@@ -105,9 +105,9 @@ impl<A> Drop for Waiting<A> {
 }
 
 impl<A> Future for Receiving<A> {
-    type Output = ActorMessage<A>;
+    type Output = Message<A>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<ActorMessage<A>> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Message<A>> {
         let this = self.get_mut();
 
         loop {
@@ -116,7 +116,9 @@ impl<A> Future for Receiving<A> {
                     channel,
                     broadcast_mailbox,
                 } => match channel.try_recv(broadcast_mailbox.as_ref()) {
-                    Ok(message) => return Poll::Ready(message),
+                    Ok(inner) => return Poll::Ready(Message {
+                        inner
+                    }),
                     Err(waiting) => {
                         *this = Receiving::Waiting(Waiting {
                             channel,
@@ -126,7 +128,9 @@ impl<A> Future for Receiving<A> {
                     }
                 },
                 Receiving::Waiting(mut inner) => match inner.poll_unpin(cx) {
-                    Poll::Ready(Ok(msg)) => return Poll::Ready(msg),
+                    Poll::Ready(Ok(msg)) => return Poll::Ready(Message {
+                        inner: msg
+                    }),
                     Poll::Ready(Err((channel, broadcast_mailbox))) => {
                         // False positive wake up, try receive again.
                         *this = Receiving::New {
