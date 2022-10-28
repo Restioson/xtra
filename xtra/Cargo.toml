@@ -31,7 +31,7 @@ wasm-bindgen-futures = { version = "0.4", optional = true, default-features = fa
 # Feature `instrumentation`
 tracing = { version = "0.1.35", optional = true, default-features = false }
 
-macros = { package = "xtra-macros", path = "./macros", optional = true }
+macros = { package = "xtra-macros", path = "../macros", optional = true }
 
 [dev-dependencies]
 rand = "0.8"
