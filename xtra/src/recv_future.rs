@@ -27,7 +27,9 @@ use crate::chan::{self, ActorMessage, BroadcastQueue, Rx, WaitingReceiver};
 pub struct ReceiveFuture<A>(Receiving<A>);
 
 /// A message sent to a given actor, or a notification that it should shut down.
-pub struct Message<A>(pub(crate) ActorMessage<A>);
+pub struct Message<A> {
+    inner: ActorMessage<A>,
+}
 
 impl<A> ReceiveFuture<A> {
     pub(crate) fn new(
@@ -45,7 +47,7 @@ impl<A> Future for ReceiveFuture<A> {
     type Output = Message<A>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.0.poll_unpin(cx).map(Message)
+        self.0.poll_unpin(cx).map(|inner| Message { inner })
     }
 }
 

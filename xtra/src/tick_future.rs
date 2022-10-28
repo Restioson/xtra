@@ -12,6 +12,13 @@ use crate::chan::ActorMessage;
 use crate::envelope::Shutdown;
 use crate::instrumentation::Span;
 use crate::mailbox::Mailbox;
+use crate::Message;
+
+impl<A> Message<A> {
+    pub fn dispatch_to(self, _: &mut A) -> TickFuture<'static, A> {
+        todo!()
+    }
+}
 
 pub struct TickFuture<'a, A> {
     state: TickState<'a, A>,
@@ -40,7 +47,7 @@ impl<'a, A> TickFuture<'a, A> {
     /// #
     /// # loop {
     /// # let msg = mailbox.next().await;
-    ///  let mut fut = xtra::tick(msg, &mut actor, &mut mailbox);
+    ///  let mut fut = msg.dispatch_to(&mut actor);
     ///  let span = fut.get_or_create_span().clone();
     ///  match timeout(Duration::from_secs(1), fut).await {
     ///      Ok(ControlFlow::Continue(())) => (),
