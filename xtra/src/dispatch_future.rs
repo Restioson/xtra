@@ -15,6 +15,7 @@ use crate::mailbox::Mailbox;
 use crate::Message;
 
 impl<A> Message<A> {
+    /// Dispatches this message to the given actor.
     pub fn dispatch_to(self, actor: &mut A) -> DispatchFuture<'_, A> {
         DispatchFuture::new(
             self.inner,
@@ -24,6 +25,10 @@ impl<A> Message<A> {
     }
 }
 
+/// Represents the dispatch of a message to an actor.
+///
+/// This future is **not** cancellation-safe. Dropping it will interrupt the execution of
+/// [`Handler::handle`](crate::Handler::handle) which may leave the actor in an inconsistent state.
 #[must_use = "Futures do nothing unless polled"]
 pub struct DispatchFuture<'a, A> {
     state: State<'a, A>,
