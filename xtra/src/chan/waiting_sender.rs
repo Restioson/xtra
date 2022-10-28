@@ -7,6 +7,7 @@ use std::task::{Context, Poll, Waker};
 use crate::chan::{HasPriority, Priority};
 use crate::Error;
 
+#[must_use = "Futures do nothing unless polled"]
 pub struct WaitingSender<M>(Arc<spin::Mutex<Inner<M>>>);
 
 pub struct Handle<M>(Weak<spin::Mutex<Inner<M>>>);

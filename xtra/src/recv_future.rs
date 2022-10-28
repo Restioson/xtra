@@ -58,6 +58,7 @@ impl<A> Future for ReceiveFuture<A> {
 ///
 /// This type only exists because the variants of an enum are public and we would leak
 /// implementation details like the variant names into the public API.
+#[must_use = "Futures do nothing unless polled"]
 enum Receiving<A> {
     New {
         channel: chan::Ptr<A, Rx>,
@@ -74,6 +75,7 @@ enum Receiving<A> {
 ///
 /// To avoid losing a message, this type implements [`Drop`] and re-queues the message into the
 /// mailbox in such a scenario.
+#[must_use = "Futures do nothing unless polled"]
 pub struct Waiting<A> {
     channel: Option<chan::Ptr<A, Rx>>,
     broadcast_mailbox: Option<Arc<BroadcastQueue<A>>>,
