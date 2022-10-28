@@ -92,12 +92,10 @@ impl<A> Future for Waiting<A> {
         let this = self.get_mut();
 
         let maybe_message = futures_util::ready!(this.waiting_receiver.poll(
-            &this
-                .channel
+            this.channel
                 .as_mut()
                 .expect("to not be polled after completion"),
-            &this
-                .broadcast_mailbox
+            this.broadcast_mailbox
                 .as_mut()
                 .expect("to not be polled after completion"),
             cx
