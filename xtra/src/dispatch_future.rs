@@ -24,6 +24,7 @@ impl<A> Message<A> {
     }
 }
 
+#[must_use = "Futures do nothing unless polled"]
 pub struct DispatchFuture<'a, A> {
     state: State<'a, A>,
     span: Span,
