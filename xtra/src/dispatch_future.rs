@@ -66,8 +66,8 @@ impl<'a, A> DispatchFuture<'a, A> {
     /// ```
     ///
     #[cfg(feature = "instrumentation")]
-    pub fn get_or_create_span(&mut self) -> &tracing::Span {
-        let span = mem::replace(&mut self.span, tracing::Span::none());
+    pub fn get_or_create_span(&mut self) -> &Span {
+        let span = mem::replace(&mut self.span, Span::none());
         *self = match mem::replace(&mut self.state, State::Done) {
             State::New { msg, act, mailbox } => DispatchFuture::running(msg, act, mailbox),
             state => DispatchFuture { state, span },
