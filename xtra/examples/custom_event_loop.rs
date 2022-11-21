@@ -40,7 +40,7 @@ async fn main() {
             let before = actor.count;
             let start = Instant::now();
 
-            let ctrl = xtra::tick(msg, &mut actor, &mut mailbox).await;
+            let ctrl = msg.dispatch_to(&mut actor).await;
 
             if let ControlFlow::Break(_) = ctrl {
                 println!("Goodbye!");

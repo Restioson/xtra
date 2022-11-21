@@ -15,12 +15,12 @@ pub use self::context::Context;
 pub use self::mailbox::Mailbox;
 pub use self::scoped_task::scoped;
 pub use self::send_future::{ActorErasedSending, ActorNamedSending, Receiver, SendFuture};
-pub use self::spawn::*;
-use crate::context::TickFuture; // Star export so we don't have to write `cfg` attributes here.
+pub use self::spawn::*; // Star export so we don't have to write `cfg` attributes here.
 
 pub mod address;
 mod chan;
 mod context;
+mod dispatch_future;
 mod envelope;
 mod instrumentation;
 mod mailbox;
@@ -246,24 +246,7 @@ pub async fn yield_once<A>(mailbox: &mut Mailbox<A>, actor: &mut A) -> ControlFl
 where
     A: Actor,
 {
-    let message = mailbox.next().await;
-
-    tick(message, actor, mailbox).await
-}
-
-/// Handle one message and return whether to exit from the manage loop or not.
-///
-/// Note that this will immediately create the message handler span if the `instrumentation`
-/// feature is enabled.
-pub fn tick<'a, A>(
-    message: Message<A>,
-    actor: &'a mut A,
-    mailbox: &'a mut Mailbox<A>,
-) -> TickFuture<'a, A>
-where
-    A: Actor,
-{
-    TickFuture::new(message.0, actor, mailbox)
+    mailbox.next().await.dispatch_to(actor).await
 }
 
 /// Handle any incoming messages for the actor while running a given future. This is similar to
@@ -336,7 +319,7 @@ where
             match future::select(fut, &mut next_msg).await {
                 Either::Left((future_res, _)) => {
                     if let Some(msg) = next_msg.now_or_never() {
-                        TickFuture::new(msg.0, actor, mailbox).await;
+                        msg.dispatch_to(actor).await;
                     }
 
                     return Either::Left(future_res);
@@ -345,7 +328,7 @@ where
             }
         };
 
-        control_flow = TickFuture::new(msg.0, actor, mailbox).await;
+        control_flow = msg.dispatch_to(actor).await;
         fut = unfinished;
     }
 

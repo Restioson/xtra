@@ -54,6 +54,16 @@ impl<A> Mailbox<A> {
     pub fn next(&self) -> ReceiveFuture<A> {
         ReceiveFuture::new(self.inner.clone(), self.broadcast_mailbox.clone())
     }
+
+    pub(crate) fn from_parts(
+        chan: chan::Ptr<A, Rx>,
+        broadcast_mailbox: Arc<BroadcastQueue<A>>,
+    ) -> Self {
+        Self {
+            inner: chan,
+            broadcast_mailbox,
+        }
+    }
 }
 
 impl<A> Clone for Mailbox<A> {

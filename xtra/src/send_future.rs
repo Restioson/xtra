@@ -70,12 +70,15 @@ where
 }
 
 /// "Sending" state of [`SendFuture`] for cases where the actor type is named and we sent a single message.
+#[must_use = "Futures do nothing unless polled"]
 pub struct ActorNamedSending<A, Rc: RefCounter>(Sending<A, MessageToOne<A>, Rc>);
 
 /// "Sending" state of [`SendFuture`] for cases where the actor type is named and we broadcast a message.
+#[must_use = "Futures do nothing unless polled"]
 pub struct ActorNamedBroadcasting<A, Rc: RefCounter>(Sending<A, MessageToAll<A>, Rc>);
 
 /// "Sending" state of [`SendFuture`] for cases where the actor type is erased.
+#[must_use = "Futures do nothing unless polled"]
 pub struct ActorErasedSending(Box<dyn private::ErasedSending>);
 
 impl<A, R, Rc> SendFuture<ActorNamedSending<A, Rc>, ResolveToHandlerReturn<R>>
@@ -165,6 +168,7 @@ impl SendFuture<ActorErasedSending, Broadcast> {
 }
 
 /// The core state machine around sending a message to an actor's mailbox.
+#[must_use = "Futures do nothing unless polled"]
 enum Sending<A, M, Rc: RefCounter> {
     New { msg: M, sender: chan::Ptr<A, Rc> },
     WaitingToSend(WaitingSender<M>),

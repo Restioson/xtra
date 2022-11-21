@@ -30,11 +30,11 @@ pub trait MessageEnvelope: HasPriority + Send {
     /// returning its result over a return channel if applicable. This also takes `Box<Self>` as the
     /// `self` parameter because `Envelope`s always appear as `Box<dyn Envelope<Actor = ...>>`,
     /// and this allows us to consume the envelope.
-    fn handle<'a>(
+    fn handle(
         self: Box<Self>,
-        act: &'a mut Self::Actor,
-        mailbox: &'a mut Mailbox<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<(), ()>>, Span);
+        act: &mut Self::Actor,
+        mailbox: Mailbox<Self::Actor>,
+    ) -> (BoxFuture<ControlFlow<(), ()>>, Span);
 }
 
 /// An envelope that returns a result from a message. Constructed by the `AddressExt::do_send` method.
@@ -90,11 +90,11 @@ where
         self.instrumentation = Instrumentation::started::<A, M>();
     }
 
-    fn handle<'a>(
+    fn handle(
         self: Box<Self>,
-        act: &'a mut Self::Actor,
-        mailbox: &'a mut Mailbox<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<(), ()>>, Span) {
+        act: &mut Self::Actor,
+        mailbox: Mailbox<Self::Actor>,
+    ) -> (BoxFuture<ControlFlow<(), ()>>, Span) {
         let Self {
             message,
             result_sender,
@@ -138,11 +138,11 @@ pub trait BroadcastEnvelope: HasPriority + Send + Sync {
     /// the request span
     fn start_span(&mut self);
 
-    fn handle<'a>(
+    fn handle(
         self: Arc<Self>,
-        act: &'a mut Self::Actor,
-        mailbox: &'a mut Mailbox<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, Span);
+        act: &mut Self::Actor,
+        mailbox: Mailbox<Self::Actor>,
+    ) -> (BoxFuture<ControlFlow<()>>, Span);
 }
 
 impl<A> HasPriority for MessageToAll<A> {
@@ -185,11 +185,11 @@ where
         self.instrumentation = Instrumentation::started::<A, M>();
     }
 
-    fn handle<'a>(
+    fn handle(
         self: Arc<Self>,
-        act: &'a mut Self::Actor,
-        mailbox: &'a mut Mailbox<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<(), ()>>, Span) {
+        act: &mut Self::Actor,
+        mailbox: Mailbox<Self::Actor>,
+    ) -> (BoxFuture<ControlFlow<(), ()>>, Span) {
         let (msg, instrumentation) = (self.message.clone(), self.instrumentation.clone());
         drop(self); // Drop ASAP to end the message waiting for actor span
         let fut = async move {
@@ -248,11 +248,11 @@ where
     // This message is not instrumented
     fn start_span(&mut self) {}
 
-    fn handle<'a>(
+    fn handle(
         self: Arc<Self>,
-        _act: &'a mut Self::Actor,
-        _mailbox: &'a mut Mailbox<Self::Actor>,
-    ) -> (BoxFuture<'a, ControlFlow<()>>, Span) {
+        _act: &mut Self::Actor,
+        _mailbox: Mailbox<Self::Actor>,
+    ) -> (BoxFuture<ControlFlow<()>>, Span) {
         Self::handle()
     }
 }
