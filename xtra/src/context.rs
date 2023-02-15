@@ -14,9 +14,18 @@ impl<A: Actor> Context<A> {
         self.running = false;
     }
 
-    /// Stop all actors on this address.
+    /// Stop all actors on this address. This bypasses the message queue, so it will always be
+    /// handled as soon as possible by all actors, and will not wait for other messages to be
+    /// enqueued if the queue is full. In other words, it will not wait for an actor which is
+    /// lagging behind on broadcast messages to catch up before other actors can receive the shutdown
+    /// message. Therefore, each actor is guaranteed to shut down as its next action immediately
+    /// after it finishes processing its current message, or as soon as its task is woken if it is
+    /// currently idle.
     ///
-    /// This is equivalent to calling [`Context::stop_self`] on all actors active on this address.
+    /// This is similar to calling [`Context::stop_self`] on all actors active on this address, but
+    /// a broadcast message that would cause [`Context::stop_self`] to be called may have to wait
+    /// for other broadcast messages, during which time other messages may be handled by actors (i.e
+    /// the shutdown may be delayed by a lagging actor).
     pub fn stop_all(&mut self) {
         // We only need to shut down if there are still any strong senders left
         if let Some(address) = self.mailbox.address().try_upgrade() {
