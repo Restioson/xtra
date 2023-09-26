@@ -27,7 +27,7 @@ impl<A: Actor> Context<A> {
     /// a broadcast message that would cause [`Context::stop_self`] to be called may have to wait
     /// for other broadcast messages, during which time other messages may be handled by actors (i.e
     /// the shutdown may be delayed by a lagging actor).
-    pub fn stop_all(&mut self) {
+    pub fn stop_all(&self) {
         // We only need to shut down if there are still any strong senders left
         if let Some(address) = self.mailbox.address().try_upgrade() {
             address.0.shutdown_all_receivers();
@@ -35,7 +35,7 @@ impl<A: Actor> Context<A> {
     }
 
     /// Get a reference to the [`Mailbox`] of this actor.
-    pub fn mailbox(&mut self) -> &mut Mailbox<A> {
-        &mut self.mailbox
+    pub fn mailbox(&self) -> &Mailbox<A> {
+        &self.mailbox
     }
 }

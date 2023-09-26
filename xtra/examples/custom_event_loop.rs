@@ -24,11 +24,11 @@ impl Handler<Inc> for Counter {
 
 #[tokio::main]
 async fn main() {
-    let (address, mut mailbox) = Mailbox::unbounded();
+    let (address, mailbox) = Mailbox::unbounded();
     let mut actor = Counter::default();
 
     tokio::spawn(async move {
-        if let Err(()) = actor.started(&mut mailbox).await {
+        if let Err(()) = actor.started(&mailbox).await {
             return;
         }
 

@@ -44,7 +44,7 @@ where
     T: HasPriority,
 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.0.priority().partial_cmp(&other.0.priority())
+        Some(self.cmp(other))
     }
 }
 
