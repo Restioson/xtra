@@ -432,10 +432,7 @@ async fn waiting_sender_order() {
 
     // With ordered messages
 
-    let _ = addr
-        .send(Message::Ordered { ord: 0 })
-        .detach()
-        .await;
+    let _ = addr.send(Message::Ordered { ord: 0 }).detach().await;
     let mut first = addr.send(Message::Ordered { ord: 1 }).detach();
     let mut second = addr.send(Message::Ordered { ord: 2 }).detach();
 
@@ -506,10 +503,7 @@ async fn set_priority_msg_channel() {
 
         let channel = MessageChannel::new(addr);
 
-        let _ = channel
-            .send(Message::Ordered { ord: 0 })
-            .detach()
-            .await;
+        let _ = channel.send(Message::Ordered { ord: 0 }).detach().await;
         let _ = channel
             .send(Message::Priority { priority: 1 })
             .priority(1)

@@ -165,18 +165,14 @@ async fn main() {
     })
     .await;
 
-    do_parallel_address_benchmark(
-        "address detach 2 workers (ZST message)",
-        2,
-        |addr| addr.send(Increment).detach(),
-    )
+    do_parallel_address_benchmark("address detach 2 workers (ZST message)", 2, |addr| {
+        addr.send(Increment).detach()
+    })
     .await;
 
-    do_parallel_address_benchmark(
-        "address detach 2 workers (8-byte message)",
-        2,
-        |addr| addr.send(IncrementWithData(0)).detach(),
-    )
+    do_parallel_address_benchmark("address detach 2 workers (8-byte message)", 2, |addr| {
+        addr.send(IncrementWithData(0)).detach()
+    })
     .await;
 
     do_channel_benchmark("channel detach (ZST message)", |chan| {
