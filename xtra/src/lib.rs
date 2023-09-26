@@ -290,7 +290,7 @@ where
 ///
 ///         let addr = ctx.mailbox().address();
 ///         let select = xtra::select(ctx.mailbox(), self, future::pending::<()>());
-///         let _ = addr.send(Stop).split_receiver().await;
+///         let _ = addr.send(Stop).detach().await;
 ///
 ///         // Actor is stopping, so this will return Err, even though the future will
 ///         // usually never complete.
@@ -370,7 +370,7 @@ where
 ///     async fn handle(&mut self, _msg: Joining, ctx: &mut Context<Self>) -> bool {
 ///         let addr = ctx.mailbox().address();
 ///         let join = xtra::join(ctx.mailbox(), self, future::ready::<()>(()));
-///         let _ = addr.send(Stop).split_receiver().await;
+///         let _ = addr.send(Stop).detach().await;
 ///
 ///         // Actor is stopping, but the join should still evaluate correctly
 ///         join.now_or_never().is_some()

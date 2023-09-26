@@ -1,2 +1,3 @@
 [workspace]
 members = ["xtra/examples/basic_wasm_bindgen", "macros", "macros-test", "xtra"]
+resolver = "2"
