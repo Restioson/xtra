@@ -25,7 +25,7 @@ impl Instrumentation {
         Instrumentation {}
     }
 
-    #[allow(clippy::extra_unused_type_parameters)] // Needs to be consistent with non-stub impl.
+    #[allow(unknown_lints, clippy::extra_unused_type_parameters)] // Needs to be consistent with non-stub impl.
     pub fn started<A, M>() -> Self {
         Self::empty()
     }
