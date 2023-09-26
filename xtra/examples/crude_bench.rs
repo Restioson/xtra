@@ -155,36 +155,36 @@ async fn do_channel_benchmark<M, RM>(
 
 #[tokio::main]
 async fn main() {
-    do_address_benchmark("address split_receiver (ZST message)", |addr| {
+    do_address_benchmark("address detach (ZST message)", |addr| {
         addr.send(Increment).detach()
     })
     .await;
 
-    do_address_benchmark("address split_receiver (8-byte message)", |addr| {
+    do_address_benchmark("address detach (8-byte message)", |addr| {
         addr.send(IncrementWithData(0)).detach()
     })
     .await;
 
     do_parallel_address_benchmark(
-        "address split_receiver 2 workers (ZST message)",
+        "address detach 2 workers (ZST message)",
         2,
         |addr| addr.send(Increment).detach(),
     )
     .await;
 
     do_parallel_address_benchmark(
-        "address split_receiver 2 workers (8-byte message)",
+        "address detach 2 workers (8-byte message)",
         2,
         |addr| addr.send(IncrementWithData(0)).detach(),
     )
     .await;
 
-    do_channel_benchmark("channel split_receiver (ZST message)", |chan| {
+    do_channel_benchmark("channel detach (ZST message)", |chan| {
         chan.send(Increment).detach()
     })
     .await;
 
-    do_channel_benchmark("channel split_receiver (8-byte message)", |chan| {
+    do_channel_benchmark("channel detach (8-byte message)", |chan| {
         chan.send(IncrementWithData(0)).detach()
     })
     .await;
