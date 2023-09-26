@@ -25,8 +25,9 @@ pub type MessageToOne<A> = Box<dyn MessageEnvelope<Actor = A>>;
 pub type MessageToAll<A> = Arc<dyn BroadcastEnvelope<Actor = A>>;
 pub type BroadcastQueue<A> = spin::Mutex<BinaryHeap<ByPriority<MessageToAll<A>>>>;
 
-/// Create an actor mailbox, returning a sender and receiver for it. The given capacity is applied
-/// severally to each send type - priority, ordered, and broadcast.
+/// Create an actor mailbox, returning a sender and receiver for it.
+///
+/// The given capacity is applied separately for unicast and broadcast messages.
 pub fn new<A>(capacity: Option<usize>) -> (Ptr<A, TxStrong>, Ptr<A, Rx>) {
     let inner = Arc::new(Chan::new(capacity));
 
@@ -120,11 +121,8 @@ impl<A> Chan<A> {
         };
 
         match unfulfilled_msg {
-            m if m.priority() == Priority::default() && !inner.is_ordered_full() => {
-                inner.ordered_queue.push_back(m);
-            }
-            m if m.priority() != Priority::default() && !inner.is_priority_full() => {
-                inner.priority_queue.push(ByPriority(m));
+            m if m.priority() != Priority::default() && !inner.is_unicast_full() => {
+                inner.unicast_queue.push(ByPriority(m));
             }
             _ => {
                 let (handle, waiting) = WaitingSender::new(unfulfilled_msg);
@@ -176,20 +174,13 @@ impl<A> Chan<A> {
             broadcast_mailbox.lock().peek().map(|it| it.priority())
         };
 
-        let shared_priority: Option<Priority> = inner.priority_queue.peek().map(|it| it.priority());
-
-        // Try take from ordered channel
-        if cmp::max(shared_priority, broadcast_priority) <= Some(Priority::Valued(0)) {
-            if let Some(msg) = inner.pop_ordered() {
-                return Ok(msg.into());
-            }
-        }
+        let shared_priority: Option<Priority> = inner.unicast_queue.peek().map(|it| it.priority());
 
         // Choose which priority channel to take from
         match shared_priority.cmp(&broadcast_priority) {
             // Shared priority is greater or equal (and it is not empty)
             Ordering::Greater | Ordering::Equal if shared_priority.is_some() => {
-                Ok(inner.pop_priority().unwrap().into())
+                Ok(inner.pop_unicast().unwrap().into())
             }
             // Shared priority is less - take from broadcast
             Ordering::Less => Ok(inner.pop_broadcast(broadcast_mailbox).unwrap().into()),
@@ -215,7 +206,7 @@ impl<A> Chan<A> {
 
     pub fn len(&self) -> usize {
         let inner = self.chan.lock().unwrap();
-        inner.broadcast_tail + inner.ordered_queue.len() + inner.priority_queue.len()
+        inner.broadcast_tail + inner.unicast_queue.len()
     }
 
     pub fn capacity(&self) -> Option<usize> {
@@ -262,8 +253,7 @@ impl<A> Chan<A> {
         self.on_shutdown.notify(usize::MAX);
 
         // Let any outstanding messages drop
-        inner.ordered_queue.clear();
-        inner.priority_queue.clear();
+        inner.unicast_queue.clear();
         inner.broadcast_queues.clear();
 
         // Close (and potentially wake) outstanding waiting senders
@@ -303,12 +293,7 @@ impl<A> Chan<A> {
         };
 
         if let Err(msg) = inner.try_fulfill_receiver(msg) {
-            if msg.priority() == Priority::default() {
-                // Preserve ordering as much as possible by pushing to the front
-                inner.ordered_queue.push_front(msg)
-            } else {
-                inner.priority_queue.push(ByPriority(msg));
-            }
+            inner.unicast_queue.push(ByPriority(msg));
         }
     }
 
@@ -322,11 +307,10 @@ impl<A> Chan<A> {
 
 struct Inner<A> {
     capacity: Option<usize>,
-    ordered_queue: VecDeque<MessageToOne<A>>,
     waiting_send_to_one: VecDeque<waiting_sender::Handle<MessageToOne<A>>>,
     waiting_send_to_all: VecDeque<waiting_sender::Handle<MessageToAll<A>>>,
     waiting_receivers_handles: VecDeque<waiting_receiver::Handle<A>>,
-    priority_queue: BinaryHeap<ByPriority<MessageToOne<A>>>,
+    unicast_queue: BinaryHeap<ByPriority<MessageToOne<A>>>,
     broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
     broadcast_tail: usize,
 }
@@ -335,34 +319,21 @@ impl<A> Inner<A> {
     fn new(capacity: Option<usize>) -> Self {
         Self {
             capacity,
-            ordered_queue: VecDeque::default(),
             waiting_send_to_one: VecDeque::default(),
             waiting_send_to_all: VecDeque::default(),
             waiting_receivers_handles: VecDeque::default(),
-            priority_queue: BinaryHeap::default(),
+            unicast_queue: BinaryHeap::default(),
             broadcast_queues: Vec::default(),
             broadcast_tail: 0,
         }
     }
 
-    fn pop_priority(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
-        let msg = self.priority_queue.pop()?.0;
+    fn pop_unicast(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
+        let msg = self.unicast_queue.pop()?.0;
 
-        if !self.is_priority_full() {
-            if let Some(msg) = self.try_take_waiting_priority_message() {
-                self.priority_queue.push(ByPriority(msg))
-            }
-        }
-
-        Some(msg)
-    }
-
-    fn pop_ordered(&mut self) -> Option<Box<dyn MessageEnvelope<Actor = A>>> {
-        let msg = self.ordered_queue.pop_front()?;
-
-        if !self.is_ordered_full() {
-            if let Some(msg) = self.try_take_waiting_ordered_message() {
-                self.ordered_queue.push_back(msg)
+        if !self.is_unicast_full() {
+            if let Some(msg) = self.try_take_waiting_unicast_message() {
+                self.unicast_queue.push(ByPriority(msg))
             }
         }
 
@@ -425,17 +396,7 @@ impl<A> Inner<A> {
         Err(msg)
     }
 
-    fn try_take_waiting_ordered_message(&mut self) -> Option<MessageToOne<A>> {
-        loop {
-            if let Some(msg) =
-                find_remove_next_default_priority(&mut self.waiting_send_to_one)?.take_message()
-            {
-                return Some(msg);
-            }
-        }
-    }
-
-    fn try_take_waiting_priority_message(&mut self) -> Option<MessageToOne<A>> {
+    fn try_take_waiting_unicast_message(&mut self) -> Option<MessageToOne<A>> {
         loop {
             if let Some(msg) =
                 find_remove_highest_priority(&mut self.waiting_send_to_one)?.take_message()
@@ -460,14 +421,9 @@ impl<A> Inner<A> {
             .map_or(false, |cap| self.broadcast_tail >= cap)
     }
 
-    fn is_ordered_full(&self) -> bool {
+    fn is_unicast_full(&self) -> bool {
         self.capacity
-            .map_or(false, |cap| self.ordered_queue.len() >= cap)
-    }
-
-    fn is_priority_full(&self) -> bool {
-        self.capacity
-            .map_or(false, |cap| self.priority_queue.len() >= cap)
+            .map_or(false, |cap| self.unicast_queue.len() >= cap)
     }
 }
 
@@ -484,22 +440,6 @@ where
         .enumerate()
         .max_by_key(|(_, handle)| handle.priority())?
         .0;
-
-    queue.remove(pos)
-}
-
-fn find_remove_next_default_priority<M>(
-    queue: &mut VecDeque<waiting_sender::Handle<M>>,
-) -> Option<waiting_sender::Handle<M>>
-where
-    M: HasPriority,
-{
-    queue.retain(|handle| handle.is_active()); // Only process handles which are still active.
-
-    let pos = queue.iter().position(|handle| match handle.priority() {
-        None => false,
-        Some(p) => p == Priority::default(),
-    })?;
 
     queue.remove(pos)
 }
