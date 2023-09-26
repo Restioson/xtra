@@ -25,6 +25,7 @@ impl Instrumentation {
         Instrumentation {}
     }
 
+    #[allow(clippy::extra_unused_type_parameters)] // Needs to be consistent with non-stub impl.
     pub fn started<A, M>() -> Self {
         Self::empty()
     }
@@ -33,7 +34,7 @@ impl Instrumentation {
         true
     }
 
-    pub fn apply<A, M, F>(self, fut: F) -> (impl Future<Output = F::Output>, Span)
+    pub fn apply<F>(self, fut: F) -> (impl Future<Output = F::Output>, Span)
     where
         F: Future,
     {

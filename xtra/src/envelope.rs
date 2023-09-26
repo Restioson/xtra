@@ -116,7 +116,7 @@ where
             }
         };
 
-        let (fut, span) = instrumentation.apply::<A, M, _>(fut);
+        let (fut, span) = instrumentation.apply::<_>(fut);
 
         let fut = Box::pin(fut.map(move |(r, flow)| {
             // We don't actually care if the receiver is listening
@@ -205,7 +205,7 @@ where
                 ControlFlow::Break(())
             }
         };
-        let (fut, span) = instrumentation.apply::<A, M, _>(fut);
+        let (fut, span) = instrumentation.apply::<_>(fut);
         (Box::pin(fut), span)
     }
 }

@@ -9,6 +9,7 @@ pub trait AddressExt {}
 impl<A, Rc: RefCounter> AddressExt for Address<A, Rc> {}
 
 #[allow(dead_code)] // The mere existence of this function already ensures that these public APIs exist, which is what we want to test!
+#[allow(clippy::let_underscore_future)]
 fn functions_on_address_with_generic_rc_counter<A, Rc, Rc2>(
     address1: Address<A, Rc>,
     address2: Address<A, Rc2>,
