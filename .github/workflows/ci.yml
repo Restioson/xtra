@@ -5,6 +5,13 @@ on:
 
 name: Continuous integration
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTFLAGS: '-Dwarnings' # Never tolerate warnings.
+
 jobs:
   ci:
     strategy:
@@ -22,19 +29,14 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: actions-rs/toolchain@v1.0.7
-        with:
-          profile: minimal
-          toolchain: nightly
+      - uses: dtolnay/rust-toolchain@nightly
 
-      - uses: actions-rs/toolchain@v1.0.7
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ matrix.toolchain }}
-          override: true
-          components: rustfmt, clippy
+          components: clippy, rustfmt
 
-      - uses: Swatinem/rust-cache@v1
+      - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.args }}
 
@@ -44,6 +46,6 @@ jobs:
 
       - run: RUSTDOCFLAGS="--deny rustdoc::broken_intra_doc_links" cargo doc --no-deps --document-private-items --all-features
 
-      - run: cargo clippy --workspace --all-targets ${{ matrix.args }} -- -D warnings
+      - run: cargo clippy --all-targets ${{ matrix.args }}
 
-      - run: cargo test --workspace ${{ matrix.args }}
+      - run: cargo test ${{ matrix.args }}
