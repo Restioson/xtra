@@ -120,17 +120,14 @@ impl<A> Chan<A> {
             return Ok(Ok(()));
         };
 
-        match unfulfilled_msg {
-            m if m.priority() != Priority::default() && !inner.is_unicast_full() => {
-                inner.unicast_queue.push(ByPriority(m));
-            }
-            _ => {
-                let (handle, waiting) = WaitingSender::new(unfulfilled_msg);
-                inner.waiting_send_to_one.push_back(handle);
+        if inner.is_unicast_full() {
+            let (handle, waiting) = WaitingSender::new(unfulfilled_msg);
+            inner.waiting_send_to_one.push_back(handle);
 
-                return Ok(Err(MailboxFull(waiting)));
-            }
-        };
+            return Ok(Err(MailboxFull(waiting)));
+        }
+
+        inner.unicast_queue.push(ByPriority(unfulfilled_msg));
 
         Ok(Ok(()))
     }

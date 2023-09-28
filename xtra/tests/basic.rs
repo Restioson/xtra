@@ -6,6 +6,7 @@ use std::time::Duration;
 use futures_util::task::noop_waker_ref;
 use futures_util::FutureExt;
 use smol_timeout::TimeoutExt;
+use tokio::task::JoinSet;
 use xtra::prelude::*;
 use xtra::Error;
 
@@ -65,9 +66,14 @@ impl Handler<StopSelf> for Accumulator {
 async fn accumulate_to_ten() {
     let (addr, mailbox) = Mailbox::unbounded();
     tokio::spawn(xtra::run(mailbox, Accumulator(0)));
+
+    let mut join_set = JoinSet::new();
+
     for _ in 0..10 {
-        let _ = addr.send(Inc).detach().await;
+        join_set.spawn(addr.send(Inc).detach().await.unwrap());
     }
+
+    while join_set.join_next().await.is_some() {}
 
     assert_eq!(addr.send(Report).await.unwrap().0, 10);
 }
