@@ -14,7 +14,7 @@ use crate::{chan, Error, Handler};
 /// A [`Future`] that represents the state of sending a message to an actor.
 ///
 /// By default, a [`SendFuture`] will resolve to the return value of the handler (see [`Handler::Return`](crate::Handler::Return)).
-/// This behaviour can be changed by calling [`split_receiver`](SendFuture::split_receiver).
+/// This behaviour can be changed by calling [`detach`](SendFuture::detach).
 ///
 /// A [`SendFuture`] whose [`Receiver`] has been split off will resolve once the message is successfully queued into the actor's mailbox and resolve to the [`Receiver`].
 /// The [`Receiver`] itself is a future that will resolve to the return value of the [`Handler`](crate::Handler).
