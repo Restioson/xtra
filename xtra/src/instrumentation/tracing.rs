@@ -37,7 +37,7 @@ impl Instrumentation {
         self.parent.is_none()
     }
 
-    pub fn apply<A, M, F>(self, fut: F) -> (impl Future<Output = F::Output>, Span)
+    pub fn apply<F>(self, fut: F) -> (impl Future<Output = F::Output>, Span)
     where
         F: Future,
     {
