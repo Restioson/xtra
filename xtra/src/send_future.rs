@@ -16,8 +16,10 @@ use crate::{chan, Error, Handler};
 /// By default, a [`SendFuture`] will resolve to the return value of the handler (see [`Handler::Return`](crate::Handler::Return)).
 /// This behaviour can be changed by calling [`detach`](SendFuture::detach).
 ///
-/// A [`SendFuture`] whose [`Receiver`] has been split off will resolve once the message is successfully queued into the actor's mailbox and resolve to the [`Receiver`].
+/// A detached [`SendFuture`] will resolve once the message is successfully queued into the actor's mailbox and resolve to the [`Receiver`].
 /// The [`Receiver`] itself is a future that will resolve to the return value of the [`Handler`](crate::Handler).
+///
+/// In other words, detaching a [`SendFuture`] allows the current task to continue while the corresponding [`Handler`] of the actor processes the message.
 ///
 /// In case an actor's mailbox is bounded, [`SendFuture`] will yield `Pending` until the message is queued successfully.
 /// This allows an actor to exercise backpressure on its users.
