@@ -336,7 +336,7 @@ where
     }
 
     fn to_inner_ptr(&self) -> *const () {
-        self.0.inner_ptr() as *const ()
+        self.0.inner_ptr()
     }
 
     fn is_strong(&self) -> bool {

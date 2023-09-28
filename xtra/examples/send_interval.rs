@@ -22,7 +22,7 @@ impl Handler<Greet> for Greeter {
 
 #[tokio::main]
 async fn main() {
-    let addr = xtra::spawn_tokio(Greeter::default(), Mailbox::unbounded());
+    let addr = xtra::spawn_tokio(Greeter, Mailbox::unbounded());
     greeter_stream(500).forward(addr.into_sink()).await.unwrap();
 }
 

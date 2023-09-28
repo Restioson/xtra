@@ -144,7 +144,7 @@ pub trait Handler<M>: Actor {
 /// #[async_trait]
 /// impl Actor for MyActor {
 ///     type Stop = ();
-///     async fn started(&mut self, ctx: &mut Mailbox<Self>) -> Result<(), Self::Stop> {
+///     async fn started(&mut self, ctx: &Mailbox<Self>) -> Result<(), Self::Stop> {
 ///         println!("Started!");
 ///
 ///         Ok(())
@@ -185,7 +185,7 @@ pub trait Actor: 'static + Send + Sized {
 
     /// Called as soon as the actor has been started.
     #[allow(unused_variables)]
-    async fn started(&mut self, mailbox: &mut Mailbox<Self>) -> Result<(), Self::Stop> {
+    async fn started(&mut self, mailbox: &Mailbox<Self>) -> Result<(), Self::Stop> {
         Ok(())
     }
 
@@ -228,21 +228,21 @@ impl std::error::Error for Error {}
 ///
 /// This is the primary event loop of an actor which takes messages out of the mailbox and hands
 /// them to the actor.
-pub async fn run<A>(mut mailbox: Mailbox<A>, mut actor: A) -> A::Stop
+pub async fn run<A>(mailbox: Mailbox<A>, mut actor: A) -> A::Stop
 where
     A: Actor,
 {
-    if let Err(stop) = actor.started(&mut mailbox).await {
+    if let Err(stop) = actor.started(&mailbox).await {
         return stop;
     }
 
-    while let ControlFlow::Continue(()) = yield_once(&mut mailbox, &mut actor).await {}
+    while let ControlFlow::Continue(()) = yield_once(&mailbox, &mut actor).await {}
 
     actor.stopped().await
 }
 
 /// Yields to the manager to handle one message, returning the actor should be shut down or not.
-pub async fn yield_once<A>(mailbox: &mut Mailbox<A>, actor: &mut A) -> ControlFlow<(), ()>
+pub async fn yield_once<A>(mailbox: &Mailbox<A>, actor: &mut A) -> ControlFlow<(), ()>
 where
     A: Actor,
 {
@@ -306,7 +306,7 @@ where
 /// # })
 ///
 /// ```
-pub async fn select<A, F, R>(mailbox: &mut Mailbox<A>, actor: &mut A, mut fut: F) -> Either<R, F>
+pub async fn select<A, F, R>(mailbox: &Mailbox<A>, actor: &mut A, mut fut: F) -> Either<R, F>
 where
     F: Future<Output = R> + Unpin,
     A: Actor,
@@ -383,7 +383,7 @@ where
 /// assert!(addr.is_connected());
 /// assert_eq!(addr.send(Joining).await, Ok(true)); // Assert that the join did evaluate the future
 /// # })
-pub async fn join<A, F, R>(mailbox: &mut Mailbox<A>, actor: &mut A, fut: F) -> R
+pub async fn join<A, F, R>(mailbox: &Mailbox<A>, actor: &mut A, fut: F) -> R
 where
     F: Future<Output = R>,
     A: Actor,

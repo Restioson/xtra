@@ -43,7 +43,7 @@ criterion = { version = "0.3", features = ["async_tokio"] }
 tokio = { version = "1.0", features = ["full"] }
 async-std = { version = "1.0", features = ["attributes"] }
 tracing = { version = "0.1.35", features = ["std"] }
-tracing-subscriber = { version = "0.3.14", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 futures-util = "0.3.21"
 
 [features]

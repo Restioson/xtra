@@ -426,7 +426,7 @@ async fn handle_order() {
 
 #[tokio::test]
 async fn waiting_sender_order() {
-    let (addr, mut ctx) = Mailbox::bounded(1);
+    let (addr, ctx) = Mailbox::bounded(1);
     let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
     let mut ele = Elephant::default();
 
@@ -440,7 +440,7 @@ async fn waiting_sender_order() {
     assert!(second.poll_unpin(&mut fut_ctx).is_pending());
 
     let act = &mut ele;
-    xtra::yield_once(&mut ctx, act).await;
+    xtra::yield_once(&ctx, act).await;
 
     assert!(second.poll_unpin(&mut fut_ctx).is_pending());
     assert!(first.poll_unpin(&mut fut_ctx).is_ready());
@@ -465,7 +465,7 @@ async fn waiting_sender_order() {
     assert!(greater.poll_unpin(&mut fut_ctx).is_pending());
 
     let act = &mut ele;
-    xtra::yield_once(&mut ctx, act).await;
+    xtra::yield_once(&ctx, act).await;
 
     assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
     assert!(greater.poll_unpin(&mut fut_ctx).is_ready());
@@ -489,7 +489,7 @@ async fn waiting_sender_order() {
     assert!(greater.poll_unpin(&mut fut_ctx).is_pending());
 
     let act = &mut ele;
-    xtra::yield_once(&mut ctx, act).await;
+    xtra::yield_once(&ctx, act).await;
 
     assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
     assert!(greater.poll_unpin(&mut fut_ctx).is_ready());
@@ -530,7 +530,7 @@ async fn set_priority_msg_channel() {
 
 #[tokio::test]
 async fn broadcast_tail_advances_bound_1() {
-    let (addr, mut ctx) = Mailbox::bounded(1);
+    let (addr, ctx) = Mailbox::bounded(1);
     let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
     let mut ngwevu = Elephant {
         name: "Ngwevu",
@@ -562,7 +562,7 @@ async fn broadcast_tail_advances_bound_1() {
     );
     assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
     let act = &mut ngwevu;
-    xtra::yield_once(&mut ctx, act).await;
+    xtra::yield_once(&ctx, act).await;
 
     assert!(
         addr.broadcast(Message::Broadcast { priority: 0 })
@@ -579,7 +579,7 @@ async fn broadcast_tail_advances_bound_1() {
 
     assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
     let act = &mut ngwevu;
-    xtra::yield_once(&mut ctx, act).await;
+    xtra::yield_once(&ctx, act).await;
 
     assert_eq!(
         addr.broadcast(Message::Broadcast { priority: 0 })
@@ -609,7 +609,7 @@ async fn broadcast_tail_advances_bound_1() {
 
     // Will handle the broadcast of priority 0 from earlier
     let act = &mut ngwevu;
-    xtra::yield_once(&mut ctx, act).await;
+    xtra::yield_once(&ctx, act).await;
     assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
 
     assert!(
@@ -623,7 +623,7 @@ async fn broadcast_tail_advances_bound_1() {
 
     // Should handle greater
     let act = &mut ngwevu;
-    xtra::yield_once(&mut ctx, act).await;
+    xtra::yield_once(&ctx, act).await;
     assert!(indlovu.poll_unpin(&mut fut_ctx).is_pending());
 
     assert!(
@@ -641,7 +641,7 @@ async fn broadcast_tail_advances_bound_1() {
 
 #[tokio::test]
 async fn broadcast_tail_advances_bound_2() {
-    let (addr, mut ctx) = Mailbox::bounded(2);
+    let (addr, ctx) = Mailbox::bounded(2);
     let mut ngwevu = Elephant {
         name: "Ngwevu",
         msgs: vec![],
@@ -659,7 +659,7 @@ async fn broadcast_tail_advances_bound_2() {
         .await;
 
     let act = &mut ngwevu;
-    xtra::yield_once(&mut ctx, act).await;
+    xtra::yield_once(&ctx, act).await;
 
     assert_eq!(
         addr.broadcast(Message::Broadcast { priority: 0 })
@@ -673,7 +673,7 @@ async fn broadcast_tail_advances_bound_2() {
 
 #[tokio::test]
 async fn broadcast_tail_does_not_advance_unless_both_handle() {
-    let (addr, mut ctx) = Mailbox::bounded(2);
+    let (addr, ctx) = Mailbox::bounded(2);
     let mut ngwevu = Elephant {
         name: "Ngwevu",
         msgs: vec![],
@@ -691,7 +691,7 @@ async fn broadcast_tail_does_not_advance_unless_both_handle() {
         .await;
 
     let act = &mut ngwevu;
-    xtra::yield_once(&mut ctx, act).await;
+    xtra::yield_once(&ctx, act).await;
 
     assert_eq!(
         addr.broadcast(Message::Broadcast { priority: 0 }).priority(0).timeout(Duration::from_secs(2)).await,
@@ -732,7 +732,7 @@ impl Handler<PrintHello> for Greeter {
 
 #[tokio::test]
 async fn address_send_exercises_backpressure() {
-    let (address, mut context) = Mailbox::bounded(1);
+    let (address, context) = Mailbox::bounded(1);
 
     // Regular send
 
@@ -748,7 +748,7 @@ async fn address_send_exercises_backpressure() {
     );
 
     let act = &mut Greeter;
-    xtra::yield_once(&mut context, act).await; // process one message
+    xtra::yield_once(&context, act).await; // process one message
 
     let _ = address
         .send(Hello("world"))
@@ -757,11 +757,11 @@ async fn address_send_exercises_backpressure() {
         .expect("be able to queue another message because the mailbox is empty again");
 
     let act = &mut Greeter;
-    xtra::yield_once(&mut context, act).await; // process one message
+    xtra::yield_once(&context, act).await; // process one message
 
     // Priority send
 
-    let (address, mut context) = Mailbox::bounded(1);
+    let (address, context) = Mailbox::bounded(1);
 
     let _ = address
         .send(Hello("world"))
@@ -780,7 +780,7 @@ async fn address_send_exercises_backpressure() {
     );
 
     let act = &mut Greeter;
-    xtra::yield_once(&mut context, act).await; // process one message
+    xtra::yield_once(&context, act).await; // process one message
 
     let _ = address
         .send(PrintHello("world"))
@@ -806,7 +806,7 @@ async fn address_send_exercises_backpressure() {
     );
 
     let act = &mut Greeter;
-    xtra::yield_once(&mut context, act).await; // process one message
+    xtra::yield_once(&context, act).await; // process one message
 
     let _ = address
         .broadcast(PrintHello("world"))
@@ -924,16 +924,16 @@ impl Handler<Pending> for Greeter {
 
 #[tokio::test]
 async fn timeout_returns_interrupted() {
-    let (address, mut mailbox) = Mailbox::unbounded();
+    let (address, mailbox) = Mailbox::unbounded();
     let mut actor = Greeter;
 
     tokio::spawn(async move {
-        if let Err(()) = actor.started(&mut mailbox).await {
+        if let Err(()) = actor.started(&mailbox).await {
             return;
         }
 
         loop {
-            let ctrl = xtra::yield_once(&mut mailbox, &mut actor)
+            let ctrl = xtra::yield_once(&mailbox, &mut actor)
                 .timeout(Duration::from_secs(1))
                 .await;
 
