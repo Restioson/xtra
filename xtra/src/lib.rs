@@ -87,9 +87,6 @@ use crate::recv_future::Message;
 
 /// Defines that an [`Actor`] can handle a given message `M`.
 ///
-/// This is an [`async_trait`](https://docs.rs/async-trait), so implementations should
-/// be annotated ``.
-///
 /// # Example
 ///
 /// ```rust
@@ -121,9 +118,6 @@ pub trait Handler<M>: Actor {
     type Return: Send + 'static;
 
     /// Handle a given message, returning its result.
-    ///
-    /// This is an [`async_trait`](https://docs.rs/async-trait).
-    /// See the trait documentation to see an example of how this method can be declared.
     fn handle(
         &mut self,
         message: M,
