@@ -1,3 +1,5 @@
+#![feature(async_fn_in_trait)]
+
 use std::time::Duration;
 
 use futures_core::Stream;
@@ -11,7 +13,6 @@ struct Greeter;
 
 struct Greet;
 
-#[async_trait]
 impl Handler<Greet> for Greeter {
     type Return = ();
 

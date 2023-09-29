@@ -1,3 +1,5 @@
+#![feature(async_fn_in_trait)]
+
 //! Set the SMOL_THREADS environment variable to have more threads, else each receiving task will
 //! switch only after it has received many messages.
 
@@ -23,7 +25,6 @@ impl Printer {
 
 struct Print(String);
 
-#[async_trait]
 impl Handler<Print> for Printer {
     type Return = ();
 

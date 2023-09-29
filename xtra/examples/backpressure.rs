@@ -1,3 +1,5 @@
+#![feature(async_fn_in_trait)]
+
 use xtra::prelude::*;
 
 #[derive(xtra::Actor)]
@@ -5,7 +7,6 @@ struct Greeter;
 
 struct Hello(String);
 
-#[async_trait]
 impl Handler<Hello> for Greeter {
     type Return = ();
 

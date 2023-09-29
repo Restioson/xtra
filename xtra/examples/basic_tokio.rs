@@ -1,3 +1,5 @@
+#![feature(async_fn_in_trait)]
+
 use xtra::prelude::*;
 
 #[derive(Default, xtra::Actor)]
@@ -7,7 +9,6 @@ struct Printer {
 
 struct Print(String);
 
-#[async_trait]
 impl Handler<Print> for Printer {
     type Return = ();
 

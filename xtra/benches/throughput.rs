@@ -1,11 +1,11 @@
-use async_trait::async_trait;
+#![feature(async_fn_in_trait)]
+
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use tokio::runtime::Runtime;
 use xtra::{Actor, Context, Handler, Mailbox};
 
 struct Counter(u64);
 
-#[async_trait]
 impl Actor for Counter {
     type Stop = ();
     async fn stopped(self) {}
@@ -14,7 +14,6 @@ impl Actor for Counter {
 struct IncrementZst;
 struct Finish;
 
-#[async_trait::async_trait]
 impl Handler<IncrementZst> for Counter {
     type Return = ();
 
@@ -23,7 +22,6 @@ impl Handler<IncrementZst> for Counter {
     }
 }
 
-#[async_trait::async_trait]
 impl Handler<Finish> for Counter {
     type Return = u64;
 

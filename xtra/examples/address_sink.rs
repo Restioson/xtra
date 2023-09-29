@@ -1,3 +1,5 @@
+#![feature(async_fn_in_trait)]
+
 use futures_util::stream::repeat;
 use futures_util::StreamExt;
 use xtra::prelude::*;
@@ -11,7 +13,6 @@ struct Add(u32);
 
 struct GetSum;
 
-#[async_trait]
 impl Handler<Add> for Accumulator {
     type Return = ();
 
@@ -20,7 +21,6 @@ impl Handler<Add> for Accumulator {
     }
 }
 
-#[async_trait]
 impl Handler<GetSum> for Accumulator {
     type Return = u32;
 

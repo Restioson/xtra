@@ -1,3 +1,5 @@
+#![feature(async_fn_in_trait)]
+
 use std::ops::ControlFlow;
 use std::time::Duration;
 
@@ -11,7 +13,6 @@ struct Counter {
 
 struct Inc;
 
-#[async_trait]
 impl Handler<Inc> for Counter {
     type Return = ();
 

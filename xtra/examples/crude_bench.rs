@@ -1,3 +1,5 @@
+#![feature(async_fn_in_trait)]
+
 use std::future::Future;
 use std::time::{Duration, Instant};
 
@@ -15,7 +17,6 @@ struct Increment;
 struct IncrementWithData(usize);
 struct GetCount;
 
-#[async_trait]
 impl Handler<Increment> for Counter {
     type Return = ();
 
@@ -24,7 +25,6 @@ impl Handler<Increment> for Counter {
     }
 }
 
-#[async_trait]
 impl Handler<IncrementWithData> for Counter {
     type Return = ();
 
@@ -33,7 +33,6 @@ impl Handler<IncrementWithData> for Counter {
     }
 }
 
-#[async_trait]
 impl Handler<GetCount> for Counter {
     type Return = usize;
 
@@ -51,7 +50,6 @@ struct SendTimer {
 
 struct GetTime;
 
-#[async_trait]
 impl Handler<GetTime> for SendTimer {
     type Return = Duration;
 
@@ -65,7 +63,6 @@ struct ReturnTimer;
 
 struct TimeReturn;
 
-#[async_trait]
 impl Handler<TimeReturn> for ReturnTimer {
     type Return = Instant;
 

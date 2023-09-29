@@ -1,3 +1,5 @@
+#![feature(async_fn_in_trait)]
+
 use xtra::prelude::*;
 
 struct Initialized(Address<ActorA>);
@@ -9,7 +11,6 @@ struct ActorA {
     actor_b: Address<ActorB>,
 }
 
-#[async_trait]
 impl Handler<Hello> for ActorA {
     type Return = ();
 
@@ -24,7 +25,6 @@ impl Handler<Hello> for ActorA {
 #[derive(xtra::Actor)]
 struct ActorB;
 
-#[async_trait]
 impl Handler<Initialized> for ActorB {
     type Return = ();
 
@@ -37,7 +37,6 @@ impl Handler<Initialized> for ActorB {
     }
 }
 
-#[async_trait]
 impl Handler<Hello> for ActorB {
     type Return = ();
 

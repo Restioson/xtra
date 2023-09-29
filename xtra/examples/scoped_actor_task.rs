@@ -1,3 +1,5 @@
+#![feature(async_fn_in_trait)]
+
 use futures_util::future;
 use xtra::prelude::*;
 
@@ -6,7 +8,6 @@ struct MyActor;
 
 struct Print(String);
 
-#[async_trait]
 impl Handler<Print> for MyActor {
     type Return = ();
 

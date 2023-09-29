@@ -1,3 +1,5 @@
+#![feature(async_fn_in_trait)]
+
 //! Much of this code is taken from https://github.com/dbrgn/tracing-test//
 //!
 //!
@@ -69,7 +71,6 @@ struct Tracer;
 
 struct Hello(&'static str);
 
-#[async_trait]
 impl Handler<Hello> for Tracer {
     type Return = ();
 
@@ -80,7 +81,6 @@ impl Handler<Hello> for Tracer {
 
 struct CreateInfoSpan;
 
-#[async_trait]
 impl Handler<CreateInfoSpan> for Tracer {
     type Return = ();
 

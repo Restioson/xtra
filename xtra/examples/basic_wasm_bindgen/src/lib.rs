@@ -1,3 +1,5 @@
+#![feature(async_fn_in_trait)]
+
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use xtra::prelude::*;
@@ -7,7 +9,6 @@ struct Echoer;
 
 struct Echo(String);
 
-#[async_trait]
 impl Handler<Echo> for Echoer {
     type Return = String;
 

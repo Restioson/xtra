@@ -1639,7 +1639,6 @@ name = "xtra"
 version = "0.6.0"
 dependencies = [
  "async-std",
- "async-trait",
  "catty",
  "criterion",
  "event-listener",
