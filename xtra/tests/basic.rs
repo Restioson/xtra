@@ -191,15 +191,13 @@ async fn handle_left_messages() {
 async fn actor_can_be_restarted() {
     let (addr, mailbox) = Mailbox::unbounded();
 
-    for _ in 0..5 {
-        let _ = addr.send(Inc).detach().await;
-    }
+    tokio::spawn(async move {
+        for _ in 0..5 {
+            let _ = addr.send(Inc).await;
+        }
 
-    let _ = addr.send(StopSelf).detach().await;
-
-    for _ in 0..5 {
-        let _ = addr.send(Inc).detach().await;
-    }
+        let _ = addr.send(StopSelf).await;
+    });
 
     assert_eq!(xtra::run(mailbox, Accumulator(0)).await, 5);
 
@@ -207,11 +205,16 @@ async fn actor_can_be_restarted() {
     let fut1 = xtra::run(ctx.clone(), Accumulator(0));
     let fut2 = xtra::run(ctx, Accumulator(0));
 
-    for _ in 0..5 {
-        let _ = addr.send(Inc).detach().await;
-    }
+    tokio::spawn({
+        let addr = addr.clone();
+        async move {
+            for _ in 0..5 {
+                let _ = addr.send(Inc).await;
+            }
 
-    let _ = addr.send(StopAll).detach().await;
+            let _ = addr.send(StopAll).await;
+        }
+    });
 
     assert_eq!(fut1.await, 5);
     assert!(addr.is_connected());
@@ -321,7 +324,6 @@ async fn receiving_async_on_message_channel_returns_immediately_after_dispatch()
 enum Message {
     Broadcast { priority: u32 },
     Priority { priority: u32 },
-    Ordered { ord: u32 },
 }
 
 impl PartialOrd<Self> for Message {
@@ -336,17 +338,10 @@ impl Ord for Message {
             Message::Broadcast { priority } => match other {
                 Message::Broadcast { priority: other } => priority.cmp(other),
                 Message::Priority { priority: other } => priority.cmp(other),
-                Message::Ordered { .. } => priority.cmp(&0),
             },
             Message::Priority { priority } => match other {
                 Message::Broadcast { priority: other } => priority.cmp(other),
                 Message::Priority { priority: other } => priority.cmp(other),
-                Message::Ordered { .. } => priority.cmp(&0),
-            },
-            Message::Ordered { ord } => match other {
-                Message::Broadcast { priority: other } => 0.cmp(other),
-                Message::Priority { priority: other } => 0.cmp(other),
-                Message::Ordered { ord: other } => other.cmp(ord),
             },
         }
     }
@@ -405,19 +400,16 @@ async fn handle_order() {
                     Message::Priority { priority } => {
                         let _ = ele.send(msg).priority(priority).detach().await;
                     }
-                    Message::Ordered { .. } => {
-                        let _ = ele.send(msg).detach().await;
-                    }
                 }
             }
         };
 
-        send(Message::Ordered { ord: 0 }).await;
-        send(Message::Ordered { ord: 1 }).await;
-        send(Message::Ordered { ord: 2 }).await;
-        send(Message::Broadcast { priority: 2 }).await;
+        send(Message::Priority { priority: 0 }).await;
+        send(Message::Priority { priority: 1 }).await;
+        send(Message::Priority { priority: 2 }).await;
+        send(Message::Broadcast { priority: 4 }).await;
+        send(Message::Broadcast { priority: 5 }).await;
         send(Message::Broadcast { priority: 3 }).await;
-        send(Message::Broadcast { priority: 1 }).await;
         send(Message::Priority { priority: 4 }).await;
         send(Message::Broadcast { priority: 5 }).await;
 
@@ -435,21 +427,6 @@ async fn waiting_sender_order() {
     let (addr, ctx) = Mailbox::bounded(1);
     let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
     let mut ele = Elephant::default();
-
-    // With ordered messages
-
-    let _ = addr.send(Message::Ordered { ord: 0 }).detach().await;
-    let mut first = addr.send(Message::Ordered { ord: 1 }).detach();
-    let mut second = addr.send(Message::Ordered { ord: 2 }).detach();
-
-    assert!(first.poll_unpin(&mut fut_ctx).is_pending());
-    assert!(second.poll_unpin(&mut fut_ctx).is_pending());
-
-    let act = &mut ele;
-    xtra::yield_once(&ctx, act).await;
-
-    assert!(second.poll_unpin(&mut fut_ctx).is_pending());
-    assert!(first.poll_unpin(&mut fut_ctx).is_ready());
 
     // With priority
 
@@ -509,7 +486,10 @@ async fn set_priority_msg_channel() {
 
         let channel = MessageChannel::new(addr);
 
-        let _ = channel.send(Message::Ordered { ord: 0 }).detach().await;
+        let _ = channel
+            .send(Message::Priority { priority: 0 })
+            .detach()
+            .await;
         let _ = channel
             .send(Message::Priority { priority: 1 })
             .priority(1)
@@ -529,7 +509,7 @@ async fn set_priority_msg_channel() {
         vec![
             Message::Priority { priority: 2 },
             Message::Priority { priority: 1 },
-            Message::Ordered { ord: 0 },
+            Message::Priority { priority: 0 },
         ]
     );
 }
