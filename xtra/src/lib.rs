@@ -131,8 +131,6 @@ pub trait Handler<M>: Actor {
 /// stop themselves through their [`Context`] by calling [`Context::stop_self`].
 /// This will result in any attempt to send messages to the actor in future failing.
 ///
-/// This is an [`async_trait`], so implementations should be annotated ``.
-///
 /// # Example
 ///
 /// ```rust
