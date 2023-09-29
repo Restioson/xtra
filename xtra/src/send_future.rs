@@ -14,10 +14,12 @@ use crate::{chan, Error, Handler};
 /// A [`Future`] that represents the state of sending a message to an actor.
 ///
 /// By default, a [`SendFuture`] will resolve to the return value of the handler (see [`Handler::Return`](crate::Handler::Return)).
-/// This behaviour can be changed by calling [`split_receiver`](SendFuture::split_receiver).
+/// This behaviour can be changed by calling [`detach`](SendFuture::detach).
 ///
-/// A [`SendFuture`] whose [`Receiver`] has been split off will resolve once the message is successfully queued into the actor's mailbox and resolve to the [`Receiver`].
+/// A detached [`SendFuture`] will resolve once the message is successfully queued into the actor's mailbox and resolve to the [`Receiver`].
 /// The [`Receiver`] itself is a future that will resolve to the return value of the [`Handler`](crate::Handler).
+///
+/// In other words, detaching a [`SendFuture`] allows the current task to continue while the corresponding [`Handler`] of the actor processes the message.
 ///
 /// In case an actor's mailbox is bounded, [`SendFuture`] will yield `Pending` until the message is queued successfully.
 /// This allows an actor to exercise backpressure on its users.
@@ -42,12 +44,10 @@ impl<F, R> SendFuture<F, ResolveToHandlerReturn<R>>
 where
     F: Future,
 {
-    /// Split off a [`Receiver`] from this [`SendFuture`].
+    /// Detaches this future from receiving the response of the handler.
     ///
-    /// Splitting off a [`Receiver`] allows you to await the completion of the [`Handler`](crate::Handler) separately from the queuing of the message into the actor's mailbox.
-    ///
-    /// Calling this function will change the [`Output`](Future::Output) of this [`Future`] from [`Handler::Return`](crate::Handler::Return) to [`Receiver<Handler::Return>`](Receiver<crate::Handler::Return>).
-    pub fn split_receiver(self) -> SendFuture<F, ResolveToReceiver<R>> {
+    /// Awaiting a detached [`SendFuture`] will queue the message in the actor's mailbox and return you _another_ [`Future`] for receiving the response.
+    pub fn detach(self) -> SendFuture<F, ResolveToReceiver<R>> {
         SendFuture {
             sending: self.sending,
             state: self.state.resolve_to_receiver(),

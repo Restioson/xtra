@@ -40,7 +40,7 @@ smol-potat = "1.1"
 smol-timeout = "0.6"
 waker-fn = "1.1"
 criterion = { version = "0.3", features = ["async_tokio"] }
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1.21", features = ["full"] }
 async-std = { version = "1.0", features = ["attributes"] }
 tracing = { version = "0.1.35", features = ["std"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }

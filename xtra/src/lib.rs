@@ -205,11 +205,10 @@ pub enum Error {
     /// The actor is no longer running and disconnected from the sending address.
     Disconnected,
     /// The message request operation was interrupted. This happens when the message result sender
-    /// is dropped. Therefore, it should never be returned from send futures split from their
-    /// receivers with [`SendFuture::split_receiver`]. This could be due to the actor's event loop
-    /// being shut down, or due to a custom timeout. Unlike [`Error::Disconnected`], it does not
-    /// necessarily imply that any retries or further attempts to interact with the actor will
-    /// result in an error.
+    /// is dropped. Therefore, it should never be returned from [`detached`](SendFuture::detach) [`SendFuture`]s
+    /// This could be due to the actor's event loop being shut down, or due to a custom timeout.
+    /// Unlike [`Error::Disconnected`], it does not necessarily imply that any retries or further
+    /// attempts to interact with the actor will result in an error.
     Interrupted,
 }
 
@@ -290,7 +289,7 @@ where
 ///
 ///         let addr = ctx.mailbox().address();
 ///         let select = xtra::select(ctx.mailbox(), self, future::pending::<()>());
-///         let _ = addr.send(Stop).split_receiver().await;
+///         let _ = addr.send(Stop).detach().await;
 ///
 ///         // Actor is stopping, so this will return Err, even though the future will
 ///         // usually never complete.
@@ -370,7 +369,7 @@ where
 ///     async fn handle(&mut self, _msg: Joining, ctx: &mut Context<Self>) -> bool {
 ///         let addr = ctx.mailbox().address();
 ///         let join = xtra::join(ctx.mailbox(), self, future::ready::<()>(()));
-///         let _ = addr.send(Stop).split_receiver().await;
+///         let _ = addr.send(Stop).detach().await;
 ///
 ///         // Actor is stopping, but the join should still evaluate correctly
 ///         join.now_or_never().is_some()
