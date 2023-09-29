@@ -17,6 +17,7 @@ use crate::Handler;
 /// # Example
 ///
 /// ```rust
+/// # #![feature(async_fn_in_trait)]
 /// # use xtra::prelude::*;
 /// struct WhatsYourName;
 ///

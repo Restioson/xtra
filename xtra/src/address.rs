@@ -127,6 +127,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// Returns whether the actors referred to by this address are running and accepting messages.
     ///
     /// ```rust
+    /// # #![feature(async_fn_in_trait)]
     /// # use xtra::prelude::*;
     /// # use std::time::Duration;
     /// # struct MyActor;

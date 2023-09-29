@@ -53,6 +53,7 @@ pub mod refcount {
 /// The [`Actor`] custom derive takes away some boilerplate for a standard actor:
 ///
 /// ```rust
+/// # #![feature(async_fn_in_trait)]
 /// #[derive(xtra::Actor)]
 /// pub struct MyActor;
 /// #
@@ -65,6 +66,7 @@ pub mod refcount {
 /// This macro will generate the following [`Actor`] implementation:
 ///
 /// ```rust,no_run
+/// # #![feature(async_fn_in_trait)]
 /// # use xtra::prelude::*;
 /// pub struct MyActor;
 ///
@@ -91,6 +93,7 @@ use crate::recv_future::Message;
 /// # Example
 ///
 /// ```rust
+/// # #![feature(async_fn_in_trait)]
 /// # use xtra::prelude::*;
 /// # struct MyActor;
 /// #  impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
@@ -139,6 +142,7 @@ pub trait Handler<M>: Actor {
 /// # Example
 ///
 /// ```rust
+/// # #![feature(async_fn_in_trait)]
 /// # use xtra::prelude::*;
 /// # use std::time::Duration;
 /// struct MyActor;
@@ -262,6 +266,7 @@ where
 /// ## Example
 ///
 /// ```rust
+/// # #![feature(async_fn_in_trait)]
 /// # use std::time::Duration;
 /// use futures_util::future::Either;
 /// # use xtra::prelude::*;
@@ -348,6 +353,7 @@ where
 /// ## Example
 ///
 /// ```rust
+/// # #![feature(async_fn_in_trait)]
 /// # use std::time::Duration;
 /// use futures_util::FutureExt;
 /// # use xtra::prelude::*;
