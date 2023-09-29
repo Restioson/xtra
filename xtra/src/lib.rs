@@ -175,7 +175,7 @@ pub trait Handler<M>: Actor {
 /// })
 /// ```
 ///
-/// For longer examples, se
+/// For longer examples, see the `examples` directory.
 pub trait Actor: 'static + Send + Sized {
     /// Value returned from the actor when [`Actor::stopped`] is called.
     type Stop: Send + 'static;
