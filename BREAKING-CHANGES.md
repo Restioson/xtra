@@ -2,6 +2,10 @@
 
 ## 0.6.0
 
+### Added
+
+- `xtra::Actor` custom-derive when the `macros` features is enabled.
+
 ### Changed
 
 - `MessageChannel` is now a `struct` that can be constructed from an `Address` via `MessageChannel::new` or using `From`/`Into`.
