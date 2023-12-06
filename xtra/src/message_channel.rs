@@ -23,7 +23,6 @@ use crate::Handler;
 /// struct Alice;
 /// struct Bob;
 ///
-///
 /// impl Actor for Alice {
 ///     type Stop = ();
 ///     async fn stopped(self) {
@@ -32,7 +31,6 @@ use crate::Handler;
 /// }
 /// #  impl Actor for Bob {type Stop = (); async fn stopped(self) -> Self::Stop {} }
 ///
-///
 /// impl Handler<WhatsYourName> for Alice {
 ///     type Return = &'static str;
 ///
@@ -40,7 +38,6 @@ use crate::Handler;
 ///         "Alice"
 ///     }
 /// }
-///
 ///
 /// impl Handler<WhatsYourName> for Bob {
 ///     type Return = &'static str;

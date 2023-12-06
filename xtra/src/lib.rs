@@ -262,7 +262,6 @@ where
 /// struct Stop;
 /// struct Selecting;
 ///
-///
 /// impl Handler<Stop> for MyActor {
 ///     type Return = ();
 ///
@@ -270,7 +269,6 @@ where
 ///         ctx.stop_self();
 ///     }
 /// }
-///
 ///
 /// impl Handler<Selecting> for MyActor {
 ///     type Return = bool;
@@ -348,7 +346,6 @@ where
 /// struct Stop;
 /// struct Joining;
 ///
-///
 /// impl Handler<Stop> for MyActor {
 ///     type Return = ();
 ///
@@ -356,7 +353,6 @@ where
 ///         ctx.stop_self();
 ///     }
 /// }
-///
 ///
 /// impl Handler<Joining> for MyActor {
 ///     type Return = bool;
