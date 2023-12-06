@@ -19,7 +19,7 @@ impl Handler<Hello> for Greeter {
 /// To demonstrate backpressure we set up the following environment:
 ///
 /// 1. Single-threaded tokio executor: This ensures that only one task can run at any time.
-/// 2. Call `recv_async` on the `SendFuture` returned by `Address::send`: The actor needs to be busy working off messages and thus we cannot synchronously wait for the result.
+/// 2. Call `detach` on the [`SendFuture`](xtra::SendFuture) returned by [`Address::send`]: The actor needs to be busy working off messages and thus we cannot synchronously wait for the result.
 /// 3. Print "Greeting world!" to stdout before we dispatch a message.
 /// 4. Print "Hello world!" upon executing the handler.
 ///
@@ -58,6 +58,6 @@ async fn main() {
         let name = "world!".to_owned();
 
         println!("Greeting {}", name);
-        let _ = address.send(Hello(name)).split_receiver().await;
+        let _ = address.send(Hello(name)).detach().await;
     }
 }

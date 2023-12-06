@@ -2,32 +2,43 @@
 
 ## 0.6.0
 
-- Sealed `RefCounter` trait
-- `Message` no longer exists - `Return` is now specified on the `Handler` trait itself.
-- `stopping` has been removed in favour of `stop_self` and `stop_all`. If logic to determine if the actor should stop
-  must be executed, it should be done rather at the point of calling `stop_{self,all}`.
-- Previously, `stop_all` would immediately disconnect the address. However, `stop_self` done on every actor would actually
-  not do this in one case - if there were a free-floating (not executing an actor event loop) Context. This change brings
-  `stop_all` in line with `stop_self`.
-- `MessageChannel` is now a `struct` that can be constructed from an `Address` via `MessageChannel::new` or using
-  `From`/`Into`.
+### Added
+
+- `xtra::Actor` custom-derive when the `macros` features is enabled.
+
+### Changed
+
+- `MessageChannel` is now a `struct` that can be constructed from an `Address` via `MessageChannel::new` or using `From`/`Into`.
+- Move event-loop related functions from `Context` to xtra's top-level scope.
+  `Context` is now only used within an actor's `Handler`.
+  The default event-loop now lives at `xtra::run`, next to `xtra::select`, `xtra::join`, `xtra::yield`.
+- Redesign "spawn" interface:
+  Remove `Actor::create`, `ActorManager` and extension traits for spawning.
+  Introduce `xtra::spawn_tokio`, `xtra::spawn_smol`, `xtra::spawn_async_std` and `xtra::spawn_wasm_bindgen`.
+- Previously, `stop_all` would immediately disconnect the address.
+  However, `stop_self` done on every actor would actually not do this in one case - if there were a free-floating (not executing an actor event loop) Context.
+  This change brings `stop_all` in line with `stop_self`.
+- `stop_all` now does not drain all messages when called, and acts just like `stop_self` on all active actors.
+- Rename features from `with-crate-version` to just `crate`. For example, `with-tokio-1` has been renamed to `tokio`.
+- Sealed `RefCounter` trait.
+
+### Removed
+
 - `AddressSink` was removed in favor of using `impl Trait` for the `Address::into_sink` method.
 - `Context::attach_stream` was removed in favor of composing `Stream::forward` and `Address::into_sink`.
 - `KeepRunning` was removed as `Context::attach_stream` was its last usage.
-- `InstrumentedExt` was removed. All messages are now instrumented automatically when `instrumentation` is enabled.
-- `stop_all` now does not drain all messages when called, and acts just like `stop_self` on all active actors.
-- `Context::attach` is removed in favor of implementing `Clone` for `Context`. If you want to run multiple actors on a
-  `Context`, simply clone it before calling `run`.
-- Remove `Context::notify_after` without a direct replacement. To delay the sending of a message, users are encouraged
-  to use the `sleep` function of their executor of choice and combine it with `Address::send` into a new future. To
-  cancel the sleeping early in case the actor stops, use `xtra::scoped`.
-- Remove `Context::notify_interval` without a direct replacement. Users are encouraged to write their own loop within
-  which they call `Address:send`.
-- Rename features from `with-crate-version` to just `crate`. For example, `with-tokio-1` has been renamed to `tokio`. 
-- Redesign "spawn" interface: Remove `Actor::create`, `ActorManager` and extension traits for spawning in favor of
-  `xtra::spawn_tokio`, `xtra::spawn_smol`, `xtra::spawn_async_std` and `xtra::spawn_wasm_bindgen`. 
-- Move event-loop related functions from `Context` to xtra's top-level scope. `Context` is now only used within an
-  actor's `Handler`. The default event-loop now lives at `xtra::run`, next to `xtra::select`, `xtra::join`, `xtra::yield`.
+- `InstrumentedExt` was removed.
+  All messages are now instrumented automatically when `instrumentation` is enabled.
+- `Message` no longer exists: `Return` is now specified on the `Handler` trait itself.
+- `stopping` has been removed in favour of `stop_self` and `stop_all`.
+  If logic to determine if the actor should stop must be executed, it should be done rather at the point of calling `stop_{self,all}`.
+- `Context::attach` is removed in favor of implementing `Clone` for `Context`.
+  If you want to run multiple actors on a `Context`, simply clone it before calling `run`.
+- Remove `Context::notify_after` without a direct replacement.
+  To delay the sending of a message, users are encouraged to use the `sleep` function of their executor of choice and combine it with `Address::send` into a new future.
+  To cancel the sleeping early in case the actor stops, use `xtra::scoped`.
+- Remove `Context::notify_interval` without a direct replacement.
+  Users are encouraged to write their own loop within which they call `Address:send`.
 
 ## 0.5.0
 

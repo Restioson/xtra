@@ -6,6 +6,7 @@ use std::time::Duration;
 use futures_util::task::noop_waker_ref;
 use futures_util::FutureExt;
 use smol_timeout::TimeoutExt;
+use tokio::task::JoinSet;
 use xtra::prelude::*;
 use xtra::Error;
 
@@ -60,9 +61,14 @@ impl Handler<StopSelf> for Accumulator {
 async fn accumulate_to_ten() {
     let (addr, mailbox) = Mailbox::unbounded();
     tokio::spawn(xtra::run(mailbox, Accumulator(0)));
+
+    let mut join_set = JoinSet::new();
+
     for _ in 0..10 {
-        let _ = addr.send(Inc).split_receiver().await;
+        join_set.spawn(addr.send(Inc).detach().await.unwrap());
     }
+
+    while join_set.join_next().await.is_some() {}
 
     assert_eq!(addr.send(Report).await.unwrap().0, 10);
 }
@@ -111,7 +117,7 @@ async fn actor_stops_on_stop_self_message() {
     let weak = addr.downgrade();
     let join = weak.join();
 
-    let _ = addr.send(StopSelf).split_receiver().await;
+    let _ = addr.send(StopSelf).detach().await;
     handle.await.unwrap();
 
     assert!(!weak.is_connected());
@@ -126,7 +132,7 @@ async fn actor_stops_on_stop_all_message() {
     let weak = addr.downgrade();
     let join = weak.join();
 
-    let _ = addr.send(StopAll).split_receiver().await;
+    let _ = addr.send(StopAll).detach().await;
     handle.await.unwrap();
 
     assert!(!weak.is_connected());
@@ -153,7 +159,7 @@ async fn actor_stops_on_stop_message_even_if_sent_before_started() {
     let weak = addr.downgrade();
     let join = weak.join();
 
-    let _ = addr.send(StopSelf).split_receiver().await;
+    let _ = addr.send(StopSelf).detach().await;
     tokio::spawn(xtra::run(mailbox, StopTester)).await.unwrap();
 
     assert!(!weak.is_connected());
@@ -166,7 +172,7 @@ async fn handle_left_messages() {
     let (addr, mailbox) = Mailbox::unbounded();
 
     for _ in 0..10 {
-        let _ = addr.send(Inc).split_receiver().await;
+        let _ = addr.send(Inc).detach().await;
     }
 
     drop(addr);
@@ -178,15 +184,13 @@ async fn handle_left_messages() {
 async fn actor_can_be_restarted() {
     let (addr, mailbox) = Mailbox::unbounded();
 
-    for _ in 0..5 {
-        let _ = addr.send(Inc).split_receiver().await;
-    }
+    tokio::spawn(async move {
+        for _ in 0..5 {
+            let _ = addr.send(Inc).await;
+        }
 
-    let _ = addr.send(StopSelf).split_receiver().await;
-
-    for _ in 0..5 {
-        let _ = addr.send(Inc).split_receiver().await;
-    }
+        let _ = addr.send(StopSelf).await;
+    });
 
     assert_eq!(xtra::run(mailbox, Accumulator(0)).await, 5);
 
@@ -194,11 +198,16 @@ async fn actor_can_be_restarted() {
     let fut1 = xtra::run(ctx.clone(), Accumulator(0));
     let fut2 = xtra::run(ctx, Accumulator(0));
 
-    for _ in 0..5 {
-        let _ = addr.send(Inc).split_receiver().await;
-    }
+    tokio::spawn({
+        let addr = addr.clone();
+        async move {
+            for _ in 0..5 {
+                let _ = addr.send(Inc).await;
+            }
 
-    let _ = addr.send(StopAll).split_receiver().await;
+            let _ = addr.send(StopAll).await;
+        }
+    });
 
     assert_eq!(fut1.await, 5);
     assert!(addr.is_connected());
@@ -206,7 +215,7 @@ async fn actor_can_be_restarted() {
     // These should not be handled, as fut2 should get the stop_all in this mailbox and stop the
     // actor
     for _ in 0..5 {
-        let _ = addr.send(Inc).split_receiver().await;
+        let _ = addr.send(Inc).detach().await;
     }
 
     assert_eq!(fut2.await, 0);
@@ -217,7 +226,7 @@ async fn actor_can_be_restarted() {
 async fn single_actor_on_address_with_stop_self_returns_disconnected_on_stop() {
     let (address, mailbox) = Mailbox::unbounded();
     let fut = xtra::run(mailbox, ActorStopSelf);
-    let _ = address.send(StopSelf).split_receiver().await;
+    let _ = address.send(StopSelf).detach().await;
     assert!(fut.now_or_never().is_some());
     assert!(address.join().now_or_never().is_some());
     assert!(!address.is_connected());
@@ -279,7 +288,7 @@ impl Handler<Duration> for LongRunningHandler {
 async fn receiving_async_on_address_returns_immediately_after_dispatch() {
     let address = xtra::spawn_tokio(LongRunningHandler, Mailbox::unbounded());
 
-    let send_future = address.send(Duration::from_secs(3)).split_receiver();
+    let send_future = address.send(Duration::from_secs(3)).detach();
     let handler_future = send_future
         .now_or_never()
         .expect("Dispatch should be immediate on first poll")
@@ -293,7 +302,7 @@ async fn receiving_async_on_message_channel_returns_immediately_after_dispatch()
     let address = xtra::spawn_tokio(LongRunningHandler, Mailbox::unbounded());
     let channel = MessageChannel::new(address);
 
-    let send_future = channel.send(Duration::from_secs(3)).split_receiver();
+    let send_future = channel.send(Duration::from_secs(3)).detach();
     let handler_future = send_future
         .now_or_never()
         .expect("Dispatch should be immediate on first poll")
@@ -306,7 +315,6 @@ async fn receiving_async_on_message_channel_returns_immediately_after_dispatch()
 enum Message {
     Broadcast { priority: u32 },
     Priority { priority: u32 },
-    Ordered { ord: u32 },
 }
 
 impl PartialOrd<Self> for Message {
@@ -321,17 +329,10 @@ impl Ord for Message {
             Message::Broadcast { priority } => match other {
                 Message::Broadcast { priority: other } => priority.cmp(other),
                 Message::Priority { priority: other } => priority.cmp(other),
-                Message::Ordered { .. } => priority.cmp(&0),
             },
             Message::Priority { priority } => match other {
                 Message::Broadcast { priority: other } => priority.cmp(other),
                 Message::Priority { priority: other } => priority.cmp(other),
-                Message::Ordered { .. } => priority.cmp(&0),
-            },
-            Message::Ordered { ord } => match other {
-                Message::Broadcast { priority: other } => 0.cmp(other),
-                Message::Priority { priority: other } => 0.cmp(other),
-                Message::Ordered { ord: other } => other.cmp(ord),
             },
         }
     }
@@ -386,21 +387,18 @@ async fn handle_order() {
                         let _ = ele.broadcast(msg).priority(priority).await;
                     }
                     Message::Priority { priority } => {
-                        let _ = ele.send(msg).priority(priority).split_receiver().await;
-                    }
-                    Message::Ordered { .. } => {
-                        let _ = ele.send(msg).split_receiver().await;
+                        let _ = ele.send(msg).priority(priority).detach().await;
                     }
                 }
             }
         };
 
-        send(Message::Ordered { ord: 0 }).await;
-        send(Message::Ordered { ord: 1 }).await;
-        send(Message::Ordered { ord: 2 }).await;
-        send(Message::Broadcast { priority: 2 }).await;
+        send(Message::Priority { priority: 0 }).await;
+        send(Message::Priority { priority: 1 }).await;
+        send(Message::Priority { priority: 2 }).await;
+        send(Message::Broadcast { priority: 4 }).await;
+        send(Message::Broadcast { priority: 5 }).await;
         send(Message::Broadcast { priority: 3 }).await;
-        send(Message::Broadcast { priority: 1 }).await;
         send(Message::Priority { priority: 4 }).await;
         send(Message::Broadcast { priority: 5 }).await;
 
@@ -419,39 +417,21 @@ async fn waiting_sender_order() {
     let mut fut_ctx = std::task::Context::from_waker(noop_waker_ref());
     let mut ele = Elephant::default();
 
-    // With ordered messages
-
-    let _ = addr
-        .send(Message::Ordered { ord: 0 })
-        .split_receiver()
-        .await;
-    let mut first = addr.send(Message::Ordered { ord: 1 }).split_receiver();
-    let mut second = addr.send(Message::Ordered { ord: 2 }).split_receiver();
-
-    assert!(first.poll_unpin(&mut fut_ctx).is_pending());
-    assert!(second.poll_unpin(&mut fut_ctx).is_pending());
-
-    let act = &mut ele;
-    xtra::yield_once(&ctx, act).await;
-
-    assert!(second.poll_unpin(&mut fut_ctx).is_pending());
-    assert!(first.poll_unpin(&mut fut_ctx).is_ready());
-
     // With priority
 
     let _ = addr
         .send(Message::Priority { priority: 1 })
         .priority(1)
-        .split_receiver()
+        .detach()
         .await;
     let mut lesser = addr
         .send(Message::Priority { priority: 1 })
         .priority(1)
-        .split_receiver();
+        .detach();
     let mut greater = addr
         .send(Message::Priority { priority: 2 })
         .priority(2)
-        .split_receiver();
+        .detach();
 
     assert!(lesser.poll_unpin(&mut fut_ctx).is_pending());
     assert!(greater.poll_unpin(&mut fut_ctx).is_pending());
@@ -496,17 +476,17 @@ async fn set_priority_msg_channel() {
         let channel = MessageChannel::new(addr);
 
         let _ = channel
-            .send(Message::Ordered { ord: 0 })
-            .split_receiver()
+            .send(Message::Priority { priority: 0 })
+            .detach()
             .await;
         let _ = channel
             .send(Message::Priority { priority: 1 })
             .priority(1)
-            .split_receiver()
+            .detach()
             .await;
         let _ = channel
             .send(Message::Priority { priority: 2 })
-            .split_receiver()
+            .detach()
             .priority(2)
             .await;
 
@@ -518,7 +498,7 @@ async fn set_priority_msg_channel() {
         vec![
             Message::Priority { priority: 2 },
             Message::Priority { priority: 1 },
-            Message::Ordered { ord: 0 },
+            Message::Priority { priority: 0 },
         ]
     );
 }
@@ -731,10 +711,10 @@ async fn address_send_exercises_backpressure() {
 
     let _ = address
         .send(Hello("world"))
-        .split_receiver()
+        .detach()
         .now_or_never()
         .expect("be able to queue 1 message because the mailbox is empty");
-    let handler2 = address.send(Hello("world")).split_receiver().now_or_never();
+    let handler2 = address.send(Hello("world")).detach().now_or_never();
     assert!(
         handler2.is_none(),
         "Fail to queue 2nd message because mailbox is full"
@@ -745,7 +725,7 @@ async fn address_send_exercises_backpressure() {
 
     let _ = address
         .send(Hello("world"))
-        .split_receiver()
+        .detach()
         .now_or_never()
         .expect("be able to queue another message because the mailbox is empty again");
 
@@ -759,13 +739,13 @@ async fn address_send_exercises_backpressure() {
     let _ = address
         .send(Hello("world"))
         .priority(1)
-        .split_receiver()
+        .detach()
         .now_or_never()
         .expect("be able to queue 1 priority message because the mailbox is empty");
     let handler2 = address
         .send(Hello("world"))
         .priority(1)
-        .split_receiver()
+        .detach()
         .now_or_never();
     assert!(
         handler2.is_none(),
@@ -778,7 +758,7 @@ async fn address_send_exercises_backpressure() {
     let _ = address
         .send(PrintHello("world"))
         .priority(1)
-        .split_receiver()
+        .detach()
         .now_or_never()
         .expect("be able to queue another priority message because the mailbox is empty again");
 
@@ -862,7 +842,7 @@ fn scoped_task() {
 
     // Does not complete when address starts off from a disconnected strong
     let (addr, ctx) = Mailbox::unbounded();
-    let _ = addr.send(StopSelf).split_receiver().now_or_never().unwrap();
+    let _ = addr.send(StopSelf).detach().now_or_never().unwrap();
     assert!(xtra::run(ctx, ActorStopSelf).now_or_never().is_some());
     let scoped = xtra::scoped(&addr, futures_util::future::ready(()));
     assert_eq!(scoped.now_or_never(), Some(None));
@@ -937,7 +917,7 @@ async fn timeout_returns_interrupted() {
 
     address
         .send(Hello("world"))
-        .split_receiver()
+        .detach()
         .now_or_never()
         .expect("Boundless message should be sent instantly")
         .expect("Actor is not disconnected")
@@ -954,7 +934,7 @@ async fn timeout_returns_interrupted() {
 
     address
         .send(Hello("world"))
-        .split_receiver()
+        .detach()
         .now_or_never()
         .expect("Boundless message should be sent instantly")
         .expect("Actor is not disconnected")
@@ -986,7 +966,7 @@ fn no_sender_returns_disconnected() {
 async fn receive_future_can_dispatch_in_one_poll() {
     let (addr, mailbox) = Mailbox::<Greeter>::unbounded();
 
-    let _ = addr.send(Hello("world")).split_receiver().await;
+    let _ = addr.send(Hello("world")).detach().await;
     let receive_future = mailbox.next();
 
     assert!(receive_future.now_or_never().is_some())
@@ -1002,7 +982,7 @@ async fn receive_future_can_dispatch_in_one_poll_after_it_has_been_polled() {
     ));
     assert!(poll.is_pending());
 
-    let _ = addr.send(Hello("world")).split_receiver().await;
+    let _ = addr.send(Hello("world")).detach().await;
 
     assert!(receive_future.now_or_never().is_some())
 }

@@ -36,11 +36,11 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           components: clippy, rustfmt
 
+      - run: cargo +nightly update -Z minimal-versions
+
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.args }}
-
-      - run: cargo +nightly update -Z minimal-versions
 
       - run: cargo check-custom-fmt
 
