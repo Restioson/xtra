@@ -20,8 +20,6 @@ result on my development machine with an AMD Ryzen 3 3200G.
 
 ## Example
 ```rust
-#![feature(async_fn_in_trait)]
-
 use xtra::prelude::*;
 
 #[derive(Default, xtra::Actor)]

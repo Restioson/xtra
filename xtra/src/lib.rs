@@ -111,7 +111,9 @@ use crate::recv_future::Message;
 /// ```
 pub trait Handler<M>: Actor {
     /// The return value of this handler.
-    type Return: Send + 'static;     Handle a given message, returning its result.
+    type Return: Send + 'static;
+
+    /// Handle a given message, returning its result.
     fn handle(
         &mut self,
         message: M,
