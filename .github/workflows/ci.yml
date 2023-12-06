@@ -17,10 +17,9 @@ jobs:
     strategy:
       matrix:
         toolchain: [
-#          stable,
-#          beta,
-#          1.60.0 # MSRV
-           nightly
+          stable,
+          beta,
+          1.75.0 # MSRV
         ]
         args: [
           --all-features,

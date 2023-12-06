@@ -1,5 +1,3 @@
-#![feature(async_fn_in_trait)]
-
 use futures_util::stream::repeat;
 use futures_util::StreamExt;
 use xtra::prelude::*;

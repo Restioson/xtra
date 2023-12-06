@@ -1,5 +1,3 @@
-#![feature(async_fn_in_trait)]
-
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use tokio::runtime::Runtime;
 use xtra::{Actor, Context, Handler, Mailbox};

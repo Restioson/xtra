@@ -1,5 +1,3 @@
-#![feature(async_fn_in_trait)]
-
 use std::time::Duration;
 
 use futures_core::Stream;

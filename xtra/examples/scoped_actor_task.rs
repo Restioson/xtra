@@ -1,5 +1,3 @@
-#![feature(async_fn_in_trait)]
-
 use futures_util::future;
 use xtra::prelude::*;
 

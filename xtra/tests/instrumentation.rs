@@ -1,5 +1,3 @@
-#![feature(async_fn_in_trait)]
-
 //! Much of this code is taken from https://github.com/dbrgn/tracing-test//
 //!
 //!

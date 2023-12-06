@@ -1,5 +1,3 @@
-#![feature(async_fn_in_trait)]
-
 use xtra::prelude::*;
 
 struct Initialized(Address<ActorA>);

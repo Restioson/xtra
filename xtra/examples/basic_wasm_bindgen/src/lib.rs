@@ -1,5 +1,3 @@
-#![feature(async_fn_in_trait)]
-
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use xtra::prelude::*;

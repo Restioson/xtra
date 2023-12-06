@@ -43,7 +43,7 @@ impl<'a, A> DispatchFuture<'a, A> {
     /// In case this future has not yet been polled, a new span will be created which is why this function takes `&mut self`.
     ///
     /// ```rust
-    /// # #![feature(async_fn_in_trait)]
+
     /// # use std::ops::ControlFlow;
     /// # use std::time::Duration;
     /// # use tokio::time::timeout;

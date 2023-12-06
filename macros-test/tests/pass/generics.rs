@@ -1,5 +1,3 @@
-#![feature(async_fn_in_trait)]
-
 #[derive(xtra::Actor)]
 struct MyActor<A, B> {
     phantom: std::marker::PhantomData<(A, B)>

@@ -2,7 +2,6 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(unsafe_code, missing_docs)]
-#![feature(return_position_impl_trait_in_trait, async_fn_in_trait)]
 
 use std::fmt;
 use std::future::Future;
@@ -53,7 +52,6 @@ pub mod refcount {
 /// The [`Actor`] custom derive takes away some boilerplate for a standard actor:
 ///
 /// ```rust
-/// # #![feature(async_fn_in_trait)]
 /// #[derive(xtra::Actor)]
 /// pub struct MyActor;
 /// #
@@ -66,7 +64,6 @@ pub mod refcount {
 /// This macro will generate the following [`Actor`] implementation:
 ///
 /// ```rust,no_run
-/// # #![feature(async_fn_in_trait)]
 /// # use xtra::prelude::*;
 /// pub struct MyActor;
 ///
@@ -90,7 +87,6 @@ use crate::recv_future::Message;
 /// # Example
 ///
 /// ```rust
-/// # #![feature(async_fn_in_trait)]
 /// # use xtra::prelude::*;
 /// # struct MyActor;
 /// #  impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
@@ -115,9 +111,7 @@ use crate::recv_future::Message;
 /// ```
 pub trait Handler<M>: Actor {
     /// The return value of this handler.
-    type Return: Send + 'static;
-
-    /// Handle a given message, returning its result.
+    type Return: Send + 'static;     Handle a given message, returning its result.
     fn handle(
         &mut self,
         message: M,
@@ -134,7 +128,6 @@ pub trait Handler<M>: Actor {
 /// # Example
 ///
 /// ```rust
-/// # #![feature(async_fn_in_trait)]
 /// # use xtra::prelude::*;
 /// # use std::time::Duration;
 /// struct MyActor;
@@ -258,7 +251,6 @@ where
 /// ## Example
 ///
 /// ```rust
-/// # #![feature(async_fn_in_trait)]
 /// # use std::time::Duration;
 /// use futures_util::future::Either;
 /// # use xtra::prelude::*;
@@ -345,7 +337,6 @@ where
 /// ## Example
 ///
 /// ```rust
-/// # #![feature(async_fn_in_trait)]
 /// # use std::time::Duration;
 /// use futures_util::FutureExt;
 /// # use xtra::prelude::*;

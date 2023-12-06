@@ -1,5 +1,3 @@
-#![feature(async_fn_in_trait)]
-
 use std::cmp::Ordering as CmpOrdering;
 use std::ops::ControlFlow;
 use std::task::Poll;
