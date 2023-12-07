@@ -297,13 +297,12 @@ where
 ///     }
 /// }
 ///
-/// # #[cfg(feature = "with-smol-1")]
-/// # smol::block_on(async {
-/// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
-/// assert!(addr.is_connected());
-/// assert_eq!(addr.send(Selecting).await, Ok(true)); // Assert that the select did end early
-/// # })
-///
+/// # #[cfg(feature = "smol")]
+/// smol::block_on(async {
+///     let addr = xtra::spawn_smol(MyActor, Mailbox::unbounded());
+///     assert!(addr.is_connected());
+///     assert_eq!(addr.send(Selecting).await, Ok(true)); // Assert that the select did end early
+/// })
 /// ```
 pub async fn select<A, F, R>(mailbox: &Mailbox<A>, actor: &mut A, mut fut: F) -> Either<R, F>
 where
@@ -376,12 +375,13 @@ where
 ///     }
 /// }
 ///
-/// # #[cfg(feature = "with-smol-1")]
-/// # smol::block_on(async {
-/// let addr = MyActor.create(None).spawn(&mut xtra::spawn::Smol::Global);
-/// assert!(addr.is_connected());
-/// assert_eq!(addr.send(Joining).await, Ok(true)); // Assert that the join did evaluate the future
-/// # })
+/// # #[cfg(feature = "smol")]
+/// smol::block_on(async {
+///     let addr = xtra::spawn_smol(MyActor, Mailbox::unbounded());
+///     assert!(addr.is_connected());
+///     assert_eq!(addr.send(Joining).await, Ok(true)); // Assert that the join did evaluate the future
+/// })
+/// ```
 pub async fn join<A, F, R>(mailbox: &Mailbox<A>, actor: &mut A, fut: F) -> R
 where
     F: Future<Output = R>,
