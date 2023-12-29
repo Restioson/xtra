@@ -15,6 +15,7 @@ pub use self::context::Context;
 pub use self::mailbox::Mailbox;
 pub use self::scoped_task::scoped;
 pub use self::send_future::{ActorErasedSending, ActorNamedSending, Receiver, SendFuture};
+#[allow(unused_imports)]
 pub use self::spawn::*; // Star export so we don't have to write `cfg` attributes here.
 
 pub mod address;
