@@ -48,6 +48,7 @@ futures-util = "0.3.21"
 
 [features]
 default = []
+macros = ["dep:macros"]
 instrumentation = ["dep:tracing"]
 async_std = ["dep:async-std"]
 smol = ["dep:smol"]
