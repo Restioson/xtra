@@ -55,7 +55,7 @@ For a longer example, check out [Vertex](https://github.com/Restioson/vertex/tre
 
 ## Okay, sounds great! How do I use it?
 
-Check out the [docs](https://docs.rs/xtra) and the [examples](https://github.com/Restioson/xtra/blob/master/examples) to get started!
+Check out the [docs](https://docs.rs/xtra) and the [examples](https://github.com/Restioson/xtra/tree/master/xtra/examples) to get started!
 Enabling the `tokio`, `async_std`, `smol`, or `wasm_bindgen` features is recommended in order to enable some  convenience methods (such as `xtra::spawn_tokio`).
 Which you enable will depend on which executor you want to use (check out their docs to learn more about each).
 If you have any questions, feel free to [open an issue](https://github.com/Restioson/xtra/issues/new) or message me on the [Rust discord](https://bit.ly/rust-community).
