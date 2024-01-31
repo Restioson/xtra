@@ -23,16 +23,14 @@ use crate::Handler;
 /// struct Alice;
 /// struct Bob;
 ///
-/// #[async_trait]
 /// impl Actor for Alice {
 ///     type Stop = ();
 ///     async fn stopped(self) {
 ///         println!("Oh no");
 ///     }
 /// }
-/// # #[async_trait] impl Actor for Bob {type Stop = (); async fn stopped(self) -> Self::Stop {} }
+/// #  impl Actor for Bob {type Stop = (); async fn stopped(self) -> Self::Stop {} }
 ///
-/// #[async_trait]
 /// impl Handler<WhatsYourName> for Alice {
 ///     type Return = &'static str;
 ///
@@ -41,7 +39,6 @@ use crate::Handler;
 ///     }
 /// }
 ///
-/// #[async_trait]
 /// impl Handler<WhatsYourName> for Bob {
 ///     type Return = &'static str;
 ///

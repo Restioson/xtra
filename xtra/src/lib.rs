@@ -15,6 +15,7 @@ pub use self::context::Context;
 pub use self::mailbox::Mailbox;
 pub use self::scoped_task::scoped;
 pub use self::send_future::{ActorErasedSending, ActorNamedSending, Receiver, SendFuture};
+#[allow(unused_imports)]
 pub use self::spawn::*; // Star export so we don't have to write `cfg` attributes here.
 
 pub mod address;
@@ -34,8 +35,6 @@ mod spawn;
 
 /// Commonly used types from xtra
 pub mod prelude {
-    pub use async_trait::async_trait;
-
     pub use crate::address::Address;
     pub use crate::context::Context;
     pub use crate::message_channel::MessageChannel;
@@ -69,7 +68,7 @@ pub mod refcount {
 /// # use xtra::prelude::*;
 /// pub struct MyActor;
 ///
-/// #[async_trait]
+///
 /// impl xtra::Actor for MyActor {
 ///     type Stop = ();
 ///
@@ -86,18 +85,15 @@ use crate::recv_future::Message;
 
 /// Defines that an [`Actor`] can handle a given message `M`.
 ///
-/// This is an [`async_trait`](https://docs.rs/async-trait), so implementations should
-/// be annotated `#[async_trait]`.
-///
 /// # Example
 ///
 /// ```rust
 /// # use xtra::prelude::*;
 /// # struct MyActor;
-/// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
+/// #  impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
 /// struct Msg;
 ///
-/// #[async_trait]
+///
 /// impl Handler<Msg> for MyActor {
 ///     type Return = u32;
 ///
@@ -114,16 +110,16 @@ use crate::recv_future::Message;
 ///     })
 /// }
 /// ```
-#[async_trait::async_trait]
 pub trait Handler<M>: Actor {
     /// The return value of this handler.
     type Return: Send + 'static;
 
     /// Handle a given message, returning its result.
-    ///
-    /// This is an [`async_trait`](https://docs.rs/async-trait).
-    /// See the trait documentation to see an example of how this method can be declared.
-    async fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> Self::Return;
+    fn handle(
+        &mut self,
+        message: M,
+        ctx: &mut Context<Self>,
+    ) -> impl Future<Output = Self::Return> + Send;
 }
 
 /// An actor which can handle message one at a time. Actors can only be
@@ -132,8 +128,6 @@ pub trait Handler<M>: Actor {
 /// stop themselves through their [`Context`] by calling [`Context::stop_self`].
 /// This will result in any attempt to send messages to the actor in future failing.
 ///
-/// This is an [`async_trait`], so implementations should be annotated `#[async_trait]`.
-///
 /// # Example
 ///
 /// ```rust
@@ -141,7 +135,7 @@ pub trait Handler<M>: Actor {
 /// # use std::time::Duration;
 /// struct MyActor;
 ///
-/// #[async_trait]
+///
 /// impl Actor for MyActor {
 ///     type Stop = ();
 ///     async fn started(&mut self, ctx: &Mailbox<Self>) -> Result<(), Self::Stop> {
@@ -157,7 +151,7 @@ pub trait Handler<M>: Actor {
 ///
 /// struct Goodbye;
 ///
-/// #[async_trait]
+///
 /// impl Handler<Goodbye> for MyActor {
 ///     type Return = ();
 ///
@@ -178,15 +172,17 @@ pub trait Handler<M>: Actor {
 /// ```
 ///
 /// For longer examples, see the `examples` directory.
-#[async_trait::async_trait]
 pub trait Actor: 'static + Send + Sized {
     /// Value returned from the actor when [`Actor::stopped`] is called.
     type Stop: Send + 'static;
 
     /// Called as soon as the actor has been started.
     #[allow(unused_variables)]
-    async fn started(&mut self, mailbox: &Mailbox<Self>) -> Result<(), Self::Stop> {
-        Ok(())
+    fn started(
+        &mut self,
+        mailbox: &Mailbox<Self>,
+    ) -> impl Future<Output = Result<(), Self::Stop>> + Send {
+        async { Ok(()) }
     }
 
     /// Called at the end of an actor's event loop.
@@ -196,7 +192,7 @@ pub trait Actor: 'static + Send + Sized {
     /// - The actor called [`Context::stop_self`].
     /// - An actor called [`Context::stop_all`].
     /// - The last [`Address`] with a [`Strong`](crate::refcount::Strong) reference count was dropped.
-    async fn stopped(self) -> Self::Stop;
+    fn stopped(self) -> impl Future<Output = Self::Stop> + Send;
 }
 
 /// An error related to the actor system
@@ -262,12 +258,11 @@ where
 /// # use xtra::prelude::*;
 /// # use smol::future;
 /// # struct MyActor;
-/// # #[async_trait] impl Actor for MyActor { type Stop = (); async fn stopped(self) {} }
+/// #  impl Actor for MyActor { type Stop = (); async fn stopped(self) {} }
 ///
 /// struct Stop;
 /// struct Selecting;
 ///
-/// #[async_trait]
 /// impl Handler<Stop> for MyActor {
 ///     type Return = ();
 ///
@@ -276,7 +271,6 @@ where
 ///     }
 /// }
 ///
-/// #[async_trait]
 /// impl Handler<Selecting> for MyActor {
 ///     type Return = bool;
 ///
@@ -347,12 +341,11 @@ where
 /// # use xtra::prelude::*;
 /// # use smol::future;
 /// # struct MyActor;
-/// # #[async_trait] impl Actor for MyActor { type Stop = (); async fn stopped(self) {} }
+/// #  impl Actor for MyActor { type Stop = (); async fn stopped(self) {} }
 ///
 /// struct Stop;
 /// struct Joining;
 ///
-/// #[async_trait]
 /// impl Handler<Stop> for MyActor {
 ///     type Return = ();
 ///
@@ -361,7 +354,6 @@ where
 ///     }
 /// }
 ///
-/// #[async_trait]
 /// impl Handler<Joining> for MyActor {
 ///     type Return = bool;
 ///

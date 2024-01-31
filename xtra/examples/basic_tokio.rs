@@ -7,7 +7,6 @@ struct Printer {
 
 struct Print(String);
 
-#[async_trait]
 impl Handler<Print> for Printer {
     type Return = ();
 

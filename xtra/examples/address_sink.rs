@@ -11,7 +11,6 @@ struct Add(u32);
 
 struct GetSum;
 
-#[async_trait]
 impl Handler<Add> for Accumulator {
     type Return = ();
 
@@ -20,7 +19,6 @@ impl Handler<Add> for Accumulator {
     }
 }
 
-#[async_trait]
 impl Handler<GetSum> for Accumulator {
     type Return = u32;
 

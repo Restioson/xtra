@@ -6,7 +6,7 @@ struct MessageCounter {
 }
 
 // With a manual `Actor` implementation, we can specify a `Stop` type and thus return something from the `stopped` lifecycle callback.
-#[async_trait]
+
 impl Actor for MessageCounter {
     type Stop = usize;
 
@@ -18,7 +18,6 @@ impl Actor for MessageCounter {
 struct Ping;
 struct Stop;
 
-#[async_trait]
 impl Handler<Ping> for MessageCounter {
     type Return = ();
 
@@ -27,7 +26,6 @@ impl Handler<Ping> for MessageCounter {
     }
 }
 
-#[async_trait]
 impl Handler<Stop> for MessageCounter {
     type Return = ();
 

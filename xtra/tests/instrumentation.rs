@@ -69,7 +69,6 @@ struct Tracer;
 
 struct Hello(&'static str);
 
-#[async_trait]
 impl Handler<Hello> for Tracer {
     type Return = ();
 
@@ -80,7 +79,6 @@ impl Handler<Hello> for Tracer {
 
 struct CreateInfoSpan;
 
-#[async_trait]
 impl Handler<CreateInfoSpan> for Tracer {
     type Return = ();
 

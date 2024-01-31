@@ -11,7 +11,6 @@ struct Greeter;
 
 struct Greet;
 
-#[async_trait]
 impl Handler<Greet> for Greeter {
     type Return = ();
 

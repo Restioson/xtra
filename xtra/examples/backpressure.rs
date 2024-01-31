@@ -5,7 +5,6 @@ struct Greeter;
 
 struct Hello(String);
 
-#[async_trait]
 impl Handler<Hello> for Greeter {
     type Return = ();
 
