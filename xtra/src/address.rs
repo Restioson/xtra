@@ -130,10 +130,10 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// # use xtra::prelude::*;
     /// # use std::time::Duration;
     /// # struct MyActor;
-    /// # #[async_trait] impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
+    /// #  impl Actor for MyActor {type Stop = (); async fn stopped(self) -> Self::Stop {} }
     /// struct Shutdown;
     ///
-    /// #[async_trait]
+    ///
     /// impl Handler<Shutdown> for MyActor {
     ///     type Return = ();
     ///

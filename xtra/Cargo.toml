@@ -10,10 +10,9 @@ documentation = "https://docs.rs/xtra"
 readme = "README.md"
 keywords = ["async", "actor", "futures", "xtra", "async-await"]
 categories = ["asynchronous", "concurrency"]
-rust-version = "1.60.0"
+rust-version = "1.75.0"
 
 [dependencies]
-async-trait = "0.1.56"
 catty = "0.1.5"
 futures-core = "0.3.21" # alloc is the only default feature and we need it.
 futures-sink = { version = "0.3.21", default-features = false, optional = true }

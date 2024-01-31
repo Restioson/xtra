@@ -8,6 +8,8 @@
 
 ### Changed
 
+- Remove `async_trait` macro in favor of async functions in traits (AFIT).
+  This bumps xtra's MSRV to `1.75`.
 - `MessageChannel` is now a `struct` that can be constructed from an `Address` via `MessageChannel::new` or using `From`/`Into`.
 - Move event-loop related functions from `Context` to xtra's top-level scope.
   `Context` is now only used within an actor's `Handler`.

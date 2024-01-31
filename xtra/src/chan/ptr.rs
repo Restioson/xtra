@@ -380,7 +380,6 @@ mod tests {
 
     struct Foo;
 
-    #[async_trait::async_trait]
     impl crate::Actor for Foo {
         type Stop = ();
 

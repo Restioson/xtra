@@ -19,7 +19,6 @@ pub fn actor_derive(input: TokenStream) -> TokenStream {
     };
 
     quote! {
-        #[xtra::prelude::async_trait]
         impl #impl_generics xtra::Actor for #actor_ident #type_generics #where_clause {
             type Stop = ();
 

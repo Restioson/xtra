@@ -6,7 +6,6 @@ struct MyActor;
 
 struct Print(String);
 
-#[async_trait]
 impl Handler<Print> for MyActor {
     type Return = ();
 

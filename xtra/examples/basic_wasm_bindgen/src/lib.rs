@@ -7,7 +7,6 @@ struct Echoer;
 
 struct Echo(String);
 
-#[async_trait]
 impl Handler<Echo> for Echoer {
     type Return = String;
 

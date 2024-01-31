@@ -11,7 +11,6 @@ struct Counter {
 
 struct Inc;
 
-#[async_trait]
 impl Handler<Inc> for Counter {
     type Return = ();
 
