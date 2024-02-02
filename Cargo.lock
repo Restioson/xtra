@@ -1726,12 +1726,23 @@ dependencies = [
  "waker-fn",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "xtra-macros",
+ "xtra-macros 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "xtra-macros"
-version = "0.1.0"
+version = "0.6.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "xtra-macros"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6dfd68acdfa4e363b4dad688a87d5ed462cfb9498398c66520c7dab507dbc591"
 dependencies = [
  "proc-macro2",
  "quote",
