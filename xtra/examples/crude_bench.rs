@@ -12,6 +12,7 @@ struct Counter {
 }
 
 struct Increment;
+#[allow(dead_code)]
 struct IncrementWithData(usize);
 struct GetCount;
 
