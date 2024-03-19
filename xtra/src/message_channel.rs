@@ -69,7 +69,7 @@ pub struct MessageChannel<M, R, Rc = Strong> {
     inner: Box<dyn MessageChannelTrait<M, Rc, Return = R> + Send + Sync + 'static>,
 }
 
-impl<M, Rc, R> MessageChannel<M, R, Rc>
+impl<M, R, Rc> MessageChannel<M, R, Rc>
 where
     M: Send + 'static,
     R: Send + 'static,
