@@ -3,6 +3,7 @@
 //! the message type rather than the actor type.
 
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 use crate::address::{ActorJoinHandle, Address};
 use crate::chan::RefCounter;
@@ -207,6 +208,17 @@ where
     }
 }
 
+impl<M, R, Rc: RefCounter> Hash for MessageChannel<M, R, Rc>
+where
+    M: Send + 'static,
+    R: Send + 'static,
+    Rc: Send + 'static,
+{
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.inner.hash(state)
+    }
+}
+
 impl<M, R, Rc> Clone for MessageChannel<M, R, Rc>
 where
     R: Send + 'static,
@@ -295,6 +307,8 @@ trait MessageChannelTrait<M, Rc> {
     fn to_either(
         &self,
     ) -> Box<dyn MessageChannelTrait<M, Either, Return = Self::Return> + Send + Sync + 'static>;
+
+    fn hash(&self, state: &mut dyn Hasher);
 }
 
 impl<A, R, M, Rc: RefCounter> MessageChannelTrait<M, Rc> for Address<A, Rc>
@@ -365,5 +379,102 @@ where
         Rc: RefCounter + Into<Either>,
     {
         Box::new(Address(self.0.to_tx_either()))
+    }
+
+    fn hash(&self, state: &mut dyn Hasher) {
+        state.write_usize(self.0.inner_ptr() as *const _ as usize);
+        state.write_u8(self.0.is_strong() as u8);
+        state.finish();
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::hash::{Hash, Hasher};
+
+    use crate::{Actor, Handler, Mailbox};
+
+    type TestMessageChannel = super::MessageChannel<TestMessage, ()>;
+
+    struct TestActor;
+    struct TestMessage;
+
+    impl Actor for TestActor {
+        type Stop = ();
+
+        async fn stopped(self) -> Self::Stop {}
+    }
+
+    impl Handler<TestMessage> for TestActor {
+        type Return = ();
+
+        async fn handle(&mut self, _: TestMessage, _: &mut crate::Context<Self>) -> Self::Return {}
+    }
+
+    struct RecordingHasher(Vec<u8>);
+
+    impl RecordingHasher {
+        fn record_hash<H: Hash>(value: &H) -> Vec<u8> {
+            let mut h = Self(Vec::new());
+            value.hash(&mut h);
+            assert!(!h.0.is_empty(), "the hash data not be empty");
+            h.0
+        }
+    }
+
+    impl Hasher for RecordingHasher {
+        fn finish(&self) -> u64 {
+            0
+        }
+
+        fn write(&mut self, bytes: &[u8]) {
+            self.0.extend_from_slice(bytes)
+        }
+    }
+
+    #[test]
+    fn hashcode() {
+        let (a1, _) = Mailbox::<TestActor>::unbounded();
+        let c1 = TestMessageChannel::new(a1.clone());
+
+        let h1 = RecordingHasher::record_hash(&c1);
+        let h2 = RecordingHasher::record_hash(&c1.clone());
+        let h3 = RecordingHasher::record_hash(&TestMessageChannel::new(a1));
+
+        assert_eq!(h1, h2, "hashes from cloned channels should match");
+        assert_eq!(
+            h1, h3,
+            "hashes channels created against the same address should match"
+        );
+
+        let h4 = RecordingHasher::record_hash(&TestMessageChannel::new(
+            Mailbox::<TestActor>::unbounded().0,
+        ));
+
+        assert_ne!(
+            h1, h4,
+            "hashes from channels created against different addresses should differ"
+        );
+    }
+
+    #[test]
+    fn partial_eq() {
+        let (a1, _) = Mailbox::<TestActor>::unbounded();
+        let c1 = TestMessageChannel::new(a1.clone());
+        let c2 = c1.clone();
+        let c3 = TestMessageChannel::new(a1);
+
+        assert_eq!(c1, c2, "cloned channels should match");
+        assert_eq!(
+            c1, c3,
+            "channels created against the same address should match"
+        );
+
+        let c4 = TestMessageChannel::new(Mailbox::<TestActor>::unbounded().0);
+
+        assert_ne!(
+            c1, c4,
+            "channels created against different addresses should differ"
+        );
     }
 }
