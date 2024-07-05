@@ -1,5 +1,5 @@
 use std::future::Future;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use futures_util::FutureExt;
 use xtra::prelude::*;
@@ -39,34 +39,6 @@ impl Handler<GetCount> for Counter {
         let count = self.count;
         self.count = 0;
         count
-    }
-}
-
-#[derive(xtra::Actor)]
-struct SendTimer {
-    time: Duration,
-}
-
-struct GetTime;
-
-impl Handler<GetTime> for SendTimer {
-    type Return = Duration;
-
-    async fn handle(&mut self, _time: GetTime, _ctx: &mut Context<Self>) -> Duration {
-        self.time
-    }
-}
-
-#[derive(xtra::Actor)]
-struct ReturnTimer;
-
-struct TimeReturn;
-
-impl Handler<TimeReturn> for ReturnTimer {
-    type Return = Instant;
-
-    async fn handle(&mut self, _time: TimeReturn, _ctx: &mut Context<Self>) -> Instant {
-        Instant::now()
     }
 }
 
