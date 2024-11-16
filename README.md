@@ -19,6 +19,14 @@ A tiny, fast, and safe actor framework. It is modelled around Actix (copyright a
 result on my development machine with an AMD Ryzen 3 3200G.
 
 ## Example
+
+This is an example to use `xtra` with `tokio`. To compile this example it is needed to add the features `tokio` and `macros` in `Cargo.toml`.
+
+```toml
+[dependencies]
+xtra = { version = "0.6.0", features = ["tokio", "macros"] }
+```
+
 ```rust
 use xtra::prelude::*;
 
@@ -40,7 +48,7 @@ impl Handler<Print> for Printer {
 
 #[tokio::main]
 async fn main() {
-    let addr = xtra::spawn_tokio(Printer::default(), None);
+    let addr = xtra::spawn_tokio(Printer::default(), Mailbox::unbounded());
     loop {
         addr.send(Print("hello".to_string()))
             .await
@@ -55,7 +63,7 @@ For a longer example, check out [Vertex](https://github.com/Restioson/vertex/tre
 ## Okay, sounds great! How do I use it?
 
 Check out the [docs](https://docs.rs/xtra) and the [examples](https://github.com/Restioson/xtra/tree/master/xtra/examples) to get started!
-Enabling the `tokio`, `async_std`, `smol`, or `wasm_bindgen` features is recommended in order to enable some  convenience methods (such as `xtra::spawn_tokio`).
+Enabling the `tokio`, `macros`, `async_std`, `smol`, or `wasm_bindgen` features is recommended in order to enable some  convenience methods (such as `xtra::spawn_tokio`).
 Which you enable will depend on which executor you want to use (check out their docs to learn more about each).
 If you have any questions, feel free to [open an issue](https://github.com/Restioson/xtra/issues/new) or message me on the [Rust discord](https://bit.ly/rust-community).
 
