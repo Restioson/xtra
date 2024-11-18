@@ -40,8 +40,8 @@ impl Handler<Print> for Printer {
     }
 }
 
-#[smol_potat::main]
-async fn main() {
+
+async fn run() {
     let (addr, mailbox) = Mailbox::bounded(32);
     smol::spawn(xtra::run(mailbox.clone(), Printer::new(0))).detach();
     smol::spawn(xtra::run(mailbox.clone(), Printer::new(1))).detach();
@@ -53,4 +53,8 @@ async fn main() {
 
     // Give a second for everything to shut down
     std::thread::sleep(Duration::from_secs(1));
+}
+
+fn main() {
+    smol::block_on(run())
 }
